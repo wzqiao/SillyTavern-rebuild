@@ -5,6 +5,9 @@ import type {
     ReforgedConnectionDraft,
     ReforgedConnectionDraftStatus,
     ReforgedConnectionGenerationMapping,
+    ReforgedConnectionResolvedRuntimeConfig,
+    ReforgedConnectionRuntimeHandoff,
+    ReforgedConnectionRuntimeHandoffInput,
     ReforgedConnectionValidationIssue,
 } from '@/contracts/connection';
 
@@ -57,10 +60,16 @@ export const useConnectionStore = defineStore('connection', {
             return maskSecret(state.appliedDraft?.apiKey ?? state.draft.apiKey);
         },
 
-        generationApi(): ReforgedConnectionGenerationMapping {
-            return {
-                api: 'openai',
-            };
+        generationApi(state): ReforgedConnectionGenerationMapping {
+            return toGenerationMapping(state.draft.provider);
+        },
+
+        runtimeHandoff(state): (input?: ReforgedConnectionRuntimeHandoffInput) => ReforgedConnectionRuntimeHandoff {
+            return (input = {}) => createRuntimeHandoff({
+                appliedDraft: state.appliedDraft,
+                draft: normalizeDraft(state.draft),
+                runtimeAdapterReady: input.runtimeAdapterReady === true,
+            });
         },
     },
 
@@ -145,6 +154,83 @@ function normalizeDraft(draft: ReforgedConnectionDraft): ReforgedConnectionDraft
     };
 }
 
+function createRuntimeHandoff(input: {
+    appliedDraft: ReforgedAppliedConnectionDraft | null;
+    draft: ReforgedConnectionDraft;
+    runtimeAdapterReady: boolean;
+}): ReforgedConnectionRuntimeHandoff {
+    const generation = toGenerationMapping(input.draft.provider);
+    const issues = validateDraft(input.draft);
+
+    if (isDraftEmpty(input.draft)) {
+        return {
+            status: 'empty',
+            canAttempt: false,
+            generation,
+            connection: null,
+            issues: [{
+                code: 'draft-empty',
+                message: 'Add an OpenAI-compatible draft before attempting Runtime mode.',
+            }],
+            message: 'No connection draft is available for Runtime mode.',
+        };
+    }
+
+    if (issues.length > 0) {
+        return {
+            status: 'incomplete',
+            canAttempt: false,
+            generation,
+            connection: null,
+            issues: issues.map((issue) => ({
+                code: 'draft-incomplete',
+                field: issue.field,
+                message: issue.message,
+            })),
+            message: issues[0]?.message ?? 'Connection draft is incomplete.',
+        };
+    }
+
+    if (!input.appliedDraft || !draftsMatch(input.appliedDraft, input.draft)) {
+        return {
+            status: 'complete-unapplied',
+            canAttempt: false,
+            generation,
+            connection: null,
+            issues: [{
+                code: 'draft-unapplied',
+                message: 'Apply this complete draft before attempting Runtime mode.',
+            }],
+            message: 'Draft is complete, but it has not been applied to the runtime handoff.',
+        };
+    }
+
+    const connection = toResolvedRuntimeConfig(input.appliedDraft);
+
+    if (!input.runtimeAdapterReady) {
+        return {
+            status: 'applied-but-unwired',
+            canAttempt: false,
+            generation,
+            connection,
+            issues: [{
+                code: 'runtime-unwired',
+                message: 'Runtime adapter is not ready; this applied draft has not been handed to a live request path.',
+            }],
+            message: 'Applied draft is memory-only and waiting for a ready Runtime adapter.',
+        };
+    }
+
+    return {
+        status: 'ready-to-attempt',
+        canAttempt: true,
+        generation,
+        connection,
+        issues: [],
+        message: 'Applied draft is available for a Runtime request attempt, but it is still not persisted or connectivity-tested.',
+    };
+}
+
 function validateDraft(draft: ReforgedConnectionDraft): ReforgedConnectionValidationIssue[] {
     const issues: ReforgedConnectionValidationIssue[] = [];
 
@@ -188,6 +274,25 @@ function draftsMatch(appliedDraft: ReforgedAppliedConnectionDraft, draft: Reforg
         appliedDraft.model === draft.model &&
         appliedDraft.apiKey === draft.apiKey
     );
+}
+
+function toGenerationMapping(provider: ReforgedConnectionDraft['provider']): ReforgedConnectionGenerationMapping {
+    if (provider === 'openai-compatible') {
+        return {
+            api: 'openai',
+        };
+    }
+
+    return {
+        api: 'openai',
+    };
+}
+
+function toResolvedRuntimeConfig(appliedDraft: ReforgedAppliedConnectionDraft): ReforgedConnectionResolvedRuntimeConfig {
+    return {
+        ...appliedDraft,
+        ...toGenerationMapping(appliedDraft.provider),
+    };
 }
 
 function maskSecret(value: string): string {

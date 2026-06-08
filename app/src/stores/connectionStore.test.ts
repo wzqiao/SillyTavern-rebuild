@@ -99,6 +99,103 @@ describe('useConnectionStore', () => {
         expect(store.hasAppliedDraft).toBe(true);
     });
 
+    it('describes runtime handoff readiness without treating applied drafts as connected', () => {
+        const store = useConnectionStore();
+
+        expect(store.runtimeHandoff()).toMatchObject({
+            status: 'empty',
+            canAttempt: false,
+            connection: null,
+            generation: { api: 'openai' },
+            issues: [{
+                code: 'draft-empty',
+            }],
+        });
+
+        store.patchDraft({
+            baseUrl: 'localhost:5000/v1',
+            model: '',
+            apiKey: '',
+        });
+        expect(store.runtimeHandoff()).toMatchObject({
+            status: 'incomplete',
+            canAttempt: false,
+            connection: null,
+            issues: [
+                { code: 'draft-incomplete', field: 'baseUrl' },
+                { code: 'draft-incomplete', field: 'model' },
+                { code: 'draft-incomplete', field: 'apiKey' },
+            ],
+        });
+
+        store.patchDraft({
+            baseUrl: 'https://api.example.test/v1',
+            model: 'gpt-example',
+            apiKey: 'sk-test-123456',
+        });
+        expect(store.runtimeHandoff()).toMatchObject({
+            status: 'complete-unapplied',
+            canAttempt: false,
+            connection: null,
+            issues: [{
+                code: 'draft-unapplied',
+            }],
+        });
+
+        store.applyDraft('2026-06-09T00:00:00.000Z');
+        expect(store.runtimeHandoff()).toMatchObject({
+            status: 'applied-but-unwired',
+            canAttempt: false,
+            generation: { api: 'openai' },
+            connection: {
+                id: 'connection-draft-1',
+                provider: 'openai-compatible',
+                baseUrl: 'https://api.example.test/v1',
+                model: 'gpt-example',
+                api: 'openai',
+            },
+            issues: [{
+                code: 'runtime-unwired',
+            }],
+        });
+
+        expect(store.runtimeHandoff({ runtimeAdapterReady: true })).toMatchObject({
+            status: 'ready-to-attempt',
+            canAttempt: true,
+            generation: { api: 'openai' },
+            connection: {
+                id: 'connection-draft-1',
+                baseUrl: 'https://api.example.test/v1',
+                model: 'gpt-example',
+                api: 'openai',
+            },
+            issues: [],
+        });
+    });
+
+    it('requires re-applying edited drafts before runtime handoff can be attempted again', () => {
+        const store = useConnectionStore();
+        store.patchDraft({
+            baseUrl: 'https://api.example.test/v1',
+            model: 'first-model',
+            apiKey: 'sk-first-1234',
+        });
+        store.applyDraft('2026-06-09T00:00:00.000Z');
+
+        expect(store.runtimeHandoff({ runtimeAdapterReady: true }).canAttempt).toBe(true);
+
+        store.patchDraft({ model: 'edited-model' });
+
+        expect(store.runtimeHandoff({ runtimeAdapterReady: true })).toMatchObject({
+            status: 'complete-unapplied',
+            canAttempt: false,
+            connection: null,
+            issues: [{
+                code: 'draft-unapplied',
+            }],
+        });
+    });
+
     it('reuses the applied draft id until all state is cleared', () => {
         const store = useConnectionStore();
         store.patchDraft({

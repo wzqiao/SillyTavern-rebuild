@@ -72,10 +72,15 @@ const selectedWorldbookPreview = computed(() => selectedLorebook.value?.entries.
 const selectedMessages = computed(() => chatStore.selectedMessages);
 const activeSession = computed(() => chatStore.selectedSession);
 const readiness = computed(() => chatStore.readiness);
+const runtimeAdapterReady = computed(() => adapterMode.value === 'runtime' && runtimeDiagnostics.value?.ok === true && readiness.value.hasAdapter);
 const lastImportResult = computed(() => characterStore.lastImportResult);
 const adapterModeLabel = computed(() => adapterMode.value === 'demo' ? 'Demo adapter' : 'Runtime adapter');
 const hasChatTarget = computed(() => Boolean(activeSession.value || selectedRoster.value));
-const connectionPanelStatus = computed(() => connectionSubmitStatus.value ?? connectionStore.draftStatus);
+const connectionHandoff = computed(() => connectionStore.runtimeHandoff({
+  runtimeAdapterReady: runtimeAdapterReady.value,
+}));
+const connectionPanelStatus = computed(() => connectionSubmitStatus.value ?? connectionHandoff.value.status);
+const canAttemptRuntime = computed(() => adapterMode.value !== 'runtime' || connectionHandoff.value.canAttempt);
 const runtimeDiagnosticLines = computed(() => [
   ...(runtimeDiagnostics.value?.blockers ?? []),
   ...(runtimeDiagnostics.value?.warnings ?? []),
@@ -99,9 +104,15 @@ const adapterStatusText = computed(() => {
 
   return readiness.value.canSend ? 'runtime ready' : runtimeNotice.value ?? readiness.value.reason?.message;
 });
-const canSend = computed(() => Boolean(draftMessage.value.trim()) && hasChatTarget.value && readiness.value.canSend && !chatStore.isGenerating);
+const canSend = computed(() => (
+  Boolean(draftMessage.value.trim()) &&
+  hasChatTarget.value &&
+  readiness.value.canSend &&
+  canAttemptRuntime.value &&
+  !chatStore.isGenerating
+));
 const connectionStatusClasses = computed(() => {
-  if (connectionPanelStatus.value === 'applied') {
+  if (connectionPanelStatus.value === 'ready-to-attempt') {
     return 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100';
   }
 
@@ -116,19 +127,7 @@ const connectionPanelMessage = computed(() => {
     return connectionNotice.value;
   }
 
-  if (connectionPanelStatus.value === 'applied') {
-    return 'Draft applied in memory only. It has not been connectivity-tested or persisted.';
-  }
-
-  if (connectionPanelStatus.value === 'complete') {
-    return 'Draft looks complete, but it is still unverified and not connected.';
-  }
-
-  if (connectionPanelStatus.value === 'incomplete') {
-    return connectionStore.draftErrors[0]?.message ?? 'Connection draft is incomplete.';
-  }
-
-  return 'Add an OpenAI-compatible draft. It stays in memory and clears on refresh.';
+  return connectionHandoff.value.message;
 });
 
 chatStore.setEngineAdapter(demoAdapter);
@@ -161,7 +160,7 @@ function selectDemoAdapter(): void {
 
 function applyConnectionDraft(): void {
   const result = connectionStore.applyDraft(new Date().toISOString());
-  connectionNotice.value = result.message;
+  connectionNotice.value = result.ok ? null : result.message;
   connectionIssueMessages.value = result.ok ? [] : result.issues.map((issue) => issue.message);
   connectionSubmitStatus.value = result.ok ? null : 'incomplete';
 }
@@ -179,6 +178,14 @@ async function activateRuntimeAdapter(): Promise<void> {
   runtimeNotice.value = 'Checking same-origin SillyTavern runtime...';
   runtimeDiagnostics.value = null;
   chatStore.setEngineAdapter(null);
+  const handoff = connectionStore.runtimeHandoff({ runtimeAdapterReady: false });
+  if (handoff.status !== 'applied-but-unwired') {
+    runtimeNotice.value = handoff.message;
+    runtimeBusy.value = false;
+    return;
+  }
+
+  runtimeNotice.value = 'Checking same-origin SillyTavern runtime...';
 
   try {
     const { loadHeadlessEngineAdapter } = await import('@/engine-adapter/runtimeAdapterLoader');
@@ -362,6 +369,12 @@ async function sendMessage(): Promise<void> {
     return;
   }
 
+  const handoff = connectionHandoff.value;
+  if (adapterMode.value === 'runtime' && !handoff.canAttempt) {
+    runtimeNotice.value = handoff.message;
+    return;
+  }
+
   draftMessage.value = '';
   const result = await chatStore.sendUserMessage({
     content,
@@ -372,7 +385,7 @@ async function sendMessage(): Promise<void> {
       chatCompletionType: adapterMode.value === 'runtime' ? 'quiet' : undefined,
     },
     generation: {
-      api: 'openai',
+      api: handoff.generation.api,
       responseLength: 220,
     },
   });
