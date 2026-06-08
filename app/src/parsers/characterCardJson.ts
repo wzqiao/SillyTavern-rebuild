@@ -136,6 +136,10 @@ function detectSource(root: JsonRecord, data: JsonRecord | null): ReforgedCharac
         return 'json-v2-like';
     }
 
+    if (hasV1LikeFields(root)) {
+        return 'json-v1-like';
+    }
+
     return UNKNOWN_SOURCE;
 }
 
@@ -172,6 +176,10 @@ function detectRawVersion(root: JsonRecord, source: ReforgedCharacterCardSource)
         return rawVersion;
     }
 
+    if (source === 'json-v1-like') {
+        return '1.0';
+    }
+
     if (source === 'json-v2' || source === 'json-v2-like') {
         return '2.0';
     }
@@ -195,15 +203,39 @@ export function parseCharacterCardJson(input: unknown): ReforgedCharacterCard {
     const source = detectSource(root, data);
 
     return {
-        name: readField(data, root, 'name'),
-        description: readField(data, root, 'description'),
-        personality: readField(data, root, 'personality'),
-        scenario: readField(data, root, 'scenario'),
-        firstMessage: readField(data, root, 'first_mes', 'firstMessage'),
-        alternateGreetings: readListField(data, root, 'alternate_greetings', 'alternateGreetings'),
+        name: readField(data, root, 'name', 'char_name'),
+        description: readField(data, root, 'description', 'char_persona', 'persona'),
+        personality: readField(data, root, 'personality', 'char_personality'),
+        scenario: readField(data, root, 'scenario', 'world_scenario'),
+        firstMessage: readField(data, root, 'first_mes', 'firstMessage', 'char_greeting', 'greeting'),
+        alternateGreetings: readListField(data, root, 'alternate_greetings', 'alternateGreetings', 'alternate_greeting'),
         tags: readListField(data, root, 'tags'),
         extensions: readExtensions(data, root),
         rawVersion: detectRawVersion(root, source),
         source,
     };
+}
+
+function hasV1LikeFields(root: JsonRecord): boolean {
+    const hasName = hasNonEmptyString(root, 'name') || hasNonEmptyString(root, 'char_name');
+    const hasCharacterField = [
+        'description',
+        'char_persona',
+        'personality',
+        'char_personality',
+        'scenario',
+        'world_scenario',
+        'first_mes',
+        'firstMessage',
+        'char_greeting',
+        'mes_example',
+        'creatorcomment',
+    ].some((key) => hasNonEmptyString(root, key));
+
+    return hasName && hasCharacterField;
+}
+
+function hasNonEmptyString(record: JsonRecord, key: string): boolean {
+    const value = record[key];
+    return typeof value === 'string' && value.trim().length > 0;
 }

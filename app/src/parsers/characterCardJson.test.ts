@@ -118,6 +118,65 @@ describe('parseCharacterCardJson', () => {
         expect(card.rawVersion).toBe('2.0');
     });
 
+    it('normalizes a SillyTavern V1-style root character card', () => {
+        const card = parseCharacterCardJson({
+            name: 'Root Astra',
+            description: 'Root-level character description.',
+            personality: 'Old but dependable.',
+            scenario: 'A bridge full of hand-labeled switches.',
+            first_mes: 'Still flying.',
+            alternate_greetings: ['Back on deck.'],
+            tags: ['legacy'],
+            creatorcomment: 'Imported from an older card export.',
+        });
+
+        expect(card).toMatchObject({
+            name: 'Root Astra',
+            description: 'Root-level character description.',
+            personality: 'Old but dependable.',
+            scenario: 'A bridge full of hand-labeled switches.',
+            firstMessage: 'Still flying.',
+            alternateGreetings: ['Back on deck.'],
+            tags: ['legacy'],
+            rawVersion: '1.0',
+            source: 'json-v1-like',
+        });
+    });
+
+    it('normalizes notebook-style legacy character field aliases', () => {
+        const card = parseCharacterCardJson({
+            char_name: 'Notebook Mira',
+            char_persona: 'An archivist described by a legacy notebook field.',
+            char_personality: 'Careful and curious.',
+            world_scenario: 'A sealed library after dusk.',
+            char_greeting: 'You made it past the old locks.',
+            alternate_greeting: 'The catalogue remembers you.',
+        });
+
+        expect(card).toMatchObject({
+            name: 'Notebook Mira',
+            description: 'An archivist described by a legacy notebook field.',
+            personality: 'Careful and curious.',
+            scenario: 'A sealed library after dusk.',
+            firstMessage: 'You made it past the old locks.',
+            alternateGreetings: ['The catalogue remembers you.'],
+            rawVersion: '1.0',
+            source: 'json-v1-like',
+        });
+    });
+
+    it('does not classify a bare named JSON object as a usable character card', () => {
+        const card = parseCharacterCardJson({
+            name: 'Not enough on its own',
+        });
+
+        expect(card).toMatchObject({
+            name: 'Not enough on its own',
+            rawVersion: 'unknown',
+            source: 'json-unknown',
+        });
+    });
+
     it('returns an empty normalized card for invalid JSON input', () => {
         expect(parseCharacterCardJson('{not valid json')).toEqual({
             name: '',

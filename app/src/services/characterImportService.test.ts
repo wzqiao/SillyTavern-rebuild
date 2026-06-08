@@ -120,6 +120,33 @@ describe('importCharacterCard', () => {
         });
     });
 
+    it('imports a V1-style root JSON character card from text', () => {
+        const result = importCharacterCard({
+            fileName: 'legacy.json',
+            text: JSON.stringify({
+                name: 'Legacy Mira',
+                description: 'Root-level legacy card description.',
+                first_mes: 'Still here.',
+            }),
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            card: {
+                name: 'Legacy Mira',
+                description: 'Root-level legacy card description.',
+                firstMessage: 'Still here.',
+                source: 'json-v1-like',
+                rawVersion: '1.0',
+            },
+            source: {
+                fileName: 'legacy.json',
+                format: 'json',
+            },
+            warnings: [],
+        });
+    });
+
     it('imports a PNG character card from base64 tEXt metadata', () => {
         const json = JSON.stringify({
             spec: 'chara_card_v3',

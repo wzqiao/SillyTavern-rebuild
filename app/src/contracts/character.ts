@@ -1,6 +1,7 @@
 // DRAFT: 待主干评审
 
 export type ReforgedCharacterCardSource =
+    | 'json-v1-like'
     | 'json-v2'
     | 'json-v2-like'
     | 'json-v3-like'
