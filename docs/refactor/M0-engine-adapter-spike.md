@@ -25,6 +25,7 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - PNG embedded-card parser in `app/src/parsers/`, including native-compatible `ccv3` precedence and explicit reasons when compressed metadata cannot be decoded without a zlib dependency.
 - Character import service in `app/src/services/`, unifying JSON and PNG parser results behind a typed M0 import result. YAML, CHARX, and BYAF are detected as native ST formats but intentionally reported as unsupported by the M0 front-end importer until dedicated parsers or backend handoff are designed.
 - Pinia character store in `app/src/stores/`, keeping the M0 state layer thin: imported character roster, selected character, and the last import result. Parsing remains in `services` / `parsers`; the store does not touch browser `File` I/O or SillyTavern DOM.
+- Browser file import helper in `app/src/services/characterFileImportService.ts`, converting JSON/PNG uploads into the existing character import contract before the HomeView file picker opens and selects the imported card.
 - Draft chat contract in `app/src/contracts/chat.ts`, covering the M1-facing state shape for sessions, messages, assistant alternatives/swipes, readiness, pending generation state, local cancellation, and typed send results.
 - Pure chat generation request service in `app/src/services/chatGenerationService.ts`, mapping Reforged chat sessions into the existing `HeadlessGenerationRequest` / chat-style prompt seam without leaking SillyTavern raw response shapes into stores or views.
 - Chat runtime normalization service in `app/src/services/chatRuntimeService.ts`, wrapping `HeadlessEngineAdapter.sendChatCompletion()` behind stable Reforged request/result/event types. It normalizes plain text, non-stream OpenAI-like JSON, multi-choice alternatives, reasoning/signature metadata, one-dimensional tool calls, and SillyTavern's streaming async-generator snapshots (`text`, `swipes`, `logprobs`, `toolCalls`, `state`) without exposing raw `unknown` provider data to stores or views.
@@ -37,8 +38,7 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - Capture real `adapter.inspect({ probeContext: true })` output in browser after ST runtime boot and add the result to this report.
 - With user-provided API settings, trigger one real OpenAI-compatible generation and confirm whether streaming data can be consumed through the `sendOpenAIRequest` path.
 - Inventory runtime import failures caused by missing legacy DOM nodes and decide between a minimal hidden compatibility layer or deeper engine extraction.
-- Wire the character import service to a real file picker flow and validate against user-supplied JSON / PNG cards.
-- Wire the character store to the file picker flow so a successful import automatically becomes selectable in the M0 vertical slice.
+- Validate the file picker flow against a broader set of user-supplied JSON / PNG cards, including extensionless uploads that rely on MIME type detection.
 - Validate the gated Runtime mode against a real same-origin SillyTavern runtime, including diagnostics display, chat-completion request shape, normalized alternatives/swipes, and abort behavior.
 - Confirm whether `sendOpenAIRequest()` can run in the new app without legacy DOM breakage once API settings and same-origin module URLs are available.
 - Decide whether YAML, CHARX, and BYAF should be parsed in the front-end, delegated to the existing ST backend import endpoint, or deferred until after the M0 vertical slice.

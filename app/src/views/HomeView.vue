@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useCharacterStore, useChatStore } from '@/stores';
+import { createCharacterImportInputFromFile } from '@/services';
 import type { ReforgedCharacterImportResult, ReforgedCharacterRosterItem } from '@/contracts/character';
 import type { ReforgedChatCharacterContext, ReforgedChatMessage } from '@/contracts/chat';
 import type {
@@ -162,11 +163,8 @@ async function importCardFromFile(event: Event): Promise<void> {
   importNotice.value = null;
 
   try {
-    const lowerName = file.name.toLowerCase();
     const result = characterStore.importCharacter(
-      lowerName.endsWith('.png')
-        ? { fileName: file.name, mimeType: file.type, bytes: await file.arrayBuffer() }
-        : { fileName: file.name, mimeType: file.type, text: await file.text() },
+      await createCharacterImportInputFromFile(file),
       new Date().toISOString(),
     );
 
@@ -372,7 +370,13 @@ function describeError(error: unknown): string {
             </div>
 
             <label class="file-drop">
-              <input class="sr-only" type="file" accept=".json,.png,application/json,image/png" @change="importCardFromFile">
+              <input
+                class="sr-only"
+                data-testid="character-file-input"
+                type="file"
+                accept=".json,.png,application/json,image/png"
+                @change="importCardFromFile"
+              >
               <span class="text-3xl">+</span>
               <span class="text-sm font-semibold">选择 JSON / PNG 角色卡</span>
               <span class="text-xs text-stone-400">{{ importBusy ? 'Reading card...' : 'V2/V3 card parser, no legacy DOM' }}</span>

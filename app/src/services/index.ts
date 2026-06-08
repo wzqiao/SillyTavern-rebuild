@@ -1,4 +1,6 @@
 export { detectCharacterImportFormat, importCharacterCard } from './characterImportService';
+export { createCharacterImportInputFromFile } from './characterFileImportService';
+export type { ReforgedCharacterImportFileLike } from './characterFileImportService';
 export {
     createChatEngineMessages,
     createChatGenerationRequest,
