@@ -101,3 +101,12 @@ export interface ReforgedCharacterImportFailure {
 export type ReforgedCharacterImportResult =
     | ReforgedCharacterImportSuccess
     | ReforgedCharacterImportFailure;
+
+// DRAFT: 待主干评审
+export interface ReforgedCharacterRosterItem {
+    id: string;
+    card: ReforgedCharacterCard;
+    source: ReforgedCharacterImportSource;
+    importedAt: string;
+    warnings: ReforgedCharacterCardPngParseReason[];
+}

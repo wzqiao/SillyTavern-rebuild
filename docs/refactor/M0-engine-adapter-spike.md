@@ -24,6 +24,7 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - Pure JSON character-card parser in `app/src/parsers/`, covering the minimum V2/V3-like fields needed by the M0 import spike.
 - PNG embedded-card parser in `app/src/parsers/`, including native-compatible `ccv3` precedence and explicit reasons when compressed metadata cannot be decoded without a zlib dependency.
 - Character import service in `app/src/services/`, unifying JSON and PNG parser results behind a typed M0 import result. YAML, CHARX, and BYAF are detected as native ST formats but intentionally reported as unsupported by the M0 front-end importer until dedicated parsers or backend handoff are designed.
+- Pinia character store in `app/src/stores/`, keeping the M0 state layer thin: imported character roster, selected character, and the last import result. Parsing remains in `services` / `parsers`; the store does not touch browser `File` I/O or SillyTavern DOM.
 
 ## Remaining M0 Verification
 - Run the adapter inside the Vite app served from the same origin as SillyTavern and confirm the `@sillytavern/*` external URLs resolve.
@@ -31,5 +32,6 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - With user-provided API settings, trigger one real OpenAI-compatible generation and confirm whether streaming data can be consumed through the `sendOpenAIRequest` path.
 - Inventory runtime import failures caused by missing legacy DOM nodes and decide between a minimal hidden compatibility layer or deeper engine extraction.
 - Wire the character import service to a real file picker flow and validate against user-supplied JSON / PNG cards.
+- Wire the character store to the file picker flow so a successful import automatically becomes selectable in the M0 vertical slice.
 - Decide whether YAML, CHARX, and BYAF should be parsed in the front-end, delegated to the existing ST backend import endpoint, or deferred until after the M0 vertical slice.
 - Decide whether old V1 JSON and `char_name` notebook-style JSON should be normalized in the front-end parser or delegated to the existing backend import path. The M0 front-end importer currently targets V2/V3-compatible cards per the PRD.
