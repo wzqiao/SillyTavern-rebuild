@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { useCharacterStore, useChatStore, useWorldbookStore } from '@/stores';
+import { useCharacterStore, useChatStore, useConnectionStore, useWorldbookStore } from '@/stores';
 import { createCharacterImportInputFromFile, createChatLorebookContext } from '@/services';
 import type { ReforgedCharacterImportResult, ReforgedCharacterRosterItem } from '@/contracts/character';
 import type { ReforgedChatCharacterContext, ReforgedChatMessage } from '@/contracts/chat';
+import type { ReforgedConnectionDraftStatus } from '@/contracts/connection';
 import type {
   EngineAdapterDiagnostics,
   HeadlessEngineAdapter,
@@ -15,6 +16,7 @@ type AdapterMode = 'demo' | 'runtime';
 
 const characterStore = useCharacterStore();
 const chatStore = useChatStore();
+const connectionStore = useConnectionStore();
 const worldbookStore = useWorldbookStore();
 
 const adapterMode = ref<AdapterMode>('demo');
@@ -27,6 +29,9 @@ const editingMessageId = ref<string | null>(null);
 const editingContent = ref('');
 const importBusy = ref(false);
 const importNotice = ref<string | null>(null);
+const connectionNotice = ref<string | null>(null);
+const connectionIssueMessages = ref<string[]>([]);
+const connectionSubmitStatus = ref<ReforgedConnectionDraftStatus | null>(null);
 const worldbookNotice = ref<string | null>(null);
 const runtimeBusy = ref(false);
 const runtimeNotice = ref<string | null>(null);
@@ -70,6 +75,7 @@ const readiness = computed(() => chatStore.readiness);
 const lastImportResult = computed(() => characterStore.lastImportResult);
 const adapterModeLabel = computed(() => adapterMode.value === 'demo' ? 'Demo adapter' : 'Runtime adapter');
 const hasChatTarget = computed(() => Boolean(activeSession.value || selectedRoster.value));
+const connectionPanelStatus = computed(() => connectionSubmitStatus.value ?? connectionStore.draftStatus);
 const runtimeDiagnosticLines = computed(() => [
   ...(runtimeDiagnostics.value?.blockers ?? []),
   ...(runtimeDiagnostics.value?.warnings ?? []),
@@ -94,6 +100,36 @@ const adapterStatusText = computed(() => {
   return readiness.value.canSend ? 'runtime ready' : runtimeNotice.value ?? readiness.value.reason?.message;
 });
 const canSend = computed(() => Boolean(draftMessage.value.trim()) && hasChatTarget.value && readiness.value.canSend && !chatStore.isGenerating);
+const connectionStatusClasses = computed(() => {
+  if (connectionPanelStatus.value === 'applied') {
+    return 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100';
+  }
+
+  if (connectionPanelStatus.value === 'incomplete') {
+    return 'border-red-300/25 bg-red-400/10 text-red-100';
+  }
+
+  return 'border-amber-300/20 bg-amber-300/10 text-amber-100';
+});
+const connectionPanelMessage = computed(() => {
+  if (connectionNotice.value) {
+    return connectionNotice.value;
+  }
+
+  if (connectionPanelStatus.value === 'applied') {
+    return 'Draft applied in memory only. It has not been connectivity-tested or persisted.';
+  }
+
+  if (connectionPanelStatus.value === 'complete') {
+    return 'Draft looks complete, but it is still unverified and not connected.';
+  }
+
+  if (connectionPanelStatus.value === 'incomplete') {
+    return connectionStore.draftErrors[0]?.message ?? 'Connection draft is incomplete.';
+  }
+
+  return 'Add an OpenAI-compatible draft. It stays in memory and clears on refresh.';
+});
 
 chatStore.setEngineAdapter(demoAdapter);
 
@@ -105,12 +141,36 @@ watch(() => selectedMessages.value.length, async () => {
   });
 });
 
+watch(
+  () => [connectionStore.draft.baseUrl, connectionStore.draft.model, connectionStore.draft.apiKey],
+  () => {
+    connectionNotice.value = null;
+    connectionIssueMessages.value = [];
+    connectionSubmitStatus.value = null;
+  },
+  { flush: 'sync' },
+);
+
 function selectDemoAdapter(): void {
   adapterMode.value = 'demo';
   runtimeBusy.value = false;
   runtimeNotice.value = null;
   runtimeDiagnostics.value = null;
   chatStore.setEngineAdapter(demoAdapter);
+}
+
+function applyConnectionDraft(): void {
+  const result = connectionStore.applyDraft(new Date().toISOString());
+  connectionNotice.value = result.message;
+  connectionIssueMessages.value = result.ok ? [] : result.issues.map((issue) => issue.message);
+  connectionSubmitStatus.value = result.ok ? null : 'incomplete';
+}
+
+function clearConnectionDraft(): void {
+  connectionStore.clearAll();
+  connectionNotice.value = 'Connection draft cleared. Demo mode still works offline.';
+  connectionIssueMessages.value = [];
+  connectionSubmitStatus.value = null;
 }
 
 async function activateRuntimeAdapter(): Promise<void> {
@@ -432,6 +492,83 @@ function describeError(error: unknown): string {
 
       <div class="grid min-h-0 flex-1 gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
         <aside class="reveal reveal-delay-1 flex min-h-0 flex-col gap-5 overflow-y-auto pr-1 lg:max-h-[calc(100dvh-13rem)]">
+          <section class="panel-card">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p class="eyebrow">API Draft</p>
+                <h2 class="section-title">连接配置</h2>
+              </div>
+              <span
+                class="rounded-full border px-3 py-1 text-xs font-bold"
+                :class="connectionStatusClasses"
+              >
+                {{ connectionPanelStatus }}
+              </span>
+            </div>
+
+            <div class="space-y-2">
+              <input
+                v-model="connectionStore.draft.baseUrl"
+                class="field-input"
+                data-testid="connection-base-url-input"
+                inputmode="url"
+                placeholder="https://api.example.com/v1"
+              >
+              <input
+                v-model="connectionStore.draft.model"
+                class="field-input"
+                data-testid="connection-model-input"
+                placeholder="gpt-4.1-compatible"
+              >
+              <input
+                v-model="connectionStore.draft.apiKey"
+                class="field-input"
+                data-testid="connection-api-key-input"
+                type="password"
+                autocomplete="off"
+                placeholder="API key, kept in memory only"
+              >
+            </div>
+
+            <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                class="primary-button flex-1"
+                data-testid="connection-apply-button"
+                @click="applyConnectionDraft"
+              >
+                Apply draft
+              </button>
+              <button
+                type="button"
+                class="soft-button"
+                @click="clearConnectionDraft"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div
+              class="mt-4 rounded-2xl border px-4 py-3 text-xs leading-5"
+              :class="connectionStatusClasses"
+            >
+              <p class="font-bold">
+                {{ connectionPanelMessage }}
+              </p>
+              <p v-if="connectionStore.appliedDraft" class="mt-1 text-stone-300">
+                {{ connectionStore.appliedDraft.model }} · {{ connectionStore.appliedDraft.baseUrl }} · {{ connectionStore.maskedApiKey }}
+              </p>
+              <ul v-if="connectionIssueMessages.length" class="mt-2 space-y-1">
+                <li v-for="issue in connectionIssueMessages" :key="issue">
+                  {{ issue }}
+                </li>
+              </ul>
+              <p class="mt-2 text-stone-400">
+                未验证、不持久化、刷新后清空；真实连通性仍由 Runtime adapter 与同源 SillyTavern 设置验证。
+              </p>
+            </div>
+          </section>
+
           <section class="panel-card">
             <div class="mb-4 flex items-center justify-between gap-3">
               <div>
