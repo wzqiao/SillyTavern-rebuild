@@ -3,7 +3,11 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { useCharacterStore, useChatStore } from '@/stores';
 import type { ReforgedCharacterImportResult, ReforgedCharacterRosterItem } from '@/contracts/character';
 import type { ReforgedChatCharacterContext, ReforgedChatMessage } from '@/contracts/chat';
-import type { HeadlessEngineAdapter, HeadlessGenerationRequest } from '@/contracts/engine';
+import type {
+  EngineAdapterDiagnostics,
+  HeadlessEngineAdapter,
+  HeadlessGenerationRequest,
+} from '@/contracts/engine';
 
 type AdapterMode = 'demo' | 'runtime';
 
@@ -18,6 +22,9 @@ const editingMessageId = ref<string | null>(null);
 const editingContent = ref('');
 const importBusy = ref(false);
 const importNotice = ref<string | null>(null);
+const runtimeBusy = ref(false);
+const runtimeNotice = ref<string | null>(null);
+const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
 const chatScroll = ref<HTMLElement | null>(null);
 
 const demoAdapter: HeadlessEngineAdapter = {
@@ -53,7 +60,19 @@ const readiness = computed(() => chatStore.readiness);
 const lastImportResult = computed(() => characterStore.lastImportResult);
 const adapterModeLabel = computed(() => adapterMode.value === 'demo' ? 'Demo adapter' : 'Runtime adapter');
 const hasChatTarget = computed(() => Boolean(activeSession.value || selectedRoster.value));
+const runtimeDiagnosticLines = computed(() => [
+  ...(runtimeDiagnostics.value?.blockers ?? []),
+  ...(runtimeDiagnostics.value?.warnings ?? []),
+].slice(0, 3));
 const adapterStatusText = computed(() => {
+  if (adapterMode.value === 'runtime' && runtimeBusy.value) {
+    return 'checking SillyTavern runtime...';
+  }
+
+  if (adapterMode.value === 'runtime' && runtimeDiagnostics.value && !runtimeDiagnostics.value.ok) {
+    return runtimeDiagnostics.value.blockers[0] ?? 'runtime diagnostics did not pass';
+  }
+
   if (!hasChatTarget.value) {
     return 'import or select a character to start';
   }
@@ -62,13 +81,11 @@ const adapterStatusText = computed(() => {
     return readiness.value.canSend ? 'ready' : readiness.value.reason?.message;
   }
 
-  return 'requires SillyTavern same-origin runtime integration';
+  return readiness.value.canSend ? 'runtime ready' : runtimeNotice.value ?? readiness.value.reason?.message;
 });
 const canSend = computed(() => Boolean(draftMessage.value.trim()) && hasChatTarget.value && readiness.value.canSend && !chatStore.isGenerating);
 
-watch(adapterMode, (mode) => {
-  chatStore.setEngineAdapter(mode === 'demo' ? demoAdapter : null);
-}, { immediate: true });
+chatStore.setEngineAdapter(demoAdapter);
 
 watch(() => selectedMessages.value.length, async () => {
   await nextTick();
@@ -77,6 +94,42 @@ watch(() => selectedMessages.value.length, async () => {
     behavior: 'smooth',
   });
 });
+
+function selectDemoAdapter(): void {
+  adapterMode.value = 'demo';
+  runtimeBusy.value = false;
+  runtimeNotice.value = null;
+  runtimeDiagnostics.value = null;
+  chatStore.setEngineAdapter(demoAdapter);
+}
+
+async function activateRuntimeAdapter(): Promise<void> {
+  adapterMode.value = 'runtime';
+  runtimeBusy.value = true;
+  runtimeNotice.value = 'Checking same-origin SillyTavern runtime...';
+  runtimeDiagnostics.value = null;
+  chatStore.setEngineAdapter(null);
+
+  try {
+    const { loadHeadlessEngineAdapter } = await import('@/engine-adapter/runtimeAdapterLoader');
+    const runtimeAdapter = await loadHeadlessEngineAdapter();
+    const diagnostics = await runtimeAdapter.inspect();
+    runtimeDiagnostics.value = diagnostics;
+
+    if (!diagnostics.ok) {
+      runtimeNotice.value = diagnostics.blockers[0] ?? 'Runtime adapter diagnostics did not pass.';
+      return;
+    }
+
+    runtimeNotice.value = 'Runtime adapter ready.';
+    chatStore.setEngineAdapter(runtimeAdapter);
+  } catch (error) {
+    runtimeNotice.value = `Runtime adapter failed to load: ${describeError(error)}`;
+    chatStore.setEngineAdapter(null);
+  } finally {
+    runtimeBusy.value = false;
+  }
+}
 
 function loadDemoCharacter(): void {
   const result = characterStore.importCharacter({
@@ -182,6 +235,10 @@ async function sendMessage(): Promise<void> {
   const result = await chatStore.sendUserMessage({
     content,
     character: selectedRoster.value ? toChatCharacter(selectedRoster.value) : activeSession.value?.character,
+    runtime: {
+      mode: adapterMode.value === 'runtime' ? 'chat-completion' : 'generate-text',
+      chatCompletionType: adapterMode.value === 'runtime' ? 'quiet' : undefined,
+    },
     generation: {
       api: 'openai',
       responseLength: 220,
@@ -274,26 +331,29 @@ function describeError(error: unknown): string {
             ST-Reforged
           </h1>
           <p class="mt-3 max-w-2xl text-sm leading-6 text-stone-300 sm:text-base">
-            导入角色卡，选中角色，然后从新的 Vue/Pinia 外壳触发 headless 聊天状态流。默认 Demo adapter 可离线演示，Runtime adapter 预留给后续同源接入 SillyTavern 引擎。
+            导入角色卡，选中角色，然后从新的 Vue/Pinia 外壳触发 headless 聊天状态流。默认 Demo adapter 可离线演示，Runtime adapter 会先诊断同源 SillyTavern 引擎再接入真实 chat-completion seam。
           </p>
         </div>
 
         <div class="grid grid-cols-2 gap-2 rounded-3xl bg-black/25 p-2 text-xs font-semibold">
           <button
             type="button"
+            data-testid="demo-adapter-button"
             class="rounded-2xl px-4 py-3 transition duration-200 ease-out"
             :class="adapterMode === 'demo' ? 'bg-amber-300 text-stone-950 shadow-lg shadow-amber-500/20' : 'text-stone-300 hover:bg-white/10 hover:text-white'"
-            @click="adapterMode = 'demo'"
+            @click="selectDemoAdapter"
           >
             Demo
           </button>
           <button
             type="button"
+            data-testid="runtime-adapter-button"
             class="rounded-2xl px-4 py-3 transition duration-200 ease-out"
             :class="adapterMode === 'runtime' ? 'bg-emerald-300 text-stone-950 shadow-lg shadow-emerald-500/20' : 'text-stone-300 hover:bg-white/10 hover:text-white'"
-            @click="adapterMode = 'runtime'"
+            :disabled="runtimeBusy"
+            @click="activateRuntimeAdapter"
           >
-            Runtime
+            {{ runtimeBusy ? 'Checking...' : 'Runtime' }}
           </button>
         </div>
       </header>
@@ -390,6 +450,18 @@ function describeError(error: unknown): string {
               <p class="mt-1 text-xs text-stone-400">
                 {{ adapterModeLabel }} · {{ adapterStatusText }}
               </p>
+              <div
+                v-if="adapterMode === 'runtime' && (runtimeNotice || runtimeDiagnosticLines.length)"
+                class="mt-3 rounded-2xl border px-4 py-3 text-xs leading-5"
+                :class="runtimeDiagnostics?.ok ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100' : 'border-amber-300/20 bg-amber-300/10 text-amber-100'"
+              >
+                <p class="font-bold">{{ runtimeNotice }}</p>
+                <ul v-if="runtimeDiagnosticLines.length" class="mt-2 space-y-1">
+                  <li v-for="line in runtimeDiagnosticLines" :key="line">
+                    {{ line }}
+                  </li>
+                </ul>
+              </div>
             </div>
 
             <div class="flex flex-wrap gap-2">

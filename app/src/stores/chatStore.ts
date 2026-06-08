@@ -17,6 +17,7 @@ import type {
 import {
     createChatGenerationRequest,
     readReforgedSessionMessages,
+    sendChatRuntimeCompletion,
 } from '@/services';
 
 type Clock = () => string;
@@ -28,6 +29,7 @@ interface ChatStoreState {
     generation: ReforgedChatGenerationState;
     lastSendResult: ReforgedChatSendResult | null;
     engineAdapter: HeadlessEngineAdapter | null;
+    pendingAbortController: AbortController | null;
     nextSessionLocalId: number;
     nextMessageLocalId: number;
     nextAlternativeLocalId: number;
@@ -53,6 +55,7 @@ export const useChatStore = defineStore('chat', {
         generation: idleGenerationState(),
         lastSendResult: null,
         engineAdapter: null,
+        pendingAbortController: null,
         nextSessionLocalId: 1,
         nextMessageLocalId: 1,
         nextAlternativeLocalId: 1,
@@ -193,7 +196,16 @@ export const useChatStore = defineStore('chat', {
             const assistantMessage = this.createMessage(session.id, 'assistant', '', assistantCreatedAt, 'generating');
             session.messageIds.push(assistantMessage.id);
             this.messages.push(assistantMessage);
-            const pendingRequest = this.createPendingRequest(session.id, userMessage.id, assistantMessage.id, startedAt);
+            const isChatCompletionRuntime = input.runtime?.mode === 'chat-completion';
+            const abortController = isChatCompletionRuntime ? new AbortController() : null;
+            this.pendingAbortController = abortController ? markRaw(abortController) : null;
+            const pendingRequest = this.createPendingRequest(
+                session.id,
+                userMessage.id,
+                assistantMessage.id,
+                startedAt,
+                Boolean(abortController),
+            );
             this.generation = {
                 status: 'generating',
                 sessionId: session.id,
@@ -206,7 +218,16 @@ export const useChatStore = defineStore('chat', {
             };
 
             try {
-                const reply = await adapter.generateText(request);
+                const runtimeResult = isChatCompletionRuntime
+                    ? await sendChatRuntimeCompletion(adapter, {
+                        session,
+                        messages: this.messages,
+                        generation: input.generation,
+                        type: input.runtime?.chatCompletionType,
+                        signal: abortController?.signal,
+                    })
+                    : null;
+                const reply = runtimeResult?.text ?? await adapter.generateText(request);
                 if (!this.isActivePendingRequest(pendingRequest.id)) {
                     return createSendFailureResult(
                         createChatError('generation-cancelled', 'Generation was cancelled before completion.'),
@@ -221,9 +242,13 @@ export const useChatStore = defineStore('chat', {
                 assistantMessage.content = normalizedReply;
                 assistantMessage.status = 'sent';
                 assistantMessage.updatedAt = finishedAt;
-                assistantMessage.alternatives = [this.createAlternative(normalizedReply, finishedAt)];
+                assistantMessage.alternatives = [
+                    this.createAlternative(normalizedReply, finishedAt),
+                    ...(runtimeResult?.alternatives ?? []).map((alternative) => this.createAlternative(alternative.trim(), finishedAt)),
+                ].filter((alternative) => alternative.content.length > 0);
                 assistantMessage.activeAlternativeIndex = 0;
                 session.updatedAt = finishedAt;
+                this.pendingAbortController = null;
                 this.generation = idleGenerationState();
 
                 const result: ReforgedChatSendResult = {
@@ -250,6 +275,7 @@ export const useChatStore = defineStore('chat', {
                 assistantMessage.error = chatError;
                 assistantMessage.updatedAt = finishedAt;
                 session.updatedAt = finishedAt;
+                this.pendingAbortController = null;
                 this.generation = {
                     status: 'failed',
                     sessionId: session.id,
@@ -308,6 +334,11 @@ export const useChatStore = defineStore('chat', {
             const session = this.sessions.find((item) => item.id === pendingRequest.sessionId) ?? null;
             const userMessage = this.messages.find((item) => item.id === pendingRequest.userMessageId) ?? null;
             const assistantMessage = this.messages.find((item) => item.id === pendingRequest.assistantMessageId) ?? null;
+
+            if (pendingRequest.canAbort) {
+                this.pendingAbortController?.abort();
+            }
+            this.pendingAbortController = null;
 
             if (assistantMessage) {
                 assistantMessage.status = 'failed';
@@ -402,6 +433,7 @@ export const useChatStore = defineStore('chat', {
             this.generation = idleGenerationState();
             this.lastSendResult = null;
             this.engineAdapter = null;
+            this.pendingAbortController = null;
             this.nextSessionLocalId = 1;
             this.nextMessageLocalId = 1;
             this.nextAlternativeLocalId = 1;
@@ -462,6 +494,7 @@ export const useChatStore = defineStore('chat', {
             userMessageId: string,
             assistantMessageId: string,
             startedAt: string,
+            canAbort = false,
         ): ReforgedChatPendingRequest {
             const pendingRequest: ReforgedChatPendingRequest = {
                 id: `chat-generation-${this.nextGenerationLocalId}`,
@@ -469,9 +502,7 @@ export const useChatStore = defineStore('chat', {
                 userMessageId,
                 assistantMessageId,
                 startedAt,
-                // The current generateText() seam does not accept AbortSignal yet;
-                // cancellation is local and ignores late replies until the streaming seam lands.
-                canAbort: false,
+                canAbort,
             };
             this.nextGenerationLocalId += 1;
             return pendingRequest;

@@ -1,6 +1,10 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { HeadlessEngineAdapter, HeadlessGenerationRequest } from '@/contracts/engine';
+import type {
+    HeadlessChatCompletionRequest,
+    HeadlessEngineAdapter,
+    HeadlessGenerationRequest,
+} from '@/contracts/engine';
 import type { ReforgedChatCharacterContext } from '@/contracts/chat';
 import { useChatStore } from './chatStore';
 
@@ -159,6 +163,65 @@ describe('useChatStore', () => {
         });
     });
 
+    it('sends through the chat-completion runtime and stores normalized alternatives', async () => {
+        const generateText = vi.fn(async (): Promise<string> => {
+            throw new Error('generateText should not be called for chat-completion runtime');
+        });
+        const sendChatCompletion = vi.fn(async (_request: HeadlessChatCompletionRequest): Promise<unknown> => ({
+            choices: [
+                { message: { content: 'Runtime primary reply.' } },
+                { message: { content: 'Runtime swipe one.' } },
+            ],
+        }));
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(generateText, sendChatCompletion));
+
+        const result = await store.sendUserMessage({
+            content: 'Use runtime.',
+            character: astra,
+            runtime: {
+                mode: 'chat-completion',
+                chatCompletionType: 'normal',
+            },
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) {
+            return;
+        }
+
+        expect(generateText).not.toHaveBeenCalled();
+        expect(sendChatCompletion).toHaveBeenCalledWith({
+            messages: [
+                expect.objectContaining({ role: 'system' }),
+                {
+                    role: 'assistant',
+                    content: 'Coordinates locked. Your move, captain.',
+                },
+                {
+                    role: 'user',
+                    content: 'Use runtime.',
+                },
+            ],
+            type: 'normal',
+            signal: expect.any(AbortSignal),
+            jsonSchema: null,
+        });
+        expect(result.assistantMessage).toMatchObject({
+            content: 'Runtime primary reply.',
+            activeAlternativeIndex: 0,
+            alternatives: [
+                expect.objectContaining({ content: 'Runtime primary reply.' }),
+                expect.objectContaining({ content: 'Runtime swipe one.' }),
+            ],
+        });
+        expect(store.pendingAbortController).toBeNull();
+    });
+
     it('rejects empty messages and missing adapters without mutating chat history', async () => {
         const store = useChatStore();
 
@@ -239,6 +302,48 @@ describe('useChatStore', () => {
         });
     });
 
+    it('aborts a pending chat-completion runtime request when cancelled', async () => {
+        let capturedSignal: AbortSignal | undefined;
+        const sendChatCompletion = vi.fn((request: HeadlessChatCompletionRequest): Promise<unknown> => {
+            capturedSignal = request.signal;
+            return new Promise((_resolve, reject) => {
+                request.signal?.addEventListener('abort', () => {
+                    reject(new Error('aborted by test'));
+                });
+            });
+        });
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(vi.fn(async () => 'unused'), sendChatCompletion));
+
+        const firstSend = store.sendUserMessage({
+            content: 'Abort runtime.',
+            runtime: {
+                mode: 'chat-completion',
+            },
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        expect(store.generation).toMatchObject({
+            status: 'generating',
+            pendingRequest: {
+                canAbort: true,
+            },
+        });
+        expect(capturedSignal?.aborted).toBe(false);
+
+        expect(store.cancelGeneration('2026-06-09T00:00:03.000Z')).toBe(true);
+        expect(capturedSignal?.aborted).toBe(true);
+
+        await expect(firstSend).resolves.toMatchObject({
+            ok: false,
+            error: { code: 'generation-cancelled' },
+        });
+        expect(store.pendingAbortController).toBeNull();
+    });
+
     it('edits, deletes, and switches assistant swipes', async () => {
         const store = useChatStore();
         const result = await store.sendUserMessage({
@@ -286,7 +391,10 @@ describe('useChatStore', () => {
     });
 });
 
-function createFakeAdapter(generateText: (request: HeadlessGenerationRequest) => Promise<string>): HeadlessEngineAdapter {
+function createFakeAdapter(
+    generateText: (request: HeadlessGenerationRequest) => Promise<string>,
+    sendChatCompletion: (request: HeadlessChatCompletionRequest) => Promise<unknown> = vi.fn(async () => ({})),
+): HeadlessEngineAdapter {
     return {
         inspect: vi.fn(async () => ({
             ok: true,
@@ -305,7 +413,7 @@ function createFakeAdapter(generateText: (request: HeadlessGenerationRequest) =>
         })),
         generateText,
         generateRawData: vi.fn(async () => ({})),
-        sendChatCompletion: vi.fn(async () => ({})),
+        sendChatCompletion,
     };
 }
 

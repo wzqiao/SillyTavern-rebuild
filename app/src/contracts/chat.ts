@@ -100,6 +100,7 @@ export interface ReforgedChatSendInput {
     character?: ReforgedChatCharacterContext | null;
     generation?: ReforgedChatGenerationOptions;
     adapter?: HeadlessEngineAdapter;
+    runtime?: ReforgedChatRuntimeOptions;
 }
 
 // DRAFT: 待主干评审
@@ -157,6 +158,15 @@ export type ReforgedChatEngineMessage = ReforgedChatCompletionMessage;
 
 // DRAFT: 待主干评审
 export type ReforgedChatRuntimeSource = 'stream' | 'non-stream' | 'text';
+
+// DRAFT: 待主干评审
+export type ReforgedChatRuntimeMode = 'generate-text' | 'chat-completion';
+
+// DRAFT: 待主干评审
+export interface ReforgedChatRuntimeOptions {
+    mode: ReforgedChatRuntimeMode;
+    chatCompletionType?: HeadlessChatCompletionRequest['type'];
+}
 
 // DRAFT: 待主干评审
 export type ReforgedChatRuntimeEventType = 'snapshot' | 'complete';
