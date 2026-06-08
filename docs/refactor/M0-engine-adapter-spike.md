@@ -34,6 +34,7 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - Lazy runtime adapter loader in `app/src/engine-adapter/runtimeAdapterLoader.ts`, keeping `@sillytavern/*` imports behind the runtime activation path instead of statically pulling legacy modules into the standalone Vite workbench.
 - Pinia chat store in `app/src/stores/chatStore.ts`, keeping the M0 chat state layer thin: start/select/remove sessions, send user messages through an injectable `HeadlessEngineAdapter`, route Runtime mode through `chatRuntimeService`, append assistant replies and normalized alternatives, prevent overlapping generations, abort chat-completion runtime requests, and edit/delete/switch assistant alternatives. The store does not call `Generate()`, import `@sillytavern/*`, or touch legacy DOM.
 - M0 HomeView workbench in `app/src/views/HomeView.vue`, connecting the character store and chat store into a visible mobile-first path: demo character import, roster selection, first message display, chat composer readiness, demo headless adapter replies, edit/delete, and local assistant alternatives. Runtime adapter mode now lazily loads the headless adapter, runs diagnostics before enabling sends, and surfaces safe failure details when standalone Vite cannot resolve the same-origin SillyTavern module URLs.
+- Visible worldbook library panel in `app/src/views/HomeView.vue`, wiring the Pinia worldbook store into the M0 workbench for demo lorebook import, pasted SillyTavern world info JSON import, library selection, entry counts, and a compact active-lore preview. The UI stays read-only and does not yet inject selected lore into chat generation context.
 
 ## Remaining M0 Verification
 - Run the adapter inside the Vite app served from the same origin as SillyTavern and confirm the `@sillytavern/*` external URLs resolve.
@@ -41,7 +42,7 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - With user-provided API settings, trigger one real OpenAI-compatible generation and confirm whether streaming data can be consumed through the `sendOpenAIRequest` path.
 - Inventory runtime import failures caused by missing legacy DOM nodes and decide between a minimal hidden compatibility layer or deeper engine extraction.
 - Validate the file picker flow against a broader set of user-supplied JSON / PNG cards, including extensionless uploads that rely on MIME type detection.
-- Wire the worldbook store to a visible library UI and validate against user-supplied SillyTavern world info exports.
+- Validate the visible worldbook library against user-supplied SillyTavern world info exports, then decide how selected lorebooks should be passed into chat generation context without coupling HomeView to parser internals.
 - Validate the gated Runtime mode against a real same-origin SillyTavern runtime, including diagnostics display, chat-completion request shape, normalized alternatives/swipes, and abort behavior.
 - Confirm whether `sendOpenAIRequest()` can run in the new app without legacy DOM breakage once API settings and same-origin module URLs are available.
 - Decide whether YAML, CHARX, and BYAF should be parsed in the front-end, delegated to the existing ST backend import endpoint, or deferred until after the M0 vertical slice.

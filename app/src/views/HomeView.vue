@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { useCharacterStore, useChatStore } from '@/stores';
+import { useCharacterStore, useChatStore, useWorldbookStore } from '@/stores';
 import { createCharacterImportInputFromFile } from '@/services';
 import type { ReforgedCharacterImportResult, ReforgedCharacterRosterItem } from '@/contracts/character';
 import type { ReforgedChatCharacterContext, ReforgedChatMessage } from '@/contracts/chat';
@@ -9,20 +9,25 @@ import type {
   HeadlessEngineAdapter,
   HeadlessGenerationRequest,
 } from '@/contracts/engine';
+import type { ReforgedWorldbookImportResult, ReforgedWorldbookLibraryItem } from '@/contracts/worldbook';
 
 type AdapterMode = 'demo' | 'runtime';
 
 const characterStore = useCharacterStore();
 const chatStore = useChatStore();
+const worldbookStore = useWorldbookStore();
 
 const adapterMode = ref<AdapterMode>('demo');
 const draftMessage = ref('Plot a safe course through the debris field.');
 const pastedCard = ref('');
 const pastedFileName = ref('pasted-character.json');
+const pastedWorldbook = ref('');
+const pastedWorldbookFileName = ref('pasted-worldbook.json');
 const editingMessageId = ref<string | null>(null);
 const editingContent = ref('');
 const importBusy = ref(false);
 const importNotice = ref<string | null>(null);
+const worldbookNotice = ref<string | null>(null);
 const runtimeBusy = ref(false);
 const runtimeNotice = ref<string | null>(null);
 const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
@@ -55,6 +60,8 @@ const demoAdapter: HeadlessEngineAdapter = {
 };
 
 const selectedRoster = computed(() => characterStore.selectedCharacter);
+const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
+const selectedWorldbookPreview = computed(() => selectedWorldbook.value?.worldbook.entries.slice(0, 3) ?? []);
 const selectedMessages = computed(() => chatStore.selectedMessages);
 const activeSession = computed(() => chatStore.selectedSession);
 const readiness = computed(() => chatStore.readiness);
@@ -209,6 +216,70 @@ function handleImportResult(result: ReforgedCharacterImportResult): void {
   importNotice.value = `${result.card.name} imported and opened.`;
 }
 
+function loadDemoWorldbook(): void {
+  const result = worldbookStore.importWorldbook({
+    fileName: 'astra-routes-worldbook.json',
+    text: JSON.stringify({
+      name: 'Astra Route Notes',
+      entries: {
+        0: {
+          uid: 0,
+          key: ['blue giant', 'debris field'],
+          comment: 'Blue giant hazards',
+          content: 'The blue giant throws off cheap sensors; Astra trusts triangulated star drift instead.',
+          order: 120,
+          position: 0,
+        },
+        1: {
+          uid: 1,
+          key: ['captain', 'course'],
+          keysecondary: ['safe'],
+          comment: 'Safe course protocol',
+          content: 'A safe course means trading speed for silence: three burns, then coast dark.',
+          selective: true,
+          order: 90,
+          position: 1,
+        },
+      },
+    }),
+  }, new Date().toISOString());
+
+  handleWorldbookImportResult(result);
+}
+
+function importPastedWorldbook(): void {
+  if (!pastedWorldbook.value.trim()) {
+    worldbookNotice.value = 'Paste a SillyTavern world info JSON first.';
+    return;
+  }
+
+  const result = worldbookStore.importWorldbook({
+    fileName: pastedWorldbookFileName.value.trim() || 'pasted-worldbook.json',
+    text: pastedWorldbook.value,
+  }, new Date().toISOString());
+
+  handleWorldbookImportResult(result);
+
+  if (result.ok) {
+    pastedWorldbook.value = '';
+  }
+}
+
+function handleWorldbookImportResult(result: ReforgedWorldbookImportResult): void {
+  if (!result.ok) {
+    worldbookNotice.value = result.message;
+    return;
+  }
+
+  worldbookNotice.value = `${result.worldbook.name} imported with ${result.worldbook.entries.length} entries.`;
+}
+
+function selectWorldbook(libraryItem: ReforgedWorldbookLibraryItem): void {
+  if (worldbookStore.selectWorldbook(libraryItem.id)) {
+    worldbookNotice.value = `${libraryItem.worldbook.name} selected.`;
+  }
+}
+
 function openCharacter(rosterItem: ReforgedCharacterRosterItem): void {
   characterStore.selectCharacter(rosterItem.id);
 
@@ -356,8 +427,8 @@ function describeError(error: unknown): string {
         </div>
       </header>
 
-      <div class="grid flex-1 gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
-        <aside class="reveal reveal-delay-1 flex flex-col gap-5">
+      <div class="grid min-h-0 flex-1 gap-5 lg:grid-cols-[380px_minmax(0,1fr)]">
+        <aside class="reveal reveal-delay-1 flex min-h-0 flex-col gap-5 overflow-y-auto pr-1 lg:max-h-[calc(100dvh-13rem)]">
           <section class="panel-card">
             <div class="mb-4 flex items-center justify-between gap-3">
               <div>
@@ -440,6 +511,98 @@ function describeError(error: unknown): string {
 
             <div v-else class="rounded-3xl border border-dashed border-white/15 p-5 text-sm leading-6 text-stone-400">
               还没有角色。先点 Demo card，或者导入一张 SillyTavern V2/V3 JSON/PNG 角色卡。
+            </div>
+          </section>
+
+          <section class="panel-card min-h-0">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p class="eyebrow">Lorebook Library</p>
+                <h2 class="section-title">世界书</h2>
+              </div>
+              <button type="button" class="soft-button" @click="loadDemoWorldbook">
+                Demo lore
+              </button>
+            </div>
+
+            <div class="space-y-2">
+              <input
+                v-model="pastedWorldbookFileName"
+                class="field-input"
+                placeholder="pasted-worldbook.json"
+              >
+              <textarea
+                v-model="pastedWorldbook"
+                class="field-input min-h-24 resize-none"
+                data-testid="worldbook-paste-input"
+                placeholder='Paste SillyTavern world info JSON, then tap "Import lorebook".'
+              />
+              <button
+                type="button"
+                class="primary-button w-full"
+                data-testid="worldbook-import-button"
+                @click="importPastedWorldbook"
+              >
+                Import lorebook
+              </button>
+            </div>
+
+            <p v-if="worldbookNotice" class="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs leading-5 text-stone-300">
+              {{ worldbookNotice }}
+            </p>
+
+            <div class="mt-4 flex items-center justify-between">
+              <p class="text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
+                {{ worldbookStore.worldbooks.length }} lorebooks
+              </p>
+              <p v-if="selectedWorldbook" class="rounded-full bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-100">
+                {{ selectedWorldbook.worldbook.entries.length }} entries active
+              </p>
+            </div>
+
+            <div v-if="worldbookStore.worldbooks.length" class="mt-3 max-h-72 space-y-3 overflow-y-auto pr-1">
+              <button
+                v-for="worldbook in worldbookStore.worldbooks"
+                :key="worldbook.id"
+                type="button"
+                class="roster-card"
+                :class="worldbook.id === selectedWorldbook?.id ? 'border-emerald-300/60 bg-emerald-300/10' : 'border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/[0.07]'"
+                @click="selectWorldbook(worldbook)"
+              >
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-200 to-sky-200 text-base font-black text-stone-950">
+                  WI
+                </span>
+                <span class="min-w-0 text-left">
+                  <span class="block truncate text-sm font-bold text-stone-100">{{ worldbook.worldbook.name }}</span>
+                  <span class="line-clamp-2 text-xs leading-5 text-stone-400">
+                    {{ worldbook.worldbook.source }} · {{ worldbook.worldbook.entries.length }} entries
+                  </span>
+                </span>
+              </button>
+            </div>
+
+            <div v-else class="mt-3 rounded-3xl border border-dashed border-white/15 p-5 text-sm leading-6 text-stone-400">
+              还没有世界书。先点 Demo lore，或者粘贴一个 SillyTavern world info JSON。
+            </div>
+
+            <div v-if="selectedWorldbookPreview.length" class="mt-4 rounded-3xl border border-emerald-300/15 bg-emerald-300/5 p-4">
+              <p class="mb-3 text-xs font-black uppercase tracking-[0.2em] text-emerald-100">
+                Active lore preview
+              </p>
+              <div class="space-y-3">
+                <div
+                  v-for="entry in selectedWorldbookPreview"
+                  :key="entry.id"
+                  class="rounded-2xl bg-black/20 px-3 py-2"
+                >
+                  <p class="truncate text-xs font-bold text-stone-100">
+                    {{ entry.comment || entry.primaryKeys.join(', ') || 'Untitled entry' }}
+                  </p>
+                  <p class="mt-1 line-clamp-2 text-xs leading-5 text-stone-400">
+                    {{ entry.content || 'No prompt content yet.' }}
+                  </p>
+                </div>
+              </div>
             </div>
           </section>
         </aside>
