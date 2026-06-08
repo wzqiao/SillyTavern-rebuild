@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
     ReforgedChatCharacterContext,
+    ReforgedChatLorebookContext,
     ReforgedChatMessage,
     ReforgedChatSession,
 } from '@/contracts/chat';
@@ -90,6 +91,36 @@ describe('chatGenerationService', () => {
         ]);
     });
 
+    it('appends selected worldbook entries to the system prompt', () => {
+        const session = createSession(['message-1']);
+        const messages = [
+            createMessage('message-1', 'user', 'Plot a safe course.'),
+        ];
+
+        expect(createChatEngineMessages(session, messages, {}, [createLorebook()])).toEqual([
+            {
+                role: 'system',
+                content: [
+                    'You are roleplaying as Astra. Stay in character and continue the scene naturally.',
+                    'Description: A navigator who reads star maps like sheet music.',
+                    'Personality: Calm, precise, quietly playful.',
+                    'Scenario: A damaged survey ship is drifting near a blue giant.',
+                    'World lore context:',
+                    'Use these selected lore notes as additional scene context.',
+                    'Lorebook: Astra Route Notes',
+                    [
+                        'The blue giant throws off cheap sensors.',
+                        'A safe course means trading speed for silence.',
+                    ].join('\n\n'),
+                ].join('\n\n'),
+            },
+            {
+                role: 'user',
+                content: 'Plot a safe course.',
+            },
+        ]);
+    });
+
     it('reads messages in session order and ignores missing ids', () => {
         const session = createSession(['message-2', 'missing', 'message-1']);
         const messages = [
@@ -112,6 +143,25 @@ function createSession(messageIds: string[]): ReforgedChatSession {
         createdAt: '2026-06-09T00:00:00.000Z',
         updatedAt: '2026-06-09T00:00:00.000Z',
         messageIds,
+    };
+}
+
+function createLorebook(): ReforgedChatLorebookContext {
+    return {
+        id: 'worldbook-1',
+        name: 'Astra Route Notes',
+        entries: [
+            {
+                id: 'entry-high',
+                title: 'Blue giant hazards',
+                content: 'The blue giant throws off cheap sensors.',
+            },
+            {
+                id: 'entry-low',
+                title: 'Safe course protocol',
+                content: 'A safe course means trading speed for silence.',
+            },
+        ],
     };
 }
 

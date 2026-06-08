@@ -45,6 +45,20 @@ export interface ReforgedChatCharacterContext {
 }
 
 // DRAFT: 待主干评审
+export interface ReforgedChatLorebookEntryContext {
+    id: string;
+    title?: string;
+    content: string;
+}
+
+// DRAFT: 待主干评审
+export interface ReforgedChatLorebookContext {
+    id: string;
+    name: string;
+    entries: ReforgedChatLorebookEntryContext[];
+}
+
+// DRAFT: 待主干评审
 export interface ReforgedChatMessageAlternative {
     id: string;
     content: string;
@@ -98,6 +112,7 @@ export interface ReforgedChatSendInput {
     content: string;
     sessionId?: string;
     character?: ReforgedChatCharacterContext | null;
+    lorebooks?: ReforgedChatLorebookContext[];
     generation?: ReforgedChatGenerationOptions;
     adapter?: HeadlessEngineAdapter;
     runtime?: ReforgedChatRuntimeOptions;
@@ -216,6 +231,7 @@ export type ReforgedChatRuntimeEvent =
 export interface ReforgedChatRuntimeRequestInput {
     session: ReforgedChatSession;
     messages: ReforgedChatMessage[];
+    lorebooks?: ReforgedChatLorebookContext[];
     generation?: ReforgedChatGenerationOptions;
     type?: HeadlessChatCompletionRequest['type'];
     signal?: AbortSignal;

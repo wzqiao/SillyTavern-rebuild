@@ -5,7 +5,7 @@ import type {
     HeadlessEngineAdapter,
     HeadlessGenerationRequest,
 } from '@/contracts/engine';
-import type { ReforgedChatCharacterContext } from '@/contracts/chat';
+import type { ReforgedChatCharacterContext, ReforgedChatLorebookContext } from '@/contracts/chat';
 import { useChatStore } from './chatStore';
 
 const astra: ReforgedChatCharacterContext = {
@@ -117,6 +117,44 @@ describe('useChatStore', () => {
         expect(store.lastSendResult).toEqual(result);
     });
 
+    it('adds per-send lorebook context to the generation prompt without storing it as chat history', async () => {
+        const generateText = vi.fn(async (_request: HeadlessGenerationRequest): Promise<string> => 'The ship follows the quiet route.');
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(generateText));
+
+        await expect(store.sendUserMessage({
+            content: 'Plot a safe course.',
+            character: astra,
+            lorebooks: [createLorebook('Astra Route Notes', 'A safe course means three burns, then coast dark.')],
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]))).resolves.toMatchObject({ ok: true });
+
+        expect(generateText).toHaveBeenCalledWith(expect.objectContaining({
+            prompt: [
+                expect.objectContaining({
+                    role: 'system',
+                    content: expect.stringContaining('A safe course means three burns, then coast dark.'),
+                }),
+                expect.objectContaining({
+                    role: 'assistant',
+                    content: 'Coordinates locked. Your move, captain.',
+                }),
+                expect.objectContaining({
+                    role: 'user',
+                    content: 'Plot a safe course.',
+                }),
+            ],
+        }));
+        expect(store.selectedMessages.map((message) => [message.role, message.content])).toEqual([
+            ['assistant', 'Coordinates locked. Your move, captain.'],
+            ['user', 'Plot a safe course.'],
+            ['assistant', 'The ship follows the quiet route.'],
+        ]);
+    });
+
     it('records generation failures without dropping the user message', async () => {
         const generateText = vi.fn(async (): Promise<string> => {
             throw new Error('provider offline');
@@ -179,6 +217,7 @@ describe('useChatStore', () => {
         const result = await store.sendUserMessage({
             content: 'Use runtime.',
             character: astra,
+            lorebooks: [createLorebook('Runtime Routes', 'Runtime lore should reach chat completion.')],
             runtime: {
                 mode: 'chat-completion',
                 chatCompletionType: 'normal',
@@ -197,7 +236,10 @@ describe('useChatStore', () => {
         expect(generateText).not.toHaveBeenCalled();
         expect(sendChatCompletion).toHaveBeenCalledWith({
             messages: [
-                expect.objectContaining({ role: 'system' }),
+                expect.objectContaining({
+                    role: 'system',
+                    content: expect.stringContaining('Runtime lore should reach chat completion.'),
+                }),
                 {
                     role: 'assistant',
                     content: 'Coordinates locked. Your move, captain.',
@@ -414,6 +456,20 @@ function createFakeAdapter(
         generateText,
         generateRawData: vi.fn(async () => ({})),
         sendChatCompletion,
+    };
+}
+
+function createLorebook(name: string, content: string): ReforgedChatLorebookContext {
+    return {
+        id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        name,
+        entries: [
+            {
+                id: 'entry-1',
+                title: 'Route note',
+                content,
+            },
+        ],
     };
 }
 

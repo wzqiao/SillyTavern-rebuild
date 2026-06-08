@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useCharacterStore, useChatStore, useWorldbookStore } from '@/stores';
-import { createCharacterImportInputFromFile } from '@/services';
+import { createCharacterImportInputFromFile, createChatLorebookContext } from '@/services';
 import type { ReforgedCharacterImportResult, ReforgedCharacterRosterItem } from '@/contracts/character';
 import type { ReforgedChatCharacterContext, ReforgedChatMessage } from '@/contracts/chat';
 import type {
@@ -61,7 +61,9 @@ const demoAdapter: HeadlessEngineAdapter = {
 
 const selectedRoster = computed(() => characterStore.selectedCharacter);
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
-const selectedWorldbookPreview = computed(() => selectedWorldbook.value?.worldbook.entries.slice(0, 3) ?? []);
+const selectedLorebooks = computed(() => selectedWorldbook.value ? [createChatLorebookContext(selectedWorldbook.value)] : []);
+const selectedLorebook = computed(() => selectedLorebooks.value[0] ?? null);
+const selectedWorldbookPreview = computed(() => selectedLorebook.value?.entries.slice(0, 3) ?? []);
 const selectedMessages = computed(() => chatStore.selectedMessages);
 const activeSession = computed(() => chatStore.selectedSession);
 const readiness = computed(() => chatStore.readiness);
@@ -304,6 +306,7 @@ async function sendMessage(): Promise<void> {
   const result = await chatStore.sendUserMessage({
     content,
     character: selectedRoster.value ? toChatCharacter(selectedRoster.value) : activeSession.value?.character,
+    lorebooks: selectedLorebooks.value,
     runtime: {
       mode: adapterMode.value === 'runtime' ? 'chat-completion' : 'generate-text',
       chatCompletionType: adapterMode.value === 'runtime' ? 'quiet' : undefined,
@@ -435,7 +438,12 @@ function describeError(error: unknown): string {
                 <p class="eyebrow">Character Intake</p>
                 <h2 class="section-title">角色导入</h2>
               </div>
-              <button type="button" class="soft-button" @click="loadDemoCharacter">
+              <button
+                type="button"
+                class="soft-button"
+                data-testid="demo-character-button"
+                @click="loadDemoCharacter"
+              >
                 Demo card
               </button>
             </div>
@@ -555,8 +563,8 @@ function describeError(error: unknown): string {
               <p class="text-xs font-bold uppercase tracking-[0.2em] text-stone-500">
                 {{ worldbookStore.worldbooks.length }} lorebooks
               </p>
-              <p v-if="selectedWorldbook" class="rounded-full bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-100">
-                {{ selectedWorldbook.worldbook.entries.length }} entries active
+              <p v-if="selectedLorebook" class="rounded-full bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-100">
+                {{ selectedLorebook.entries.length }} entries active
               </p>
             </div>
 
@@ -596,7 +604,7 @@ function describeError(error: unknown): string {
                   class="rounded-2xl bg-black/20 px-3 py-2"
                 >
                   <p class="truncate text-xs font-bold text-stone-100">
-                    {{ entry.comment || entry.primaryKeys.join(', ') || 'Untitled entry' }}
+                    {{ entry.title || 'Untitled entry' }}
                   </p>
                   <p class="mt-1 line-clamp-2 text-xs leading-5 text-stone-400">
                     {{ entry.content || 'No prompt content yet.' }}

@@ -2,6 +2,7 @@ import type { HeadlessGenerationRequest } from '@/contracts/engine';
 import type {
     ReforgedChatEngineMessage,
     ReforgedChatGenerationOptions,
+    ReforgedChatLorebookContext,
     ReforgedChatMessage,
     ReforgedChatSession,
 } from '@/contracts/chat';
@@ -10,6 +11,7 @@ import type {
 export interface ReforgedChatGenerationRequestInput {
     session: ReforgedChatSession;
     messages: ReforgedChatMessage[];
+    lorebooks?: ReforgedChatLorebookContext[];
     generation?: ReforgedChatGenerationOptions;
 }
 
@@ -17,7 +19,7 @@ export function createChatGenerationRequest(input: ReforgedChatGenerationRequest
     const options = input.generation ?? {};
 
     return {
-        prompt: createChatEngineMessages(input.session, input.messages, options),
+        prompt: createChatEngineMessages(input.session, input.messages, options, input.lorebooks),
         api: options.api,
         instructOverride: options.instructOverride,
         quietToLoud: options.quietToLoud,
@@ -32,9 +34,10 @@ export function createChatEngineMessages(
     session: ReforgedChatSession,
     allMessages: ReforgedChatMessage[],
     options: ReforgedChatGenerationOptions = {},
+    lorebooks: ReforgedChatLorebookContext[] = [],
 ): ReforgedChatEngineMessage[] {
     const engineMessages: ReforgedChatEngineMessage[] = [];
-    const systemPrompt = options.systemPrompt?.trim() || createCharacterSystemPrompt(session);
+    const systemPrompt = createSystemPrompt(session, options, lorebooks);
 
     if (systemPrompt) {
         engineMessages.push({
@@ -66,6 +69,17 @@ export function readReforgedSessionMessages(
         .filter((message): message is ReforgedChatMessage => Boolean(message));
 }
 
+function createSystemPrompt(
+    session: ReforgedChatSession,
+    options: ReforgedChatGenerationOptions,
+    lorebooks: ReforgedChatLorebookContext[],
+): string {
+    return [
+        options.systemPrompt?.trim() || createCharacterSystemPrompt(session),
+        createLorebookSystemPrompt(lorebooks),
+    ].filter(Boolean).join('\n\n');
+}
+
 function createCharacterSystemPrompt(session: ReforgedChatSession): string {
     const character = session.character;
     if (!character) {
@@ -80,6 +94,34 @@ function createCharacterSystemPrompt(session: ReforgedChatSession): string {
     ].filter(Boolean);
 
     return sections.join('\n\n');
+}
+
+function createLorebookSystemPrompt(lorebooks: ReforgedChatLorebookContext[]): string {
+    const lorebookSections = lorebooks
+        .map((lorebook) => formatLorebook(lorebook))
+        .filter(Boolean);
+
+    if (lorebookSections.length === 0) {
+        return '';
+    }
+
+    return [
+        'World lore context:',
+        'Use these selected lore notes as additional scene context.',
+        ...lorebookSections,
+    ].join('\n\n');
+}
+
+function formatLorebook(lorebook: ReforgedChatLorebookContext): string {
+    const entries = lorebook.entries
+        .map((entry) => entry.content.trim())
+        .filter(Boolean);
+
+    if (entries.length === 0) {
+        return '';
+    }
+
+    return [`Lorebook: ${lorebook.name}`, entries.join('\n\n')].join('\n\n');
 }
 
 function formatCharacterSection(label: string, value: string | undefined): string {

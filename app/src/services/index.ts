@@ -2,6 +2,7 @@ export { detectCharacterImportFormat, importCharacterCard } from './characterImp
 export { createCharacterImportInputFromFile } from './characterFileImportService';
 export type { ReforgedCharacterImportFileLike } from './characterFileImportService';
 export { detectWorldbookImportFormat, importWorldbook } from './worldbookImportService';
+export { createChatLorebookContext } from './worldbookLoreContextService';
 export {
     createChatEngineMessages,
     createChatGenerationRequest,

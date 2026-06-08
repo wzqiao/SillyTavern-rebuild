@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { HeadlessChatCompletionRequest, HeadlessEngineAdapter } from '@/contracts/engine';
 import type {
     ReforgedChatCharacterContext,
+    ReforgedChatLorebookContext,
     ReforgedChatMessage,
     ReforgedChatSession,
 } from '@/contracts/chat';
@@ -35,11 +36,18 @@ describe('chatRuntimeService', () => {
                 systemPrompt: 'Custom system prompt.',
                 jsonSchema: { returnInvalid: true },
             },
+            lorebooks: [createLorebook()],
         })).toEqual({
             messages: [
                 {
                     role: 'system',
-                    content: 'Custom system prompt.',
+                    content: [
+                        'Custom system prompt.',
+                        'World lore context:',
+                        'Use these selected lore notes as additional scene context.',
+                        'Lorebook: Astra Route Notes',
+                        'The blue giant throws off cheap sensors.',
+                    ].join('\n\n'),
                 },
                 {
                     role: 'assistant',
@@ -410,6 +418,20 @@ function createMessage(
         status: 'sent',
         alternatives: [],
         activeAlternativeIndex: -1,
+    };
+}
+
+function createLorebook(): ReforgedChatLorebookContext {
+    return {
+        id: 'worldbook-1',
+        name: 'Astra Route Notes',
+        entries: [
+            {
+                id: 'entry-1',
+                title: 'Blue giant hazards',
+                content: 'The blue giant throws off cheap sensors.',
+            },
+        ],
     };
 }
 

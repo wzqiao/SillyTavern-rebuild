@@ -190,6 +190,7 @@ export const useChatStore = defineStore('chat', {
             const request = createChatGenerationRequest({
                 session,
                 messages: this.messages,
+                lorebooks: input.lorebooks,
                 generation: input.generation,
             });
             const assistantCreatedAt = clock();
@@ -222,6 +223,7 @@ export const useChatStore = defineStore('chat', {
                     ? await sendChatRuntimeCompletion(adapter, {
                         session,
                         messages: this.messages,
+                        lorebooks: input.lorebooks,
                         generation: input.generation,
                         type: input.runtime?.chatCompletionType,
                         signal: abortController?.signal,

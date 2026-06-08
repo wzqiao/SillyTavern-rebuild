@@ -21,7 +21,7 @@ export class ReforgedChatRuntimeNormalizationError extends Error {
 
 export function createChatCompletionRequest(input: ReforgedChatRuntimeRequestInput): HeadlessChatCompletionRequest {
     return {
-        messages: createChatEngineMessages(input.session, input.messages, input.generation),
+        messages: createChatEngineMessages(input.session, input.messages, input.generation, input.lorebooks),
         type: input.type ?? 'quiet',
         signal: input.signal,
         jsonSchema: input.generation?.jsonSchema ?? null,
