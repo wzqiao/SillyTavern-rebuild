@@ -46,3 +46,58 @@ export interface ReforgedCharacterCardPngParseResult {
     keyword: string | null;
     reasons: ReforgedCharacterCardPngParseReason[];
 }
+
+// DRAFT: 待主干评审
+export type ReforgedCharacterImportFormat =
+    | 'json'
+    | 'png'
+    | 'yaml'
+    | 'charx'
+    | 'byaf'
+    | 'unknown';
+
+// DRAFT: 待主干评审
+export type ReforgedCharacterImportFailureCode =
+    | 'unsupported-format'
+    | 'missing-content'
+    | 'invalid-json'
+    | 'empty-character-card'
+    | 'png-metadata-not-found'
+    | 'png-metadata-invalid';
+
+// DRAFT: 待主干评审
+export interface ReforgedCharacterImportInput {
+    fileName: string;
+    mimeType?: string;
+    text?: string;
+    bytes?: ArrayBuffer | Uint8Array | readonly number[];
+}
+
+// DRAFT: 待主干评审
+export interface ReforgedCharacterImportSource {
+    fileName: string;
+    format: ReforgedCharacterImportFormat;
+    mimeType?: string;
+}
+
+// DRAFT: 待主干评审
+export interface ReforgedCharacterImportSuccess {
+    ok: true;
+    card: ReforgedCharacterCard;
+    source: ReforgedCharacterImportSource;
+    warnings: ReforgedCharacterCardPngParseReason[];
+}
+
+// DRAFT: 待主干评审
+export interface ReforgedCharacterImportFailure {
+    ok: false;
+    code: ReforgedCharacterImportFailureCode;
+    message: string;
+    source: ReforgedCharacterImportSource;
+    reasons: ReforgedCharacterCardPngParseReason[];
+}
+
+// DRAFT: 待主干评审
+export type ReforgedCharacterImportResult =
+    | ReforgedCharacterImportSuccess
+    | ReforgedCharacterImportFailure;
