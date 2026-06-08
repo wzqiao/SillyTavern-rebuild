@@ -82,6 +82,15 @@ export interface ReforgedWorldbookImportInput {
 }
 
 // DRAFT: 待主干评审
+export interface ReforgedWorldbookLibraryItem {
+    id: string;
+    worldbook: ReforgedWorldbook;
+    source: ReforgedWorldbookImportSource;
+    importedAt: string;
+    warnings: string[];
+}
+
+// DRAFT: 待主干评审
 export interface ReforgedWorldbookImportSource {
     fileName: string;
     mimeType?: string;
