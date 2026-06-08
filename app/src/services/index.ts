@@ -5,3 +5,10 @@ export {
     readReforgedSessionMessages,
 } from './chatGenerationService';
 export type { ReforgedChatGenerationRequestInput } from './chatGenerationService';
+export {
+    ReforgedChatRuntimeNormalizationError,
+    collectChatCompletionResult,
+    createChatCompletionRequest,
+    normalizeChatCompletionEvents,
+    sendChatRuntimeCompletion,
+} from './chatRuntimeService';

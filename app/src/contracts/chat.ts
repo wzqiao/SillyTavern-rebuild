@@ -2,6 +2,7 @@
 
 import type {
     HeadlessEngineAdapter,
+    HeadlessChatCompletionRequest,
     HeadlessGenerationRequest,
     ReforgedChatCompletionMessage,
     ReforgedChatRole,
@@ -153,3 +154,59 @@ export type ReforgedChatSendResult = ReforgedChatSendSuccess | ReforgedChatSendF
 
 // DRAFT: 待主干评审
 export type ReforgedChatEngineMessage = ReforgedChatCompletionMessage;
+
+// DRAFT: 待主干评审
+export type ReforgedChatRuntimeSource = 'stream' | 'non-stream' | 'text';
+
+// DRAFT: 待主干评审
+export type ReforgedChatRuntimeEventType = 'snapshot' | 'complete';
+
+// DRAFT: 待主干评审
+export interface ReforgedChatRuntimeSnapshot {
+    text: string;
+    alternatives: string[];
+    reasoning: string;
+    reasoningSignature: string | null;
+    images: string[];
+    toolCalls: ReforgedChatRuntimeToolCall[];
+    toolSignatures: Record<string, string>;
+    logprobs: unknown;
+    finishReason: string | null;
+    source: ReforgedChatRuntimeSource;
+    chunkCount: number;
+}
+
+// DRAFT: 待主干评审
+export interface ReforgedChatRuntimeToolCall {
+    id?: string;
+    type?: string;
+    name?: string;
+    argumentsText?: string;
+    argumentsJson?: unknown;
+    signature?: string | null;
+}
+
+// DRAFT: 待主干评审
+export interface ReforgedChatRuntimeResult extends ReforgedChatRuntimeSnapshot {
+    completed: true;
+}
+
+// DRAFT: 待主干评审
+export type ReforgedChatRuntimeEvent =
+    | {
+        type: 'snapshot';
+        snapshot: ReforgedChatRuntimeSnapshot;
+    }
+    | {
+        type: 'complete';
+        result: ReforgedChatRuntimeResult;
+    };
+
+// DRAFT: 待主干评审
+export interface ReforgedChatRuntimeRequestInput {
+    session: ReforgedChatSession;
+    messages: ReforgedChatMessage[];
+    generation?: ReforgedChatGenerationOptions;
+    type?: HeadlessChatCompletionRequest['type'];
+    signal?: AbortSignal;
+}
