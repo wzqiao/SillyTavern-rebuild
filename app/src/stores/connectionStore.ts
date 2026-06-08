@@ -68,6 +68,7 @@ export const useConnectionStore = defineStore('connection', {
             return (input = {}) => createRuntimeHandoff({
                 appliedDraft: state.appliedDraft,
                 draft: normalizeDraft(state.draft),
+                runtimeConnectionInjected: input.runtimeConnectionInjected === true,
                 runtimeAdapterReady: input.runtimeAdapterReady === true,
             });
         },
@@ -158,6 +159,7 @@ function createRuntimeHandoff(input: {
     appliedDraft: ReforgedAppliedConnectionDraft | null;
     draft: ReforgedConnectionDraft;
     runtimeAdapterReady: boolean;
+    runtimeConnectionInjected: boolean;
 }): ReforgedConnectionRuntimeHandoff {
     const generation = toGenerationMapping(input.draft.provider);
     const issues = validateDraft(input.draft);
@@ -218,6 +220,20 @@ function createRuntimeHandoff(input: {
                 message: 'Runtime adapter is not ready; this applied draft has not been handed to a live request path.',
             }],
             message: 'Applied draft is memory-only and waiting for a ready Runtime adapter.',
+        };
+    }
+
+    if (!input.runtimeConnectionInjected) {
+        return {
+            status: 'applied-but-unwired',
+            canAttempt: false,
+            generation,
+            connection,
+            issues: [{
+                code: 'runtime-connection-unwired',
+                message: 'Runtime adapter is ready, but the applied draft is not injected into SillyTavern request settings.',
+            }],
+            message: 'Runtime adapter is ready, but the applied connection draft is not wired into real requests yet.',
         };
     }
 

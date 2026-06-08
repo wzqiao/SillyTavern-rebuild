@@ -160,6 +160,24 @@ describe('useConnectionStore', () => {
         });
 
         expect(store.runtimeHandoff({ runtimeAdapterReady: true })).toMatchObject({
+            status: 'applied-but-unwired',
+            canAttempt: false,
+            generation: { api: 'openai' },
+            connection: {
+                id: 'connection-draft-1',
+                baseUrl: 'https://api.example.test/v1',
+                model: 'gpt-example',
+                api: 'openai',
+            },
+            issues: [{
+                code: 'runtime-connection-unwired',
+            }],
+        });
+
+        expect(store.runtimeHandoff({
+            runtimeAdapterReady: true,
+            runtimeConnectionInjected: true,
+        })).toMatchObject({
             status: 'ready-to-attempt',
             canAttempt: true,
             generation: { api: 'openai' },
@@ -182,11 +200,17 @@ describe('useConnectionStore', () => {
         });
         store.applyDraft('2026-06-09T00:00:00.000Z');
 
-        expect(store.runtimeHandoff({ runtimeAdapterReady: true }).canAttempt).toBe(true);
+        expect(store.runtimeHandoff({
+            runtimeAdapterReady: true,
+            runtimeConnectionInjected: true,
+        }).canAttempt).toBe(true);
 
         store.patchDraft({ model: 'edited-model' });
 
-        expect(store.runtimeHandoff({ runtimeAdapterReady: true })).toMatchObject({
+        expect(store.runtimeHandoff({
+            runtimeAdapterReady: true,
+            runtimeConnectionInjected: true,
+        })).toMatchObject({
             status: 'complete-unapplied',
             canAttempt: false,
             connection: null,

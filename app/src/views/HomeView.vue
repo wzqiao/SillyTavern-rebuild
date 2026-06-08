@@ -73,11 +73,14 @@ const selectedMessages = computed(() => chatStore.selectedMessages);
 const activeSession = computed(() => chatStore.selectedSession);
 const readiness = computed(() => chatStore.readiness);
 const runtimeAdapterReady = computed(() => adapterMode.value === 'runtime' && runtimeDiagnostics.value?.ok === true && readiness.value.hasAdapter);
+// ST sendOpenAIRequest has no app-side per-request connection injection seam yet.
+const runtimeConnectionInjected = computed(() => false);
 const lastImportResult = computed(() => characterStore.lastImportResult);
 const adapterModeLabel = computed(() => adapterMode.value === 'demo' ? 'Demo adapter' : 'Runtime adapter');
 const hasChatTarget = computed(() => Boolean(activeSession.value || selectedRoster.value));
 const connectionHandoff = computed(() => connectionStore.runtimeHandoff({
   runtimeAdapterReady: runtimeAdapterReady.value,
+  runtimeConnectionInjected: runtimeConnectionInjected.value,
 }));
 const connectionPanelStatus = computed(() => connectionSubmitStatus.value ?? connectionHandoff.value.status);
 const canAttemptRuntime = computed(() => adapterMode.value !== 'runtime' || connectionHandoff.value.canAttempt);
@@ -100,6 +103,10 @@ const adapterStatusText = computed(() => {
 
   if (adapterMode.value === 'demo') {
     return readiness.value.canSend ? 'ready' : readiness.value.reason?.message;
+  }
+
+  if (readiness.value.canSend && !connectionHandoff.value.canAttempt) {
+    return connectionHandoff.value.message;
   }
 
   return readiness.value.canSend ? 'runtime ready' : runtimeNotice.value ?? readiness.value.reason?.message;
@@ -198,7 +205,10 @@ async function activateRuntimeAdapter(): Promise<void> {
       return;
     }
 
-    runtimeNotice.value = 'Runtime adapter ready.';
+    runtimeNotice.value = connectionStore.runtimeHandoff({
+      runtimeAdapterReady: true,
+      runtimeConnectionInjected: runtimeConnectionInjected.value,
+    }).message;
     chatStore.setEngineAdapter(runtimeAdapter);
   } catch (error) {
     runtimeNotice.value = `Runtime adapter failed to load: ${describeError(error)}`;
@@ -778,7 +788,7 @@ function describeError(error: unknown): string {
               <div
                 v-if="adapterMode === 'runtime' && (runtimeNotice || runtimeDiagnosticLines.length)"
                 class="mt-3 rounded-2xl border px-4 py-3 text-xs leading-5"
-                :class="runtimeDiagnostics?.ok ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100' : 'border-amber-300/20 bg-amber-300/10 text-amber-100'"
+                :class="runtimeDiagnostics?.ok && connectionHandoff.canAttempt ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100' : 'border-amber-300/20 bg-amber-300/10 text-amber-100'"
               >
                 <p class="font-bold">{{ runtimeNotice }}</p>
                 <ul v-if="runtimeDiagnosticLines.length" class="mt-2 space-y-1">

@@ -21,7 +21,8 @@ export type ReforgedConnectionRuntimeHandoffIssueCode =
     | 'draft-empty'
     | 'draft-incomplete'
     | 'draft-unapplied'
-    | 'runtime-unwired';
+    | 'runtime-unwired'
+    | 'runtime-connection-unwired';
 
 // DRAFT: 待主干评审
 export interface ReforgedConnectionDraft {
@@ -76,6 +77,7 @@ export interface ReforgedConnectionResolvedRuntimeConfig extends ReforgedApplied
 // DRAFT: 待主干评审
 export interface ReforgedConnectionRuntimeHandoffInput {
     runtimeAdapterReady?: boolean;
+    runtimeConnectionInjected?: boolean;
 }
 
 // DRAFT: 待主干评审
