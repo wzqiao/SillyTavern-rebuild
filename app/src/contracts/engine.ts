@@ -53,6 +53,17 @@ export interface HeadlessChatCompletionRequest {
 
 export type EngineCapabilityId = 'generateRaw' | 'generateRawData' | 'sendOpenAIRequest';
 
+export type EngineRuntimeProbeId =
+  | 'scriptModuleImport'
+  | 'openAIModuleImport'
+  | 'eventSourceShape'
+  | 'getContextExport'
+  | 'getContextCall'
+  | 'domHeavyGenerateExport'
+  | 'streamingPrimitives';
+
+export type EngineRuntimeProbeStatus = 'pass' | 'warn' | 'fail' | 'skipped';
+
 export interface EngineAdapterCapability {
   id: EngineCapabilityId;
   moduleId: '@sillytavern/script' | '@sillytavern/scripts/openai';
@@ -61,16 +72,39 @@ export interface EngineAdapterCapability {
   detail?: string;
 }
 
+export interface EngineAdapterEnvironment {
+  hasDocument: boolean;
+  hasJQuery: boolean;
+  hasToastr: boolean;
+  hasAbortController: boolean;
+  hasReadableStream: boolean;
+  locationHref?: string;
+  userAgent?: string;
+}
+
+export interface EngineRuntimeProbe {
+  id: EngineRuntimeProbeId;
+  status: EngineRuntimeProbeStatus;
+  detail: string;
+  error?: string;
+}
+
+export interface EngineAdapterInspectOptions {
+  probeContext?: boolean;
+}
+
 export interface EngineAdapterDiagnostics {
   ok: boolean;
   checkedAt: string;
+  environment: EngineAdapterEnvironment;
   capabilities: EngineAdapterCapability[];
+  probes: EngineRuntimeProbe[];
   warnings: string[];
   blockers: string[];
 }
 
 export interface HeadlessEngineAdapter {
-  inspect(): Promise<EngineAdapterDiagnostics>;
+  inspect(options?: EngineAdapterInspectOptions): Promise<EngineAdapterDiagnostics>;
   generateText(request: HeadlessGenerationRequest): Promise<string>;
   generateRawData(request: HeadlessRawDataRequest): Promise<unknown>;
   sendChatCompletion(request: HeadlessChatCompletionRequest): Promise<unknown>;

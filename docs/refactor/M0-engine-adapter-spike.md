@@ -11,16 +11,21 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - `public/scripts/openai.js` exports `sendOpenAIRequest` from its export list, even though the function body is declared later in the file.
 - `Generate()` remains exported from `public/script.js`, but it is DOM-heavy and is intentionally excluded from the new adapter.
 - Both `public/script.js` and `public/scripts/openai.js` still have top-level DOM/UI references. Lazy importing keeps that risk contained to `engine-adapter` while M0 browser testing determines whether a hidden compatibility layer is required.
+- Native SillyTavern PNG card import reads `tEXt` chunks with `chara` / `ccv3` keywords and treats the payload as base64-encoded UTF-8 JSON. `ccv3` takes precedence over `chara`.
+- The Vue-side PNG parser intentionally adds compatibility beyond native ST by accepting direct JSON text, `iTXt`, and unsupported-compression diagnostics for `zTXt` / compressed `iTXt`.
 
 ## Implemented
 - Draft engine contract in `app/src/contracts/engine.ts`.
 - Headless adapter in `app/src/engine-adapter/` with diagnostics for `generateRaw`, `generateRawData`, and `sendOpenAIRequest`.
+- Runtime probes for browser primitives, `eventSource` shape, optional `getContext()` calls, and the intentionally excluded DOM-heavy `Generate()` export.
 - Vitest coverage proving the adapter delegates only to the headless exports and does not invoke `Generate()`.
 - Draft character-card contract in `app/src/contracts/character.ts`.
 - Pure JSON character-card parser in `app/src/parsers/`, covering the minimum V2/V3-like fields needed by the M0 import spike.
+- PNG embedded-card parser in `app/src/parsers/`, including native-compatible `ccv3` precedence and explicit reasons when compressed metadata cannot be decoded without a zlib dependency.
 
 ## Remaining M0 Verification
 - Run the adapter inside the Vite app served from the same origin as SillyTavern and confirm the `@sillytavern/*` external URLs resolve.
+- Capture real `adapter.inspect({ probeContext: true })` output in browser after ST runtime boot and add the result to this report.
 - With user-provided API settings, trigger one real OpenAI-compatible generation and confirm whether streaming data can be consumed through the `sendOpenAIRequest` path.
 - Inventory runtime import failures caused by missing legacy DOM nodes and decide between a minimal hidden compatibility layer or deeper engine extraction.
-- Wire the character-card parser to a real file import flow and validate against PNG-embedded cards, not just JSON payloads.
+- Wire the character-card parsers to a real file import flow and validate against user-supplied PNG cards.
