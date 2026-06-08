@@ -25,6 +25,9 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - PNG embedded-card parser in `app/src/parsers/`, including native-compatible `ccv3` precedence and explicit reasons when compressed metadata cannot be decoded without a zlib dependency.
 - Character import service in `app/src/services/`, unifying JSON and PNG parser results behind a typed M0 import result. YAML, CHARX, and BYAF are detected as native ST formats but intentionally reported as unsupported by the M0 front-end importer until dedicated parsers or backend handoff are designed.
 - Pinia character store in `app/src/stores/`, keeping the M0 state layer thin: imported character roster, selected character, and the last import result. Parsing remains in `services` / `parsers`; the store does not touch browser `File` I/O or SillyTavern DOM.
+- Draft chat contract in `app/src/contracts/chat.ts`, covering the M1-facing state shape for sessions, messages, assistant alternatives/swipes, readiness, pending generation state, local cancellation, and typed send results.
+- Pure chat generation request service in `app/src/services/chatGenerationService.ts`, mapping Reforged chat sessions into the existing `HeadlessGenerationRequest` / chat-style prompt seam without leaking SillyTavern raw response shapes into stores or views.
+- Pinia chat store in `app/src/stores/chatStore.ts`, keeping the M0 chat state layer thin: start/select/remove sessions, send user messages through an injectable `HeadlessEngineAdapter`, append assistant replies, prevent overlapping generations, locally cancel pending generations, and edit/delete/switch assistant alternatives. The store does not call `Generate()`, import `@sillytavern/*`, or touch legacy DOM.
 
 ## Remaining M0 Verification
 - Run the adapter inside the Vite app served from the same origin as SillyTavern and confirm the `@sillytavern/*` external URLs resolve.
@@ -33,5 +36,7 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - Inventory runtime import failures caused by missing legacy DOM nodes and decide between a minimal hidden compatibility layer or deeper engine extraction.
 - Wire the character import service to a real file picker flow and validate against user-supplied JSON / PNG cards.
 - Wire the character store to the file picker flow so a successful import automatically becomes selectable in the M0 vertical slice.
+- Wire the chat store to a real Vue chat view and validate the visible M0 path: imported character snapshot -> selected chat session -> user send -> assistant reply.
+- Add a chat service seam for `sendChatCompletion()` streaming/non-streaming normalization before exposing true token streaming to UI. The current chat store uses `generateText()` for a stable string result and treats cancellation as local because that seam does not accept `AbortSignal`.
 - Decide whether YAML, CHARX, and BYAF should be parsed in the front-end, delegated to the existing ST backend import endpoint, or deferred until after the M0 vertical slice.
 - Decide whether old V1 JSON and `char_name` notebook-style JSON should be normalized in the front-end parser or delegated to the existing backend import path. The M0 front-end importer currently targets V2/V3-compatible cards per the PRD.
