@@ -16,10 +16,17 @@ type WorldInfoSelectiveLogic = typeof WORLD_INFO_SELECTIVE_LOGIC[keyof typeof WO
 const WORLD_INFO_SELECTIVE_LOGIC_VALUES = new Set<number>(Object.values(WORLD_INFO_SELECTIVE_LOGIC));
 const REGEX_KEY_PATTERN = /^\/([\w\W]+?)\/([gimsuy]*)$/;
 const DEFAULT_GROUP_WEIGHT = 100;
+const MAX_SCAN_DEPTH = 1000;
 
 interface ResolvedWorldbookMatchSettings {
     caseSensitive: boolean;
     matchWholeWords: boolean;
+}
+
+interface LorebookScanContext {
+    overrideText: string | null;
+    messageTexts: string[];
+    nextMessage: string;
 }
 
 interface ReforgedWorldbookEntryCandidate {
@@ -35,6 +42,7 @@ export interface ReforgedChatLorebookScanMessage {
 export interface ReforgedChatLorebookContextOptions {
     defaultCaseSensitive?: boolean;
     defaultMatchWholeWords?: boolean;
+    defaultScanDepth?: number | null;
     generationTrigger?: string;
     includeInactivePreviewEntries?: boolean;
     random?: () => number;
@@ -47,11 +55,16 @@ export function createChatLorebookContext(
     libraryItem: ReforgedWorldbookLibraryItem,
     options: ReforgedChatLorebookContextOptions = {},
 ): ReforgedChatLorebookContext {
-    const scanText = createLorebookScanText(options);
+    const scanContext = createLorebookScanContext(options);
     const matchSettings = resolveMatchSettings(options);
     const candidates = libraryItem.worldbook.entries
         .map((entry, index) => ({ entry, index }))
-        .filter(({ entry }) => shouldInjectEntry(entry, scanText, options, matchSettings));
+        .filter(({ entry }) => shouldInjectEntry(
+            entry,
+            createEntryScanText(entry, scanContext, options),
+            options,
+            matchSettings,
+        ));
 
     return {
         id: libraryItem.id,
@@ -376,18 +389,56 @@ function parseRegexKey(key: string): RegExp | null {
     }
 }
 
-function createLorebookScanText(options: ReforgedChatLorebookContextOptions): string {
+function createLorebookScanContext(options: ReforgedChatLorebookContextOptions): LorebookScanContext {
     if (options.scanText !== undefined) {
-        return options.scanText.trim();
+        return {
+            overrideText: options.scanText.trim(),
+            messageTexts: [],
+            nextMessage: '',
+        };
     }
 
-    return [
-        ...(options.messages ?? [])
+    return {
+        overrideText: null,
+        messageTexts: (options.messages ?? [])
             .filter((message) => message.status !== 'failed')
             .map((message) => message.content.trim())
             .filter(Boolean),
-        options.nextMessage?.trim() ?? '',
-    ].filter(Boolean).join('\n');
+        nextMessage: options.nextMessage?.trim() ?? '',
+    };
+}
+
+function createEntryScanText(
+    entry: ReforgedWorldbookEntry,
+    context: LorebookScanContext,
+    options: ReforgedChatLorebookContextOptions,
+): string {
+    if (context.overrideText !== null) {
+        return context.overrideText;
+    }
+
+    return readEntryScanChunks(entry, [
+        ...context.messageTexts,
+        context.nextMessage,
+    ].filter(Boolean), options).join('\n');
+}
+
+function readEntryScanChunks(
+    entry: ReforgedWorldbookEntry,
+    chunks: string[],
+    options: ReforgedChatLorebookContextOptions,
+): string[] {
+    const scanDepth = entry.scanDepth ?? options.defaultScanDepth ?? null;
+    if (scanDepth === null) {
+        return chunks;
+    }
+
+    const depth = Math.min(MAX_SCAN_DEPTH, Math.floor(scanDepth));
+    if (depth <= 0) {
+        return [];
+    }
+
+    return chunks.slice(-depth);
 }
 
 function matchesWholeWord(haystack: string, needle: string): boolean {

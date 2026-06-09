@@ -946,6 +946,150 @@ describe('createChatLorebookContext', () => {
             'entry-from-history',
         ]);
     });
+
+    it('limits history scanning per entry with scanDepth while still scanning the next message', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-outside-depth',
+                comment: 'Outside depth',
+                content: 'Outside depth lore.',
+                primaryKeys: ['ancient beacon'],
+                scanDepth: 2,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-inside-depth',
+                comment: 'Inside depth',
+                content: 'Inside depth lore.',
+                primaryKeys: ['recent beacon'],
+                scanDepth: 2,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-full-history',
+                comment: 'Full history',
+                content: 'Full history lore.',
+                primaryKeys: ['ancient beacon'],
+                scanDepth: null,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-next-message',
+                comment: 'Next message',
+                content: 'Next message lore.',
+                primaryKeys: ['future beacon'],
+                scanDepth: 1,
+                insertionOrder: 70,
+            }),
+        ]), {
+            messages: [
+                { content: 'The ancient beacon was mentioned long ago.', status: 'sent' },
+                { content: 'The recent beacon is still visible.', status: 'sent' },
+            ],
+            nextMessage: 'Ask about the future beacon.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-inside-depth',
+            'entry-full-history',
+            'entry-next-message',
+        ]);
+    });
+
+    it('applies scanDepth to selective secondary keys', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-secondary-outside-depth',
+                comment: 'Secondary outside depth',
+                content: 'Secondary outside depth lore.',
+                primaryKeys: ['primary signal'],
+                secondaryKeys: ['old marker'],
+                selective: true,
+                scanDepth: 1,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-secondary-inside-depth',
+                comment: 'Secondary inside depth',
+                content: 'Secondary inside depth lore.',
+                primaryKeys: ['primary signal'],
+                secondaryKeys: ['recent marker'],
+                selective: true,
+                scanDepth: 1,
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary signal carried an old marker.', status: 'sent' },
+                { content: 'The primary signal now carries a recent marker.', status: 'sent' },
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-secondary-inside-depth',
+        ]);
+    });
+
+    it('uses defaultScanDepth and normalizes scanDepth edge values', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-default-depth-outside',
+                comment: 'Default depth outside',
+                content: 'Default depth outside lore.',
+                primaryKeys: ['old signal'],
+                scanDepth: null,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-fraction-depth',
+                comment: 'Fraction depth',
+                content: 'Fraction depth lore.',
+                primaryKeys: ['middle signal'],
+                scanDepth: 1.8,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-negative-depth',
+                comment: 'Negative depth',
+                content: 'Negative depth lore.',
+                primaryKeys: ['recent signal'],
+                scanDepth: -1,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-large-depth',
+                comment: 'Large depth',
+                content: 'Large depth lore.',
+                primaryKeys: ['old signal'],
+                scanDepth: 5000,
+                insertionOrder: 70,
+            }),
+        ]), {
+            defaultScanDepth: 1,
+            messages: [
+                { content: 'The old signal is archived.', status: 'sent' },
+                { content: 'The middle signal is faint.', status: 'sent' },
+                { content: 'The recent signal is loud.', status: 'sent' },
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-large-depth',
+        ]);
+    });
+
+    it('does not apply scanDepth when explicit scan text is provided', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-scan-text-override',
+                comment: 'Scan text override',
+                content: 'Scan text override lore.',
+                primaryKeys: ['override signal'],
+                scanDepth: 0,
+            }),
+        ]), {
+            messages: [
+                { content: 'No matching history.', status: 'sent' },
+            ],
+            scanText: 'override signal',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-scan-text-override',
+        ]);
+    });
 });
 
 function createLibraryItem(entries: ReforgedWorldbookEntry[]): ReforgedWorldbookLibraryItem {
