@@ -41,8 +41,17 @@ interface ResolvedWorldbookTimedEffects {
     cooldown: Set<string>;
 }
 
+interface ResolvedWorldbookTokenBudget {
+    countTokens: ReforgedChatLorebookTokenCounter;
+    limit: number | null;
+    overflowed: boolean;
+    used: number;
+}
+
 type ReforgedWorldbookScanState = 'initial' | 'recursion';
 type ReforgedWorldbookLoopState = ReforgedWorldbookScanState | 'min-activations';
+
+export type ReforgedChatLorebookTokenCounter = (text: string) => number;
 
 export interface ReforgedChatLorebookScanMessage {
     content: string;
@@ -73,10 +82,15 @@ export interface ReforgedChatLorebookContextOptions {
     maxRecursionSteps?: number;
     minimumActivations?: number;
     minimumActivationsDepthMax?: number;
+    contextTokenLimit?: number | null;
+    countTokens?: ReforgedChatLorebookTokenCounter;
     random?: () => number;
     recursive?: boolean;
     scanInjects?: string[];
     scanText?: string;
+    tokenBudget?: number | null;
+    tokenBudgetCap?: number;
+    tokenBudgetPercent?: number;
     messages?: ReforgedChatLorebookScanMessage[];
     nextMessage?: string;
     scanSources?: ReforgedChatLorebookScanSources;
@@ -123,6 +137,7 @@ function activateWorldbookEntries(
     const recursionTexts: string[] = [];
     const delayedRecursionLevels = createDelayedRecursionLevels(entryCandidates.map(({ entry }) => entry));
     const timedEffects = resolveTimedEffects(options);
+    const tokenBudget = resolveTokenBudget(options);
     const canScanRecursively = scanContext.overrideText === null;
     const recursive = options.recursive === true && canScanRecursively;
     const maxRecursionSteps = normalizeMaxRecursionSteps(options.maxRecursionSteps);
@@ -155,9 +170,10 @@ function activateWorldbookEntries(
                 timedEffects,
             ));
 
-        const successfulCandidates = filterCandidatesByProbability(
+        const orderedLoopCandidates = sortCandidatesForActivationLimits(loopCandidates, timedEffects);
+        const successfulCandidates = filterCandidatesByActivationLimits(
             filterInclusionGroups(
-                loopCandidates,
+                orderedLoopCandidates,
                 Array.from(activated.keys()),
                 scanContext,
                 options,
@@ -171,6 +187,7 @@ function activateWorldbookEntries(
             options,
             failedProbabilityChecks,
             timedEffects,
+            tokenBudget,
         );
 
         for (const candidate of successfulCandidates) {
@@ -184,16 +201,23 @@ function activateWorldbookEntries(
             .join('\n');
 
         let nextScanState: ReforgedWorldbookLoopState | null = null;
-        if (recursive && recursionCandidates.length > 0) {
+        if (recursive && !tokenBudget.overflowed && recursionCandidates.length > 0) {
             nextScanState = 'recursion';
         }
 
-        if (recursive && nextScanState === null && currentScanState === 'min-activations' && recursionTexts.length > 0) {
+        if (
+            recursive &&
+            !tokenBudget.overflowed &&
+            nextScanState === null &&
+            currentScanState === 'min-activations' &&
+            recursionTexts.length > 0
+        ) {
             nextScanState = 'recursion';
         }
 
         if (
             nextScanState === null &&
+            !tokenBudget.overflowed &&
             minimumActivations > 0 &&
             activated.size < minimumActivations &&
             canAdvanceMinimumActivationScan(options, scanDepthSkew, maxScanChunks, minimumActivationsDepthMax)
@@ -260,6 +284,18 @@ function shouldInjectEntry(
     return matchesSelectiveSecondaryKeys(scanText, entry, matchSettings);
 }
 
+function sortCandidatesForActivationLimits(
+    candidates: ReforgedWorldbookEntryCandidate[],
+    timedEffects: ResolvedWorldbookTimedEffects,
+): ReforgedWorldbookEntryCandidate[] {
+    return [...candidates].sort((left, right) => {
+        const bySticky = Number(isTimedEffectActive('sticky', right.entry, timedEffects)) -
+            Number(isTimedEffectActive('sticky', left.entry, timedEffects));
+        const byInsertionOrder = right.entry.insertionOrder - left.entry.insertionOrder;
+        return bySticky || byInsertionOrder || left.index - right.index;
+    });
+}
+
 function filterInclusionGroups(
     candidates: ReforgedWorldbookEntryCandidate[],
     previouslyActivatedEntries: ReforgedWorldbookEntry[],
@@ -291,20 +327,49 @@ function filterInclusionGroups(
     return candidates.filter(({ entry }) => winners.has(entry));
 }
 
-function filterCandidatesByProbability(
+function filterCandidatesByActivationLimits(
     candidates: ReforgedWorldbookEntryCandidate[],
     options: ReforgedChatLorebookContextOptions,
     failedProbabilityChecks: Set<ReforgedWorldbookEntry>,
     timedEffects: ResolvedWorldbookTimedEffects,
+    tokenBudget: ResolvedWorldbookTokenBudget,
 ): ReforgedWorldbookEntryCandidate[] {
-    return candidates.filter(({ entry }) => {
+    const successfulCandidates: ReforgedWorldbookEntryCandidate[] = [];
+    let remainingIgnoreBudgetCandidates = candidates.filter(({ entry }) => entry.ignoreBudget).length;
+
+    for (const candidate of candidates) {
+        const { entry } = candidate;
+        remainingIgnoreBudgetCandidates -= entry.ignoreBudget ? 1 : 0;
+
+        if (tokenBudget.overflowed && !entry.ignoreBudget) {
+            if (remainingIgnoreBudgetCandidates > 0) {
+                continue;
+            }
+            break;
+        }
+
         const passed = shouldPassProbability(entry, options, timedEffects);
         if (!passed) {
             failedProbabilityChecks.add(entry);
+            continue;
         }
 
-        return passed;
-    });
+        if (tokenBudget.limit === null) {
+            successfulCandidates.push(candidate);
+            continue;
+        }
+
+        const entryTokens = countEntryTokens(entry, tokenBudget.countTokens);
+        tokenBudget.used += entryTokens;
+        if (!entry.ignoreBudget && wouldOverflowTokenBudget(tokenBudget)) {
+            tokenBudget.overflowed = true;
+            continue;
+        }
+
+        successfulCandidates.push(candidate);
+    }
+
+    return successfulCandidates;
 }
 
 function selectInclusionGroupWinners(
@@ -881,6 +946,91 @@ function resolveTimedEffects(options: ReforgedChatLorebookContextOptions): Resol
         sticky: normalizeTimedEffectIds(options.timedEffects?.stickyEntryIds),
         cooldown: normalizeTimedEffectIds(options.timedEffects?.cooldownEntryIds),
     };
+}
+
+function resolveTokenBudget(options: ReforgedChatLorebookContextOptions): ResolvedWorldbookTokenBudget {
+    return {
+        countTokens: options.countTokens ?? countApproximateTokens,
+        limit: resolveTokenBudgetLimit(options),
+        overflowed: false,
+        used: 0,
+    };
+}
+
+function resolveTokenBudgetLimit(options: ReforgedChatLorebookContextOptions): number | null {
+    if (options.includeInactivePreviewEntries || options.tokenBudget === null) {
+        return null;
+    }
+
+    if (typeof options.tokenBudget === 'number' && Number.isFinite(options.tokenBudget)) {
+        return Math.max(1, Math.floor(options.tokenBudget));
+    }
+
+    const contextTokenLimit = normalizeContextTokenLimit(options.contextTokenLimit);
+    if (contextTokenLimit === null) {
+        return null;
+    }
+
+    let limit = Math.round(resolveTokenBudgetPercent(options.tokenBudgetPercent) * contextTokenLimit / 100) || 1;
+    const cap = normalizeTokenBudgetCap(options.tokenBudgetCap);
+    if (cap > 0 && limit > cap) {
+        limit = cap;
+    }
+
+    return limit;
+}
+
+function normalizeContextTokenLimit(value: number | null | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return null;
+    }
+
+    return Math.max(0, Math.floor(value));
+}
+
+function resolveTokenBudgetPercent(value: number | undefined): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return 25;
+    }
+
+    if (value > 100) {
+        return 25;
+    }
+
+    return Math.max(0, value);
+}
+
+function normalizeTokenBudgetCap(value: number | undefined): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return 0;
+    }
+
+    return Math.max(0, Math.floor(value));
+}
+
+function wouldOverflowTokenBudget(tokenBudget: ResolvedWorldbookTokenBudget): boolean {
+    return tokenBudget.limit !== null && tokenBudget.used >= tokenBudget.limit;
+}
+
+function countEntryTokens(
+    entry: ReforgedWorldbookEntry,
+    countTokens: ReforgedChatLorebookTokenCounter,
+): number {
+    const tokenCount = countTokens(entry.content.trim());
+    if (!Number.isFinite(tokenCount)) {
+        return 0;
+    }
+
+    return Math.max(0, Math.floor(tokenCount));
+}
+
+function countApproximateTokens(text: string): number {
+    const normalizedText = text.trim();
+    if (!normalizedText) {
+        return 0;
+    }
+
+    return normalizedText.split(/\s+/u).length;
 }
 
 function normalizeTimedEffectIds(ids: string[] = []): Set<string> {

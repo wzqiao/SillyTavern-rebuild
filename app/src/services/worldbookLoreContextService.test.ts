@@ -2220,6 +2220,229 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('limits activated entries with the same inclusive token-budget threshold as SillyTavern', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-first',
+                comment: 'First',
+                content: 'one',
+                primaryKeys: ['primary route'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-overflow',
+                comment: 'Overflow',
+                content: 'two',
+                primaryKeys: ['primary route'],
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-after-overflow',
+                comment: 'After overflow',
+                content: 'three',
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            tokenBudget: 2,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-first',
+        ]);
+    });
+
+    it('derives token budgets from context size, percentage, and cap using SillyTavern defaults', () => {
+        const libraryItem = createLibraryItem([
+            createEntry({
+                id: 'entry-first',
+                comment: 'First',
+                content: 'one',
+                primaryKeys: ['primary route'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-second',
+                comment: 'Second',
+                content: 'two',
+                primaryKeys: ['primary route'],
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-third',
+                comment: 'Third',
+                content: 'three',
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            contextTokenLimit: 100,
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            tokenBudgetCap: 2,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-first',
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            contextTokenLimit: 100,
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            tokenBudgetCap: 0,
+            tokenBudgetPercent: 25,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-first',
+            'entry-second',
+            'entry-third',
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            contextTokenLimit: 100,
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            tokenBudgetPercent: 0,
+        }).entries.map((entry) => entry.id)).toEqual([]);
+    });
+
+    it('lets ignore-budget entries activate while their content still affects later ordinary entries', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-ignore-budget',
+                comment: 'Ignore budget',
+                content: 'free lore',
+                ignoreBudget: true,
+                primaryKeys: ['primary route'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-ordinary-overflow',
+                comment: 'Ordinary overflow',
+                content: 'ordinary',
+                primaryKeys: ['primary route'],
+                insertionOrder: 110,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            tokenBudget: 3,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-ignore-budget',
+        ]);
+    });
+
+    it('continues past overflowed ordinary entries to keep later ignore-budget entries', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-overflows',
+                comment: 'Overflows',
+                content: 'one two',
+                primaryKeys: ['primary route'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-skipped-after-overflow',
+                comment: 'Skipped after overflow',
+                content: 'ordinary',
+                primaryKeys: ['primary route'],
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-ignore-after-overflow',
+                comment: 'Ignore after overflow',
+                content: 'ignored',
+                ignoreBudget: true,
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            tokenBudget: 2,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-ignore-after-overflow',
+        ]);
+    });
+
+    it('does not apply token budgets while previewing inactive entries', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-preview-first',
+                comment: 'Preview first',
+                content: 'one',
+                primaryKeys: ['primary route'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-preview-second',
+                comment: 'Preview second',
+                content: 'two',
+                primaryKeys: ['primary route'],
+                insertionOrder: 110,
+            }),
+        ]), {
+            countTokens: () => {
+                throw new Error('Preview should not count lore budget tokens.');
+            },
+            includeInactivePreviewEntries: true,
+            tokenBudget: 1,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-preview-first',
+            'entry-preview-second',
+        ]);
+    });
+
+    it('stops recursive and minimum-activation scans after token-budget overflow', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-seed',
+                comment: 'Seed',
+                content: 'recursive-marker',
+                primaryKeys: ['recent marker'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-overflow',
+                comment: 'Overflow',
+                content: 'overflow',
+                primaryKeys: ['recent marker'],
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-recursive-child',
+                comment: 'Recursive child',
+                content: 'Recursive child lore.',
+                primaryKeys: ['recursive-marker'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-older-min-activation',
+                comment: 'Older min activation',
+                content: 'Older min activation lore.',
+                primaryKeys: ['older marker'],
+                insertionOrder: 90,
+            }),
+        ]), {
+            defaultScanDepth: 1,
+            messages: [
+                { content: 'The older marker is outside the initial scan.', status: 'sent' },
+                { content: 'The recent marker is active.', status: 'sent' },
+            ],
+            minimumActivations: 3,
+            recursive: true,
+            tokenBudget: 2,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+        ]);
+    });
+
     it('suppresses delayed timed-effect entries until enough scan chunks are available', () => {
         const libraryItem = createLibraryItem([
             createEntry({
