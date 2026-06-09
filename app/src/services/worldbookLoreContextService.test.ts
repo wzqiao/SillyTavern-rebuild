@@ -1107,6 +1107,135 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('substitutes macro values in primary and secondary keys before matching', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-primary-macro',
+                comment: 'Primary macro',
+                content: 'Primary macro lore.',
+                primaryKeys: ['{{ route }}'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-secondary-macro',
+                comment: 'Secondary macro',
+                content: 'Secondary macro lore.',
+                primaryKeys: ['course'],
+                secondaryKeys: ['{{marker}}'],
+                selective: true,
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-empty-primary-macro',
+                comment: 'Empty primary macro',
+                content: 'Empty primary macro lore.',
+                primaryKeys: ['{{emptyRoute}}'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-blank-primary-macro',
+                comment: 'Blank primary macro',
+                content: 'Blank primary macro lore.',
+                primaryKeys: ['{{blankRoute}}'],
+                insertionOrder: 90,
+            }),
+        ]), {
+            macroValues: {
+                blankRoute: '   ',
+                emptyRoute: null,
+                marker: 'safe marker',
+                route: 'blue route',
+            },
+            scanText: 'The blue route includes a safe marker and a course.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-primary-macro',
+            'entry-secondary-macro',
+        ]);
+    });
+
+    it('uses a custom macro substitution function for keys and content', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-custom-macro',
+                comment: 'Custom macro',
+                content: 'Hello {{user}}.',
+                primaryKeys: ['{{route}}'],
+            }),
+        ]), {
+            macroValues: {
+                route: 'ignored route',
+                user: 'ignored user',
+            },
+            scanText: 'The blue route is active.',
+            substituteMacros: (text) => text
+                .replaceAll('{{route}}', 'blue route')
+                .replaceAll('{{user}}', 'Captain'),
+        }).entries).toEqual([
+            {
+                id: 'entry-custom-macro',
+                title: 'Custom macro',
+                content: 'Hello Captain.',
+            },
+        ]);
+    });
+
+    it('substitutes entry content after activation without mutating the stored worldbook entry', () => {
+        const entry = createEntry({
+            id: 'entry-content-macro',
+            comment: 'Content macro',
+            content: 'Hello {{user}} and {{unknown}}.',
+            constant: true,
+        });
+        const libraryItem = createLibraryItem([entry]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            macroValues: {
+                user: 'Captain',
+            },
+        }).entries[0]?.content).toBe('Hello Captain and {{unknown}}.');
+
+        expect(createChatLorebookContext(libraryItem, {
+            macroValues: {
+                user: 'Navigator',
+            },
+        }).entries[0]?.content).toBe('Hello Navigator and {{unknown}}.');
+
+        expect(entry.content).toBe('Hello {{user}} and {{unknown}}.');
+    });
+
+    it('uses macro-substituted keys when scoring inclusion-group candidates', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-scored-macro-low',
+                comment: 'Scored macro low',
+                content: 'Scored macro low lore.',
+                primaryKeys: ['primary', '{{missingBonus}}'],
+                group: 'macro-score-group',
+                groupWeight: 99,
+                useGroupScoring: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-scored-macro-high',
+                comment: 'Scored macro high',
+                content: 'Scored macro high lore.',
+                primaryKeys: ['primary', '{{bonus}}'],
+                group: 'macro-score-group',
+                groupWeight: 1,
+                useGroupScoring: true,
+                insertionOrder: 90,
+            }),
+        ]), {
+            macroValues: {
+                bonus: 'bonus',
+            },
+            random: () => 0,
+            scanText: 'The primary route includes a bonus marker.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-scored-macro-high',
+        ]);
+    });
+
     it('can build scan text from chat messages and the next user message', () => {
         expect(createChatLorebookContext(createLibraryItem([
             createEntry({
@@ -1667,6 +1796,36 @@ describe('createChatLorebookContext', () => {
         ]);
 
         expect(createChatLorebookContext(libraryItem, {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+            'entry-recursive',
+        ]);
+    });
+
+    it('feeds macro-substituted entry content into recursive scans', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-seed',
+                comment: 'Seed',
+                content: 'The relay mentions {{childKey}}.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-recursive',
+                comment: 'Recursive',
+                content: 'Recursive macro lore.',
+                primaryKeys: ['recursive beacon'],
+                insertionOrder: 90,
+            }),
+        ]), {
+            macroValues: {
+                childKey: 'recursive beacon',
+            },
             messages: [
                 { content: 'The primary route is active.', status: 'sent' },
             ],
@@ -2251,6 +2410,33 @@ describe('createChatLorebookContext', () => {
         }).entries.map((entry) => entry.id)).toEqual([
             'entry-first',
         ]);
+    });
+
+    it('counts macro-substituted content against the token budget', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-overflow',
+                comment: 'Overflow',
+                content: '{{long}}',
+                primaryKeys: ['primary route'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-after-overflow',
+                comment: 'After overflow',
+                content: 'after',
+                primaryKeys: ['primary route'],
+                insertionOrder: 110,
+            }),
+        ]), {
+            macroValues: {
+                long: 'one two',
+            },
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            tokenBudget: 2,
+        }).entries.map((entry) => entry.id)).toEqual([]);
     });
 
     it('derives token budgets from context size, percentage, and cap using SillyTavern defaults', () => {

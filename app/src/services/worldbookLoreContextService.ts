@@ -19,6 +19,7 @@ type WorldInfoSelectiveLogic = typeof WORLD_INFO_SELECTIVE_LOGIC[keyof typeof WO
 
 const WORLD_INFO_SELECTIVE_LOGIC_VALUES = new Set<number>(Object.values(WORLD_INFO_SELECTIVE_LOGIC));
 const REGEX_KEY_PATTERN = /^\/([\w\W]+?)\/([gimsuy]*)$/;
+const SIMPLE_MACRO_PATTERN = /\{\{\s*([^{}]+?)\s*\}\}/gu;
 const DEFAULT_GROUP_WEIGHT = 100;
 const DEFAULT_DEPTH = 4;
 const MAX_SCAN_DEPTH = 1000;
@@ -39,6 +40,7 @@ interface LorebookScanContext {
 interface ReforgedWorldbookEntryCandidate {
     entry: ReforgedWorldbookEntry;
     index: number;
+    sourceEntry?: ReforgedWorldbookEntry;
 }
 
 interface ResolvedWorldbookTimedEffects {
@@ -53,10 +55,19 @@ interface ResolvedWorldbookTokenBudget {
     used: number;
 }
 
+type ReforgedChatLorebookMacroSubstitution = (text: string) => string;
+
 type ReforgedWorldbookScanState = 'initial' | 'recursion';
 type ReforgedWorldbookLoopState = ReforgedWorldbookScanState | 'min-activations';
 
 export type ReforgedChatLorebookTokenCounter = (text: string) => number;
+export type ReforgedChatLorebookMacroValue = string | number | boolean | null | undefined;
+export type ReforgedChatLorebookMacroValues = Record<string, ReforgedChatLorebookMacroValue>;
+
+/**
+ * Service-local macro hook for worldbook keys/content. Receives a full string and returns its replacement.
+ */
+export type ReforgedChatLorebookMacroResolver = (text: string) => string;
 
 export interface ReforgedChatLorebookScanMessage {
     content: string;
@@ -84,6 +95,7 @@ export interface ReforgedChatLorebookContextOptions {
     defaultUseGroupScoring?: boolean;
     generationTrigger?: string;
     includeInactivePreviewEntries?: boolean;
+    macroValues?: ReforgedChatLorebookMacroValues;
     maxRecursionSteps?: number;
     minimumActivations?: number;
     minimumActivationsDepthMax?: number;
@@ -99,6 +111,7 @@ export interface ReforgedChatLorebookContextOptions {
     messages?: ReforgedChatLorebookScanMessage[];
     nextMessage?: string;
     scanSources?: ReforgedChatLorebookScanSources;
+    substituteMacros?: ReforgedChatLorebookMacroResolver;
     timedEffects?: ReforgedChatLorebookTimedEffects;
 }
 
@@ -296,6 +309,7 @@ function activateWorldbookEntries(
     const failedProbabilityChecks = new Set<ReforgedWorldbookEntry>();
     const recursionTexts: string[] = [];
     const delayedRecursionLevels = createDelayedRecursionLevels(entryCandidates.map(({ entry }) => entry));
+    const substituteMacros = resolveMacroSubstitution(options);
     const timedEffects = resolveTimedEffects(options);
     const tokenBudget = resolveTokenBudget(options);
     const canScanRecursively = scanContext.overrideText === null;
@@ -318,8 +332,8 @@ function activateWorldbookEntries(
         loopCount += 1;
 
         const loopCandidates = entryCandidates
-            .filter(({ entry }) => !activated.has(entry))
-            .filter(({ entry }) => !failedProbabilityChecks.has(entry))
+            .filter((candidate) => !activated.has(getCandidateSourceEntry(candidate)))
+            .filter((candidate) => !failedProbabilityChecks.has(getCandidateSourceEntry(candidate)))
             .filter(({ entry }) => shouldScanEntryForTimedEffects(entry, timedEffects, maxScanChunks))
             .filter(({ entry }) => shouldScanEntryForState(entry, currentScanState, currentDelayLevel, recursive, timedEffects))
             .filter(({ entry }) => shouldInjectEntry(
@@ -328,6 +342,7 @@ function activateWorldbookEntries(
                 options,
                 matchSettings,
                 timedEffects,
+                substituteMacros,
             ));
 
         const orderedLoopCandidates = sortCandidatesForActivationLimits(loopCandidates, timedEffects);
@@ -343,15 +358,17 @@ function activateWorldbookEntries(
                 scanDepthSkew,
                 timedEffects,
                 maxScanChunks,
+                substituteMacros,
             ),
             options,
             failedProbabilityChecks,
             timedEffects,
             tokenBudget,
+            substituteMacros,
         );
 
         for (const candidate of successfulCandidates) {
-            activated.set(candidate.entry, candidate);
+            activated.set(getCandidateSourceEntry(candidate), candidate);
         }
 
         const recursionCandidates = successfulCandidates.filter(({ entry }) => !entry.preventRecursion);
@@ -407,6 +424,7 @@ function shouldInjectEntry(
     options: ReforgedChatLorebookContextOptions,
     matchSettings: ResolvedWorldbookMatchSettings,
     timedEffects: ResolvedWorldbookTimedEffects,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): boolean {
     if (!entry.enabled || !entry.content.trim()) {
         return false;
@@ -432,7 +450,7 @@ function shouldInjectEntry(
         return true;
     }
 
-    const primaryMatched = matchesAnyKey(scanText, entry.primaryKeys, entry, matchSettings);
+    const primaryMatched = matchesAnyKey(scanText, entry.primaryKeys, entry, matchSettings, substituteMacros);
     if (!primaryMatched) {
         return false;
     }
@@ -441,7 +459,7 @@ function shouldInjectEntry(
         return true;
     }
 
-    return matchesSelectiveSecondaryKeys(scanText, entry, matchSettings);
+    return matchesSelectiveSecondaryKeys(scanText, entry, matchSettings, substituteMacros);
 }
 
 function sortCandidatesForActivationLimits(
@@ -467,6 +485,7 @@ function filterInclusionGroups(
     scanDepthSkew = 0,
     timedEffects: ResolvedWorldbookTimedEffects,
     scanChunkCount: number,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): ReforgedWorldbookEntryCandidate[] {
     if (options.includeInactivePreviewEntries) {
         return candidates;
@@ -483,8 +502,9 @@ function filterInclusionGroups(
         scanDepthSkew,
         timedEffects,
         scanChunkCount,
+        substituteMacros,
     );
-    return candidates.filter(({ entry }) => winners.has(entry));
+    return candidates.filter((candidate) => winners.has(getCandidateSourceEntry(candidate)));
 }
 
 function filterCandidatesByActivationLimits(
@@ -493,11 +513,13 @@ function filterCandidatesByActivationLimits(
     failedProbabilityChecks: Set<ReforgedWorldbookEntry>,
     timedEffects: ResolvedWorldbookTimedEffects,
     tokenBudget: ResolvedWorldbookTokenBudget,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): ReforgedWorldbookEntryCandidate[] {
     const successfulCandidates: ReforgedWorldbookEntryCandidate[] = [];
     let remainingIgnoreBudgetCandidates = candidates.filter(({ entry }) => entry.ignoreBudget).length;
 
     for (const candidate of candidates) {
+        const sourceEntry = getCandidateSourceEntry(candidate);
         const { entry } = candidate;
         remainingIgnoreBudgetCandidates -= entry.ignoreBudget ? 1 : 0;
 
@@ -510,26 +532,50 @@ function filterCandidatesByActivationLimits(
 
         const passed = shouldPassProbability(entry, options, timedEffects);
         if (!passed) {
-            failedProbabilityChecks.add(entry);
+            failedProbabilityChecks.add(sourceEntry);
             continue;
         }
 
+        const substitutedCandidate = substituteEntryContentMacros(candidate, substituteMacros);
         if (tokenBudget.limit === null) {
-            successfulCandidates.push(candidate);
+            successfulCandidates.push(substitutedCandidate);
             continue;
         }
 
-        const entryTokens = countEntryTokens(entry, tokenBudget.countTokens);
+        const entryTokens = countEntryTokens(substitutedCandidate.entry, tokenBudget.countTokens);
         tokenBudget.used += entryTokens;
         if (!entry.ignoreBudget && wouldOverflowTokenBudget(tokenBudget)) {
             tokenBudget.overflowed = true;
             continue;
         }
 
-        successfulCandidates.push(candidate);
+        successfulCandidates.push(substitutedCandidate);
     }
 
     return successfulCandidates;
+}
+
+function getCandidateSourceEntry(candidate: ReforgedWorldbookEntryCandidate): ReforgedWorldbookEntry {
+    return candidate.sourceEntry ?? candidate.entry;
+}
+
+function substituteEntryContentMacros(
+    candidate: ReforgedWorldbookEntryCandidate,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
+): ReforgedWorldbookEntryCandidate {
+    const content = substituteMacros(candidate.entry.content);
+    if (content === candidate.entry.content) {
+        return candidate;
+    }
+
+    return {
+        ...candidate,
+        entry: {
+            ...candidate.entry,
+            content,
+        },
+        sourceEntry: getCandidateSourceEntry(candidate),
+    };
 }
 
 function selectInclusionGroupWinners(
@@ -543,23 +589,24 @@ function selectInclusionGroupWinners(
     scanDepthSkew: number,
     timedEffects: ResolvedWorldbookTimedEffects,
     scanChunkCount: number,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): Set<ReforgedWorldbookEntry> {
-    const winners = new Set(candidates.map(({ entry }) => entry));
+    const winners = new Set(candidates.map((candidate) => getCandidateSourceEntry(candidate)));
     const grouped = groupCandidatesByInclusionGroup(candidates);
 
     for (const [group, groupCandidates] of grouped.entries()) {
-        const activeGroup = groupCandidates.filter(({ entry }) => winners.has(entry));
+        const activeGroup = groupCandidates.filter((candidate) => winners.has(getCandidateSourceEntry(candidate)));
         if (wasInclusionGroupAlreadyActivated(group, previouslyActivatedEntries)) {
-            for (const { entry } of activeGroup) {
-                winners.delete(entry);
+            for (const candidate of activeGroup) {
+                winners.delete(getCandidateSourceEntry(candidate));
             }
             continue;
         }
 
         const timedGroup = filterInclusionGroupByTimedEffects(activeGroup, timedEffects, scanChunkCount);
-        for (const { entry } of activeGroup) {
-            if (!timedGroup.some((candidate) => candidate.entry === entry)) {
-                winners.delete(entry);
+        for (const candidate of activeGroup) {
+            if (!timedGroup.some((timedCandidate) => getCandidateSourceEntry(timedCandidate) === getCandidateSourceEntry(candidate))) {
+                winners.delete(getCandidateSourceEntry(candidate));
             }
         }
 
@@ -567,7 +614,7 @@ function selectInclusionGroupWinners(
             continue;
         }
 
-        const activeTimedGroup = timedGroup.filter(({ entry }) => winners.has(entry));
+        const activeTimedGroup = timedGroup.filter((candidate) => winners.has(getCandidateSourceEntry(candidate)));
         if (activeTimedGroup.length <= 1) {
             continue;
         }
@@ -580,17 +627,18 @@ function selectInclusionGroupWinners(
             scanState,
             recursionTexts,
             scanDepthSkew,
+            substituteMacros,
         );
-        for (const { entry } of activeTimedGroup) {
-            if (!scoredGroup.some((candidate) => candidate.entry === entry)) {
-                winners.delete(entry);
+        for (const candidate of activeTimedGroup) {
+            if (!scoredGroup.some((scoredCandidate) => getCandidateSourceEntry(scoredCandidate) === getCandidateSourceEntry(candidate))) {
+                winners.delete(getCandidateSourceEntry(candidate));
             }
         }
 
         const winner = selectInclusionGroupWinner(scoredGroup, options);
-        for (const { entry } of activeTimedGroup) {
-            if (entry !== winner?.entry) {
-                winners.delete(entry);
+        for (const candidate of activeTimedGroup) {
+            if (getCandidateSourceEntry(candidate) !== (winner ? getCandidateSourceEntry(winner) : null)) {
+                winners.delete(getCandidateSourceEntry(candidate));
             }
         }
     }
@@ -642,6 +690,7 @@ function filterInclusionGroupByScore(
     scanState: ReforgedWorldbookLoopState,
     recursionTexts: string[],
     scanDepthSkew: number,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): ReforgedWorldbookEntryCandidate[] {
     if (!candidates.some(({ entry }) => shouldUseGroupScoring(entry, options))) {
         return candidates;
@@ -653,6 +702,7 @@ function filterInclusionGroupByScore(
             candidate.entry,
             createEntryScanText(candidate.entry, scanContext, options, scanState, recursionTexts, scanDepthSkew),
             matchSettings,
+            substituteMacros,
         ),
     }));
     const maxScore = Math.max(...scoredCandidates.map(({ score }) => score));
@@ -673,14 +723,15 @@ function calculateGroupScore(
     entry: ReforgedWorldbookEntry,
     scanText: string,
     matchSettings: ResolvedWorldbookMatchSettings,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): number {
-    const primaryMatches = createKeyMatchResults(scanText, entry.primaryKeys, entry, matchSettings);
+    const primaryMatches = createKeyMatchResults(scanText, entry.primaryKeys, entry, matchSettings, substituteMacros);
     if (primaryMatches.length === 0) {
         return 0;
     }
 
     const primaryScore = primaryMatches.filter(({ matched }) => matched).length;
-    const secondaryMatches = createKeyMatchResults(scanText, entry.secondaryKeys, entry, matchSettings);
+    const secondaryMatches = createKeyMatchResults(scanText, entry.secondaryKeys, entry, matchSettings, substituteMacros);
     if (secondaryMatches.length === 0) {
         return primaryScore;
     }
@@ -811,8 +862,9 @@ function matchesAnyKey(
     keys: string[],
     entry: ReforgedWorldbookEntry,
     matchSettings: ResolvedWorldbookMatchSettings,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): boolean {
-    return createKeyMatchResults(scanText, keys, entry, matchSettings)
+    return createKeyMatchResults(scanText, keys, entry, matchSettings, substituteMacros)
         .some((result) => result.matched);
 }
 
@@ -820,8 +872,9 @@ function matchesSelectiveSecondaryKeys(
     scanText: string,
     entry: ReforgedWorldbookEntry,
     matchSettings: ResolvedWorldbookMatchSettings,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): boolean {
-    const secondaryMatches = createKeyMatchResults(scanText, entry.secondaryKeys, entry, matchSettings);
+    const secondaryMatches = createKeyMatchResults(scanText, entry.secondaryKeys, entry, matchSettings, substituteMacros);
 
     if (secondaryMatches.length === 0) {
         return true;
@@ -850,13 +903,15 @@ function createKeyMatchResults(
     keys: string[],
     entry: ReforgedWorldbookEntry,
     matchSettings: ResolvedWorldbookMatchSettings,
+    substituteMacros: ReforgedChatLorebookMacroSubstitution,
 ): { key: string; matched: boolean }[] {
     return keys
         .map((key) => key.trim())
         .filter(Boolean)
+        .map((key) => substituteMacros(key).trim())
         .map((key) => ({
             key,
-            matched: matchesKey(scanText, key, entry, matchSettings),
+            matched: key ? matchesKey(scanText, key, entry, matchSettings) : false,
         }));
 }
 
@@ -1106,6 +1161,39 @@ function resolveTimedEffects(options: ReforgedChatLorebookContextOptions): Resol
         sticky: normalizeTimedEffectIds(options.timedEffects?.stickyEntryIds),
         cooldown: normalizeTimedEffectIds(options.timedEffects?.cooldownEntryIds),
     };
+}
+
+function resolveMacroSubstitution(options: ReforgedChatLorebookContextOptions): ReforgedChatLorebookMacroSubstitution {
+    if (options.substituteMacros) {
+        return options.substituteMacros;
+    }
+
+    if (!options.macroValues) {
+        return (text) => text;
+    }
+
+    return (text) => substituteMacroValues(text, options.macroValues ?? {});
+}
+
+function substituteMacroValues(text: string, macroValues: ReforgedChatLorebookMacroValues): string {
+    const normalizedValues = new Map<string, ReforgedChatLorebookMacroValue>();
+    for (const [name, value] of Object.entries(macroValues)) {
+        normalizedValues.set(normalizeMacroName(name), value);
+    }
+
+    return text.replace(SIMPLE_MACRO_PATTERN, (match, rawName: string) => {
+        const name = normalizeMacroName(rawName);
+        if (!name || !normalizedValues.has(name)) {
+            return match;
+        }
+
+        const value = normalizedValues.get(name);
+        return value === null || value === undefined ? '' : String(value);
+    });
+}
+
+function normalizeMacroName(name: string): string {
+    return name.trim().toLocaleLowerCase();
 }
 
 function resolveTokenBudget(options: ReforgedChatLorebookContextOptions): ResolvedWorldbookTokenBudget {
