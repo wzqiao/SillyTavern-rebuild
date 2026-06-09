@@ -15,7 +15,7 @@ import {
   type DirectBackendChatCompletionDependencies,
 } from './directBackendChatCompletionAdapter';
 
-interface SillyTavernScriptModule {
+export interface SillyTavernScriptModule {
   generateRaw?: (params: HeadlessGenerationRequest) => Promise<string>;
   generateRawData?: (params: HeadlessRawDataRequest) => Promise<unknown>;
   Generate?: (...args: unknown[]) => Promise<unknown>;
@@ -23,7 +23,7 @@ interface SillyTavernScriptModule {
   getContext?: () => unknown;
 }
 
-interface SillyTavernOpenAIModule {
+export interface SillyTavernOpenAIModule {
   sendOpenAIRequest?: (
     type: NonNullable<HeadlessChatCompletionRequest['type']>,
     messages: HeadlessChatCompletionRequest['messages'],
@@ -89,7 +89,7 @@ export function createHeadlessEngineAdapter(
       const blockers: string[] = [];
       const capabilities: EngineAdapterCapability[] = [];
       const probes: EngineRuntimeProbe[] = [];
-      const environment = inspectEnvironment(getRuntimeGlobal());
+      let environment = inspectEnvironment(getRuntimeGlobal());
 
       let scriptModule: SillyTavernScriptModule | null = null;
       let openAIModule: SillyTavernOpenAIModule | null = null;
@@ -129,6 +129,8 @@ export function createHeadlessEngineAdapter(
           error: describeError(error),
         });
       }
+
+      environment = inspectEnvironment(getRuntimeGlobal());
 
       capabilities.push(
         capability('generateRaw', SCRIPT_MODULE_ID, 'generateRaw', scriptModule?.generateRaw),

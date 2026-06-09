@@ -1,15 +1,27 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type ProxyOptions } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
 const SILLYTAVERN_DEV_ORIGIN = process.env.ST_REFORGED_ST_ORIGIN ?? 'http://127.0.0.1:8000';
 
+const runtimeProxyOptions = (): ProxyOptions => ({
+  target: SILLYTAVERN_DEV_ORIGIN,
+  changeOrigin: true,
+  secure: false,
+});
+
 const sameOriginRuntimeProxy = [
+  '/__st_runtime',
   '/script.js',
   '/lib.js',
+  '/lib',
+  '/style.css',
+  '/manifest.json',
+  '/favicon.ico',
   '/scripts',
   '/css',
+  '/webfonts',
   '/assets',
   '/img',
   '/backgrounds',
@@ -18,17 +30,18 @@ const sameOriginRuntimeProxy = [
   '/extensions',
   '/api',
   '/csrf-token',
-].reduce<Record<string, { target: string; changeOrigin: boolean; secure: boolean }>>(
+].reduce<Record<string, ProxyOptions>>(
   (proxy, route) => {
-    proxy[route] = {
-      target: SILLYTAVERN_DEV_ORIGIN,
-      changeOrigin: true,
-      secure: false,
-    };
+    proxy[route] = runtimeProxyOptions();
     return proxy;
   },
   {},
 );
+
+sameOriginRuntimeProxy['/__st_runtime'] = {
+  ...runtimeProxyOptions(),
+  rewrite: (urlPath) => urlPath.replace(/^\/__st_runtime/, '') || '/',
+};
 
 /**
  * 复用 SillyTavern 引擎模块。

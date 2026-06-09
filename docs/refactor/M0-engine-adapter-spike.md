@@ -47,8 +47,9 @@ This note covers the first M0 adapter slice: verify the headless import seams th
 - Runtime connection guard in `app/src/contracts/connection.ts` / `app/src/stores/connectionStore.ts`, separating "runtime adapter diagnostics passed" from "the direct backend request path is available". Until the direct backend seam is present and the adapter advertises it, Runtime mode remains `applied-but-unwired` instead of pretending the memory draft can drive `sendOpenAIRequest`.
 - ADR-002 records the runtime connection handoff decision and next architecture choices: a backend/session settings layer, adapter shim, or upstream-compatible SillyTavern settings bridge.
 - Direct backend OpenAI-compatible chat-completions seam in `app/src/engine-adapter/directBackendChatCompletionAdapter.ts`, using same-origin CSRF-protected POSTs to `/api/backends/chat-completions/generate` with request-scoped `reverse_proxy`, `proxy_password`, `model`, `messages`, and `stream`. This keeps API keys memory-only in the Vue app and avoids SillyTavern settings/preset mutation, while ADR-003 documents the residual backend logging risk.
-- Same-origin dev verification path in `app/vite.config.ts`: Vite keeps `@sillytavern/*` imports external, then proxies runtime module/API URLs such as `/script.js`, `/lib.js`, `/scripts/*`, `/api/*`, and `/csrf-token` to a real SillyTavern origin. The default target is `http://127.0.0.1:8000`; override it with `ST_REFORGED_ST_ORIGIN` when the ST backend runs elsewhere.
-- HomeView Runtime diagnostics now calls `adapter.inspect({ probeContext: true })` and renders environment, capability, and probe lines in the Runtime panel so a same-origin browser run can capture import failures and legacy `getContext()` behavior without calling `Generate()`.
+- Same-origin dev verification path in `app/vite.config.ts`: Vite keeps `@sillytavern/*` imports external, then proxies runtime module/API URLs such as `/script.js`, `/lib.js`, `/lib/*`, `/scripts/*`, `/api/*`, and `/csrf-token` to a real SillyTavern origin. It also exposes `/__st_runtime/` as a hidden same-origin compatibility host for the legacy SillyTavern page, ensuring `/lib.js` is served by ST's Webpack middleware instead of the raw source file with bare package imports. The default target is `http://127.0.0.1:8000`; override it with `ST_REFORGED_ST_ORIGIN` when the ST backend runs elsewhere.
+- HomeView Runtime diagnostics now calls `adapter.inspect({ probeContext: true })` through the hidden same-origin runtime host and renders environment, capability, and probe lines in the Runtime panel so a browser run can capture legacy `getContext()` behavior without calling `Generate()` or touching SillyTavern's jQuery DOM from Reforged. Inspect no longer requires an applied API draft; only real sends remain gated by the memory-only connection handoff.
+- ADR-004 records the hidden same-origin runtime host decision. The host is an adapter compatibility boundary, not permission for Reforged views or stores to operate SillyTavern's DOM.
 
 ## Same-Origin Dev Verification Path
 
@@ -57,18 +58,28 @@ This note covers the first M0 adapter slice: verify the headless import seams th
    ```bash
    ST_REFORGED_ST_ORIGIN=http://127.0.0.1:8000 npm run dev
    ```
-3. Open the Vite URL, apply a memory-only OpenAI-compatible draft in the API Draft panel, then click `Runtime`.
+3. Open the Vite URL and click `Runtime` to run inspect. This does not require an API key or applied connection draft.
 4. The Runtime panel should show `scriptModuleImport`, `openAIModuleImport`, `generateRaw`, `generateRawData`, `sendOpenAIRequest`, and `getContextCall` diagnostics from `adapter.inspect({ probeContext: true })`.
-5. If `inspect().ok === true`, send one chat message to exercise the direct backend seam. The request uses same-origin `/csrf-token` and `/api/backends/chat-completions/generate`; the raw API key remains in the transient connection vault and is not stored in Pinia state or committed config.
+5. If `inspect().ok === true`, apply a memory-only OpenAI-compatible draft, then send one chat message to exercise the direct backend seam. The request uses same-origin `/csrf-token` and `/api/backends/chat-completions/generate`; the raw API key remains in the transient connection vault and is not stored in Pinia state or committed config.
+
+## Same-Origin Runtime Verification Result
+
+Captured on 2026-06-09 with a real SillyTavern backend at `http://127.0.0.1:8000` and Reforged Vite at `http://127.0.0.1:5173/#/dev`.
+
+- `GET /__st_runtime/` returned the SillyTavern page through the Vite same-origin proxy.
+- `GET /lib.js` returned the ST Webpack bundle rather than raw `public/lib.js`; the previous bare `lodash` import blocker was not present.
+- Runtime panel result: `Runtime inspect passed. Apply a complete connection draft before sending a real request.`
+- Runtime environment: `http://127.0.0.1:5173/__st_runtime/ · document · jQuery · ReadableStream`.
+- Capabilities: `generateRaw`, `generateRawData`, and `sendOpenAIRequest` all reported available.
+- Probes: `scriptModuleImport`, `openAIModuleImport`, `getContextExport`, `eventSourceShape`, `streamingPrimitives`, and `getContextCall` all passed.
+- Expected warning: DOM-heavy `Generate()` is present but intentionally excluded from the adapter.
+- Browser console: no error/warn/log entries captured during the Runtime smoke.
 
 ## Remaining M0 Verification
-- Run the same-origin dev verification path above against a live SillyTavern backend and paste the real Runtime panel output into this report.
-- Confirm `adapter.inspect({ probeContext: true }).ok === true` after ST runtime boot, or inventory the exact legacy DOM/import blocker lines if it fails.
-- Trigger one real OpenAI-compatible generation through the direct backend seam with user-provided API settings and confirm whether streaming data can be consumed end-to-end from same-origin Runtime mode.
+- User-trigger one real OpenAI-compatible generation through the direct backend seam and confirm whether streaming data can be consumed end-to-end from same-origin Runtime mode.
 - Decide whether the direct backend seam is sufficient for M1 or should be replaced by a Reforged-owned backend/session settings layer before broader provider support.
-- Inventory runtime import failures caused by missing legacy DOM nodes and decide between a minimal hidden compatibility layer or deeper engine extraction.
 - Validate the file picker flow against a broader set of user-supplied JSON / PNG cards, including extensionless uploads that rely on MIME type detection.
 - Validate the visible worldbook library, file picker, and lightweight lore context injection against a broader set of user-supplied SillyTavern world info exports, then decide where to source character/persona/global scan data, macro values, scanned extension-prompt text, Reforged recursion/minimum-activation/token-budget settings, and chat/session timed-effect metadata, and how to wire routed depth/example/Author's Note/outlet buckets into native runtime placement.
-- Validate the gated Runtime mode against a real same-origin SillyTavern runtime, including diagnostics display, chat-completion request shape, normalized alternatives/swipes, and abort behavior.
+- Validate the gated Runtime mode against a real same-origin SillyTavern runtime during user send, including chat-completion request shape, normalized alternatives/swipes, and abort behavior.
 - Confirm whether legacy `sendOpenAIRequest()` is still needed after the direct backend seam, or whether Runtime chat-completion traffic should stay on the adapter-owned backend path to avoid legacy DOM/settings coupling.
 - Decide whether YAML, CHARX, and BYAF should be parsed in the front-end, delegated to the existing ST backend import endpoint, or deferred until after the M0 vertical slice.

@@ -236,17 +236,9 @@ function clearConnectionDraft(): void {
 async function activateRuntimeAdapter(): Promise<void> {
   adapterMode.value = 'runtime';
   runtimeBusy.value = true;
-  runtimeNotice.value = 'Checking same-origin SillyTavern runtime with getContext probe...';
+  runtimeNotice.value = 'Checking same-origin SillyTavern runtime host with getContext probe...';
   runtimeDiagnostics.value = null;
   chatStore.setEngineAdapter(null);
-  const handoff = connectionStore.runtimeHandoff({ runtimeAdapterReady: false });
-  if (handoff.status !== 'applied-but-unwired') {
-    runtimeNotice.value = handoff.message;
-    runtimeBusy.value = false;
-    return;
-  }
-
-  runtimeNotice.value = 'Checking same-origin SillyTavern runtime with getContext probe...';
 
   try {
     const { loadHeadlessEngineAdapter } = await import('@/engine-adapter/runtimeAdapterLoader');
@@ -260,10 +252,13 @@ async function activateRuntimeAdapter(): Promise<void> {
     }
 
     const canUseDirectRuntimeRequest = runtimeAdapter.supportsDirectBackendChatCompletion === true && connectionStore.hasAppliedDraft;
-    runtimeNotice.value = connectionStore.runtimeHandoff({
+    const readyHandoff = connectionStore.runtimeHandoff({
       runtimeAdapterReady: true,
       runtimeDirectRequestReady: canUseDirectRuntimeRequest,
-    }).message;
+    });
+    runtimeNotice.value = readyHandoff.canAttempt
+      ? readyHandoff.message
+      : 'Runtime inspect passed. Apply a complete connection draft before sending a real request.';
     chatStore.setEngineAdapter(runtimeAdapter);
   } catch (error) {
     runtimeNotice.value = `Runtime adapter failed to load: ${describeError(error)}`;
