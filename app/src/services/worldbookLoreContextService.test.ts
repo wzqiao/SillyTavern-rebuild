@@ -1320,6 +1320,133 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('matches primary and secondary keys against scan injects', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-from-inject-primary',
+                comment: 'Inject primary',
+                content: 'Inject primary lore.',
+                primaryKeys: ['memory shard'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-from-inject-secondary',
+                comment: 'Inject secondary',
+                content: 'Inject secondary lore.',
+                primaryKeys: ['primary route'],
+                secondaryKeys: ['authors note marker'],
+                selective: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-blank-inject',
+                comment: 'Blank inject',
+                content: 'Blank inject lore.',
+                primaryKeys: ['blank marker'],
+                insertionOrder: 80,
+            }),
+        ]), {
+            nextMessage: 'Follow the primary route.',
+            scanInjects: [
+                'The memory shard is available.',
+                '   ',
+                'Authors note marker is active.',
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-from-inject-primary',
+            'entry-from-inject-secondary',
+        ]);
+    });
+
+    it('appends scan injects before recursive content during recursive scans', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-seed',
+                comment: 'Seed',
+                content: 'Recursive content points at late marker.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-from-inject-and-recursion',
+                comment: 'Inject and recursion',
+                content: 'Inject and recursion lore.',
+                primaryKeys: ['/inject marker[\\s\\S]*late marker/i'],
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+            scanInjects: [
+                'Inject marker is in a scanned extension prompt.',
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+            'entry-from-inject-and-recursion',
+        ]);
+    });
+
+    it('keeps scan injects independent from normal recursive chaining', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-from-inject',
+                comment: 'Inject source',
+                content: 'Inject source lore.',
+                primaryKeys: ['inject marker'],
+            }),
+        ]), {
+            scanInjects: [
+                'Inject marker is available without recursive scanning.',
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-from-inject',
+        ]);
+    });
+
+    it('returns no non-override scan haystack when scanDepth resolves to zero even if scan injects are provided', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-inject-zero-depth',
+                comment: 'Inject zero depth',
+                content: 'Inject zero depth lore.',
+                primaryKeys: ['inject marker'],
+                scanDepth: 0,
+            }),
+        ]), {
+            scanInjects: [
+                'Inject marker is blocked by zero scan depth.',
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([]);
+    });
+
+    it('does not apply scan injects when explicit scan text is provided', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-from-override',
+                comment: 'Override source',
+                content: 'Override source lore.',
+                primaryKeys: ['override marker'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-from-inject',
+                comment: 'Inject source',
+                content: 'Inject source lore.',
+                primaryKeys: ['inject marker'],
+                insertionOrder: 90,
+            }),
+        ]), {
+            scanText: 'The override marker wins.',
+            scanInjects: [
+                'The inject marker is ignored by explicit scan text.',
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-from-override',
+        ]);
+    });
+
     it('recursively activates entries from successful entry content when enabled', () => {
         const libraryItem = createLibraryItem([
             createEntry({

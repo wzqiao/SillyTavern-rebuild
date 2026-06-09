@@ -27,6 +27,7 @@ interface LorebookScanContext {
     overrideText: string | null;
     messageTexts: string[];
     nextMessage: string;
+    injects: string[];
     sources: Required<ReforgedChatLorebookScanSources>;
 }
 
@@ -60,6 +61,7 @@ export interface ReforgedChatLorebookContextOptions {
     maxRecursionSteps?: number;
     random?: () => number;
     recursive?: boolean;
+    scanInjects?: string[];
     scanText?: string;
     messages?: ReforgedChatLorebookScanMessage[];
     nextMessage?: string;
@@ -494,6 +496,7 @@ function createLorebookScanContext(options: ReforgedChatLorebookContextOptions):
             overrideText: options.scanText.trim(),
             messageTexts: [],
             nextMessage: '',
+            injects: normalizeScanInjects(options.scanInjects),
             sources: normalizeScanSources(options.scanSources),
         };
     }
@@ -505,6 +508,7 @@ function createLorebookScanContext(options: ReforgedChatLorebookContextOptions):
             .map((message) => message.content.trim())
             .filter(Boolean),
         nextMessage: options.nextMessage?.trim() ?? '',
+        injects: normalizeScanInjects(options.scanInjects),
         sources: normalizeScanSources(options.scanSources),
     };
 }
@@ -532,6 +536,7 @@ function createEntryScanText(
     return [
         ...scanChunks,
         ...readEntryScanSources(entry, context.sources),
+        ...context.injects,
         ...(scanState === 'recursion' ? recursionTexts : []),
     ].filter(Boolean).join('\n');
 }
@@ -577,6 +582,12 @@ function normalizeScanSources(sources: ReforgedChatLorebookScanSources = {}): Re
         scenario: sources.scenario?.trim() ?? '',
         creatorNotes: sources.creatorNotes?.trim() ?? '',
     };
+}
+
+function normalizeScanInjects(injects: string[] = []): string[] {
+    return injects
+        .map((inject) => inject.trim())
+        .filter(Boolean);
 }
 
 function shouldScanEntryForState(
