@@ -1319,6 +1319,268 @@ describe('createChatLorebookContext', () => {
             'entry-from-override',
         ]);
     });
+
+    it('recursively activates entries from successful entry content when enabled', () => {
+        const libraryItem = createLibraryItem([
+            createEntry({
+                id: 'entry-seed',
+                comment: 'Seed',
+                content: 'The relay mentions a recursive beacon.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-recursive',
+                comment: 'Recursive',
+                content: 'Recursive beacon lore.',
+                primaryKeys: ['recursive beacon'],
+                insertionOrder: 90,
+            }),
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            scanText: 'The primary route is active.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+            'entry-recursive',
+        ]);
+    });
+
+    it('does not recurse through entries that fail probability or prevent recursion', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-probability-fail',
+                comment: 'Probability fail',
+                content: 'The failed branch contains a hidden branch.',
+                primaryKeys: ['primary route'],
+                probability: 0,
+                useProbability: true,
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-prevent-recursion',
+                comment: 'Prevent recursion',
+                content: 'The prevented branch contains a sealed branch.',
+                primaryKeys: ['primary route'],
+                preventRecursion: true,
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-normal-recursion',
+                comment: 'Normal recursion',
+                content: 'The normal branch contains an open branch.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-hidden-child',
+                comment: 'Hidden child',
+                content: 'Hidden child lore.',
+                primaryKeys: ['hidden branch'],
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-sealed-child',
+                comment: 'Sealed child',
+                content: 'Sealed child lore.',
+                primaryKeys: ['sealed branch'],
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-open-child',
+                comment: 'Open child',
+                content: 'Open child lore.',
+                primaryKeys: ['open branch'],
+                insertionOrder: 70,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            random: () => 1,
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-prevent-recursion',
+            'entry-normal-recursion',
+            'entry-open-child',
+        ]);
+    });
+
+    it('suppresses exclude-recursion entries during recursive scans', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-seed',
+                comment: 'Seed',
+                content: 'The seed exposes a recursion-only marker.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-excluded-recursion',
+                comment: 'Excluded recursion',
+                content: 'Excluded recursion lore.',
+                primaryKeys: ['recursion-only marker'],
+                excludeRecursion: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-allowed-recursion',
+                comment: 'Allowed recursion',
+                content: 'Allowed recursion lore.',
+                primaryKeys: ['recursion-only marker'],
+                insertionOrder: 80,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+            'entry-allowed-recursion',
+        ]);
+    });
+
+    it('allows exclude-recursion entries during the initial scan', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-initial-excluded-recursion',
+                comment: 'Initial excluded recursion',
+                content: 'Initial excluded recursion lore.',
+                primaryKeys: ['primary route'],
+                excludeRecursion: true,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-initial-excluded-recursion',
+        ]);
+    });
+
+    it('delays entries until recursion reaches their configured level', () => {
+        const libraryItem = createLibraryItem([
+            createEntry({
+                id: 'entry-seed-level-one',
+                comment: 'Seed level one',
+                content: 'Level one opens level-two marker.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-delay-one',
+                comment: 'Delay one',
+                content: 'Delay one lore.',
+                primaryKeys: ['primary route'],
+                delayUntilRecursion: true,
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-delay-two',
+                comment: 'Delay two',
+                content: 'Delay two lore.',
+                primaryKeys: ['level-two marker'],
+                delayUntilRecursion: 2,
+                insertionOrder: 100,
+            }),
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed-level-one',
+            'entry-delay-one',
+            'entry-delay-two',
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed-level-one',
+            'entry-delay-one',
+            'entry-delay-two',
+        ]);
+    });
+
+    it('does not run a lone delayed recursion level without normal recursion', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-delayed',
+                comment: 'Delayed',
+                content: 'Delayed lore.',
+                primaryKeys: ['primary route'],
+                delayUntilRecursion: true,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([]);
+    });
+
+    it('respects maxRecursionSteps using SillyTavern loop-count semantics', () => {
+        const libraryItem = createLibraryItem([
+            createEntry({
+                id: 'entry-seed',
+                comment: 'Seed',
+                content: 'The seed exposes marker two.',
+                primaryKeys: ['marker one'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-second',
+                comment: 'Second',
+                content: 'The second entry exposes marker three.',
+                primaryKeys: ['marker two'],
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-third',
+                comment: 'Third',
+                content: 'Third lore.',
+                primaryKeys: ['marker three'],
+                insertionOrder: 80,
+            }),
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            messages: [
+                { content: 'The scan starts with marker one.', status: 'sent' },
+            ],
+            maxRecursionSteps: 2,
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+            'entry-second',
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            messages: [
+                { content: 'The scan starts with marker one.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+            'entry-second',
+            'entry-third',
+        ]);
+    });
 });
 
 function createLibraryItem(entries: ReforgedWorldbookEntry[]): ReforgedWorldbookLibraryItem {
