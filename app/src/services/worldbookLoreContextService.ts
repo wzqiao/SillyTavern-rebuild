@@ -16,12 +16,19 @@ type WorldInfoSelectiveLogic = typeof WORLD_INFO_SELECTIVE_LOGIC[keyof typeof WO
 const WORLD_INFO_SELECTIVE_LOGIC_VALUES = new Set<number>(Object.values(WORLD_INFO_SELECTIVE_LOGIC));
 const REGEX_KEY_PATTERN = /^\/([\w\W]+?)\/([gimsuy]*)$/;
 
+interface ResolvedWorldbookMatchSettings {
+    caseSensitive: boolean;
+    matchWholeWords: boolean;
+}
+
 export interface ReforgedChatLorebookScanMessage {
     content: string;
     status?: ReforgedChatMessageStatus;
 }
 
 export interface ReforgedChatLorebookContextOptions {
+    defaultCaseSensitive?: boolean;
+    defaultMatchWholeWords?: boolean;
     generationTrigger?: string;
     includeInactivePreviewEntries?: boolean;
     scanText?: string;
@@ -34,13 +41,14 @@ export function createChatLorebookContext(
     options: ReforgedChatLorebookContextOptions = {},
 ): ReforgedChatLorebookContext {
     const scanText = createLorebookScanText(options);
+    const matchSettings = resolveMatchSettings(options);
 
     return {
         id: libraryItem.id,
         name: libraryItem.worldbook.name,
         entries: libraryItem.worldbook.entries
             .map((entry, index) => ({ entry, index }))
-            .filter(({ entry }) => shouldInjectEntry(entry, scanText, options))
+            .filter(({ entry }) => shouldInjectEntry(entry, scanText, options, matchSettings))
             .sort((left, right) => {
                 const byInsertionOrder = right.entry.insertionOrder - left.entry.insertionOrder;
                 return byInsertionOrder || left.index - right.index;
@@ -57,6 +65,7 @@ function shouldInjectEntry(
     entry: ReforgedWorldbookEntry,
     scanText: string,
     options: ReforgedChatLorebookContextOptions,
+    matchSettings: ResolvedWorldbookMatchSettings,
 ): boolean {
     if (!entry.enabled || !entry.content.trim()) {
         return false;
@@ -78,7 +87,7 @@ function shouldInjectEntry(
         return true;
     }
 
-    const primaryMatched = matchesAnyKey(scanText, entry.primaryKeys, entry);
+    const primaryMatched = matchesAnyKey(scanText, entry.primaryKeys, entry, matchSettings);
     if (!primaryMatched) {
         return false;
     }
@@ -87,7 +96,7 @@ function shouldInjectEntry(
         return true;
     }
 
-    return matchesSelectiveSecondaryKeys(scanText, entry);
+    return matchesSelectiveSecondaryKeys(scanText, entry, matchSettings);
 }
 
 function shouldMatchGenerationTrigger(
@@ -107,13 +116,22 @@ function shouldMatchGenerationTrigger(
     return triggers.includes(trigger);
 }
 
-function matchesAnyKey(scanText: string, keys: string[], entry: ReforgedWorldbookEntry): boolean {
-    return createKeyMatchResults(scanText, keys, entry)
+function matchesAnyKey(
+    scanText: string,
+    keys: string[],
+    entry: ReforgedWorldbookEntry,
+    matchSettings: ResolvedWorldbookMatchSettings,
+): boolean {
+    return createKeyMatchResults(scanText, keys, entry, matchSettings)
         .some((result) => result.matched);
 }
 
-function matchesSelectiveSecondaryKeys(scanText: string, entry: ReforgedWorldbookEntry): boolean {
-    const secondaryMatches = createKeyMatchResults(scanText, entry.secondaryKeys, entry);
+function matchesSelectiveSecondaryKeys(
+    scanText: string,
+    entry: ReforgedWorldbookEntry,
+    matchSettings: ResolvedWorldbookMatchSettings,
+): boolean {
+    const secondaryMatches = createKeyMatchResults(scanText, entry.secondaryKeys, entry, matchSettings);
 
     if (secondaryMatches.length === 0) {
         return true;
@@ -141,13 +159,14 @@ function createKeyMatchResults(
     scanText: string,
     keys: string[],
     entry: ReforgedWorldbookEntry,
+    matchSettings: ResolvedWorldbookMatchSettings,
 ): { key: string; matched: boolean }[] {
     return keys
         .map((key) => key.trim())
         .filter(Boolean)
         .map((key) => ({
             key,
-            matched: matchesKey(scanText, key, entry),
+            matched: matchesKey(scanText, key, entry, matchSettings),
         }));
 }
 
@@ -159,16 +178,23 @@ function normalizeSelectiveLogic(value: number | null): number {
     return WORLD_INFO_SELECTIVE_LOGIC.AND_ANY;
 }
 
-function matchesKey(scanText: string, key: string, entry: ReforgedWorldbookEntry): boolean {
+function matchesKey(
+    scanText: string,
+    key: string,
+    entry: ReforgedWorldbookEntry,
+    matchSettings: ResolvedWorldbookMatchSettings,
+): boolean {
     const regexKey = parseRegexKey(key);
     if (regexKey) {
         return regexKey.test(scanText);
     }
 
-    const haystack = entry.caseSensitive ? scanText : scanText.toLocaleLowerCase();
-    const needle = entry.caseSensitive ? key : key.toLocaleLowerCase();
+    const caseSensitive = entry.caseSensitive ?? matchSettings.caseSensitive;
+    const matchWholeWords = entry.matchWholeWords ?? matchSettings.matchWholeWords;
+    const haystack = caseSensitive ? scanText : scanText.toLocaleLowerCase();
+    const needle = caseSensitive ? key : key.toLocaleLowerCase();
 
-    if (entry.matchWholeWords) {
+    if (matchWholeWords) {
         if (needle.split(/\s+/).length > 1) {
             return haystack.includes(needle);
         }
@@ -177,6 +203,13 @@ function matchesKey(scanText: string, key: string, entry: ReforgedWorldbookEntry
     }
 
     return haystack.includes(needle);
+}
+
+function resolveMatchSettings(options: ReforgedChatLorebookContextOptions): ResolvedWorldbookMatchSettings {
+    return {
+        caseSensitive: options.defaultCaseSensitive ?? false,
+        matchWholeWords: options.defaultMatchWholeWords ?? false,
+    };
 }
 
 function parseRegexKey(key: string): RegExp | null {

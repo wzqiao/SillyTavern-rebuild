@@ -508,6 +508,69 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('uses default matching options when entry hints are unset', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-default-case-sensitive',
+                comment: 'Default case sensitive',
+                content: 'Default case lore.',
+                primaryKeys: ['BEACON'],
+                caseSensitive: null,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-default-whole-word',
+                comment: 'Default whole word',
+                content: 'Default whole-word lore.',
+                primaryKeys: ['nav'],
+                matchWholeWords: null,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-case-override',
+                comment: 'Case override',
+                content: 'Case override lore.',
+                primaryKeys: ['SIGNAL'],
+                caseSensitive: false,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-whole-word-override',
+                comment: 'Whole-word override',
+                content: 'Whole-word override lore.',
+                primaryKeys: ['rig'],
+                matchWholeWords: false,
+                insertionOrder: 70,
+            }),
+            createEntry({
+                id: 'entry-default-multi-word-phrase',
+                comment: 'Default multi-word phrase',
+                content: 'Default multi-word phrase lore.',
+                primaryKeys: ['cargo rig'],
+                matchWholeWords: null,
+                insertionOrder: 60,
+            }),
+            createEntry({
+                id: 'entry-regex-default-override',
+                comment: 'Regex default override',
+                content: 'Regex default override lore.',
+                primaryKeys: ['/blue\\s+giant/i'],
+                caseSensitive: null,
+                matchWholeWords: null,
+                insertionOrder: 50,
+            }),
+        ]), {
+            defaultCaseSensitive: true,
+            defaultMatchWholeWords: true,
+            scanText: 'The beacon signal near a BLUE giant mentions navigation and cargo rigging.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-case-override',
+            'entry-whole-word-override',
+            'entry-default-multi-word-phrase',
+            'entry-regex-default-override',
+        ]);
+    });
+
     it('supports SillyTavern-style regex keys before plaintext matching options', () => {
         expect(createChatLorebookContext(createLibraryItem([
             createEntry({
