@@ -1903,6 +1903,140 @@ describe('createChatLorebookContext', () => {
             'entry-third',
         ]);
     });
+
+    it('advances default scan depth until minimum activations are satisfied', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-older',
+                comment: 'Older marker',
+                content: 'Older marker lore.',
+                primaryKeys: ['older marker'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-recent',
+                comment: 'Recent marker',
+                content: 'Recent marker lore.',
+                primaryKeys: ['recent marker'],
+                insertionOrder: 90,
+            }),
+        ]), {
+            defaultScanDepth: 1,
+            messages: [
+                { content: 'The older marker was mentioned first.', status: 'sent' },
+                { content: 'The recent marker is visible now.', status: 'sent' },
+            ],
+            minimumActivations: 2,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-older',
+            'entry-recent',
+        ]);
+    });
+
+    it('stops minimum activation scans at the configured depth max', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-oldest',
+                comment: 'Oldest marker',
+                content: 'Oldest marker lore.',
+                primaryKeys: ['oldest marker'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-middle',
+                comment: 'Middle marker',
+                content: 'Middle marker lore.',
+                primaryKeys: ['middle marker'],
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-recent',
+                comment: 'Recent marker',
+                content: 'Recent marker lore.',
+                primaryKeys: ['recent marker'],
+                insertionOrder: 80,
+            }),
+        ]), {
+            defaultScanDepth: 1,
+            messages: [
+                { content: 'The oldest marker is too far back.', status: 'sent' },
+                { content: 'The middle marker is just outside the initial scan.', status: 'sent' },
+                { content: 'The recent marker is inside the initial scan.', status: 'sent' },
+            ],
+            minimumActivations: 3,
+            minimumActivationsDepthMax: 1,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-middle',
+            'entry-recent',
+        ]);
+    });
+
+    it('keeps entry scanDepth independent from minimum activation depth skew', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-entry-depth',
+                comment: 'Entry depth',
+                content: 'Entry depth lore.',
+                primaryKeys: ['older marker'],
+                scanDepth: 1,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-default-depth',
+                comment: 'Default depth',
+                content: 'Default depth lore.',
+                primaryKeys: ['older marker'],
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-recent',
+                comment: 'Recent marker',
+                content: 'Recent marker lore.',
+                primaryKeys: ['recent marker'],
+                insertionOrder: 80,
+            }),
+        ]), {
+            defaultScanDepth: 1,
+            messages: [
+                { content: 'The older marker was mentioned first.', status: 'sent' },
+                { content: 'The recent marker is visible now.', status: 'sent' },
+            ],
+            minimumActivations: 2,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-default-depth',
+            'entry-recent',
+        ]);
+    });
+
+    it('runs recursion after minimum activation scans without mixing recursion text into the min-activation haystack', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-seed',
+                comment: 'Seed',
+                content: 'The seed exposes a recursive marker.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-combined-recursion',
+                comment: 'Combined recursion',
+                content: 'Combined recursion lore.',
+                primaryKeys: ['/older marker[\\s\\S]*recursive marker/i'],
+                insertionOrder: 90,
+            }),
+        ]), {
+            defaultScanDepth: 1,
+            messages: [
+                { content: 'The older marker is outside the initial scan.', status: 'sent' },
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            minimumActivations: 2,
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+            'entry-combined-recursion',
+        ]);
+    });
 });
 
 function createLibraryItem(entries: ReforgedWorldbookEntry[]): ReforgedWorldbookLibraryItem {

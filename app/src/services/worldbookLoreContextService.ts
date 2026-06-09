@@ -37,6 +37,7 @@ interface ReforgedWorldbookEntryCandidate {
 }
 
 type ReforgedWorldbookScanState = 'initial' | 'recursion';
+type ReforgedWorldbookLoopState = ReforgedWorldbookScanState | 'min-activations';
 
 export interface ReforgedChatLorebookScanMessage {
     content: string;
@@ -60,6 +61,8 @@ export interface ReforgedChatLorebookContextOptions {
     generationTrigger?: string;
     includeInactivePreviewEntries?: boolean;
     maxRecursionSteps?: number;
+    minimumActivations?: number;
+    minimumActivationsDepthMax?: number;
     random?: () => number;
     recursive?: boolean;
     scanInjects?: string[];
@@ -111,8 +114,12 @@ function activateWorldbookEntries(
     const canScanRecursively = scanContext.overrideText === null;
     const recursive = options.recursive === true && canScanRecursively;
     const maxRecursionSteps = normalizeMaxRecursionSteps(options.maxRecursionSteps);
+    const minimumActivations = canScanRecursively ? normalizeMinimumActivations(options.minimumActivations) : 0;
+    const minimumActivationsDepthMax = normalizeMinimumActivationsDepthMax(options.minimumActivationsDepthMax);
+    const maxScanChunks = countScanChunks(scanContext);
     let currentDelayLevel = delayedRecursionLevels.shift() ?? 0;
-    let scanState: ReforgedWorldbookScanState | null = 'initial';
+    let scanState: ReforgedWorldbookLoopState | null = 'initial';
+    let scanDepthSkew = 0;
     let loopCount = 0;
 
     while (scanState) {
@@ -129,7 +136,7 @@ function activateWorldbookEntries(
             .filter(({ entry }) => shouldScanEntryForState(entry, currentScanState, currentDelayLevel, recursive))
             .filter(({ entry }) => shouldInjectEntry(
                 entry,
-                createEntryScanText(entry, scanContext, options, currentScanState, recursionTexts),
+                createEntryScanText(entry, scanContext, options, currentScanState, recursionTexts, scanDepthSkew),
                 options,
                 matchSettings,
             ));
@@ -142,6 +149,7 @@ function activateWorldbookEntries(
                 matchSettings,
                 currentScanState,
                 recursionTexts,
+                scanDepthSkew,
             ),
             options,
             failedProbabilityChecks,
@@ -157,9 +165,23 @@ function activateWorldbookEntries(
             .filter(Boolean)
             .join('\n');
 
-        let nextScanState: ReforgedWorldbookScanState | null = null;
+        let nextScanState: ReforgedWorldbookLoopState | null = null;
         if (recursive && recursionCandidates.length > 0) {
             nextScanState = 'recursion';
+        }
+
+        if (recursive && nextScanState === null && currentScanState === 'min-activations' && recursionTexts.length > 0) {
+            nextScanState = 'recursion';
+        }
+
+        if (
+            nextScanState === null &&
+            minimumActivations > 0 &&
+            activated.size < minimumActivations &&
+            canAdvanceMinimumActivationScan(options, scanDepthSkew, maxScanChunks, minimumActivationsDepthMax)
+        ) {
+            scanDepthSkew += 1;
+            nextScanState = 'min-activations';
         }
 
         if (canScanRecursively && nextScanState === null && delayedRecursionLevels.length > 0) {
@@ -220,14 +242,23 @@ function filterInclusionGroups(
     scanContext: LorebookScanContext,
     options: ReforgedChatLorebookContextOptions,
     matchSettings: ResolvedWorldbookMatchSettings,
-    scanState: ReforgedWorldbookScanState = 'initial',
+    scanState: ReforgedWorldbookLoopState = 'initial',
     recursionTexts: string[] = [],
+    scanDepthSkew = 0,
 ): ReforgedWorldbookEntryCandidate[] {
     if (options.includeInactivePreviewEntries) {
         return candidates;
     }
 
-    const winners = selectInclusionGroupWinners(candidates, scanContext, options, matchSettings, scanState, recursionTexts);
+    const winners = selectInclusionGroupWinners(
+        candidates,
+        scanContext,
+        options,
+        matchSettings,
+        scanState,
+        recursionTexts,
+        scanDepthSkew,
+    );
     return candidates.filter(({ entry }) => winners.has(entry));
 }
 
@@ -251,8 +282,9 @@ function selectInclusionGroupWinners(
     scanContext: LorebookScanContext,
     options: ReforgedChatLorebookContextOptions,
     matchSettings: ResolvedWorldbookMatchSettings,
-    scanState: ReforgedWorldbookScanState,
+    scanState: ReforgedWorldbookLoopState,
     recursionTexts: string[],
+    scanDepthSkew: number,
 ): Set<ReforgedWorldbookEntry> {
     const winners = new Set(candidates.map(({ entry }) => entry));
     const grouped = groupCandidatesByInclusionGroup(candidates);
@@ -270,6 +302,7 @@ function selectInclusionGroupWinners(
             matchSettings,
             scanState,
             recursionTexts,
+            scanDepthSkew,
         );
         for (const { entry } of activeGroup) {
             if (!scoredGroup.some((candidate) => candidate.entry === entry)) {
@@ -309,8 +342,9 @@ function filterInclusionGroupByScore(
     scanContext: LorebookScanContext,
     options: ReforgedChatLorebookContextOptions,
     matchSettings: ResolvedWorldbookMatchSettings,
-    scanState: ReforgedWorldbookScanState,
+    scanState: ReforgedWorldbookLoopState,
     recursionTexts: string[],
+    scanDepthSkew: number,
 ): ReforgedWorldbookEntryCandidate[] {
     if (!candidates.some(({ entry }) => shouldUseGroupScoring(entry, options))) {
         return candidates;
@@ -320,7 +354,7 @@ function filterInclusionGroupByScore(
         candidate,
         score: calculateGroupScore(
             candidate.entry,
-            createEntryScanText(candidate.entry, scanContext, options, scanState, recursionTexts),
+            createEntryScanText(candidate.entry, scanContext, options, scanState, recursionTexts, scanDepthSkew),
             matchSettings,
         ),
     }));
@@ -611,8 +645,9 @@ function createEntryScanText(
     entry: ReforgedWorldbookEntry,
     context: LorebookScanContext,
     options: ReforgedChatLorebookContextOptions,
-    scanState: ReforgedWorldbookScanState = 'initial',
+    scanState: ReforgedWorldbookLoopState = 'initial',
     recursionTexts: string[] = [],
+    scanDepthSkew = 0,
 ): string {
     if (context.overrideText !== null) {
         return context.overrideText;
@@ -621,7 +656,7 @@ function createEntryScanText(
     const scanChunks = readEntryScanChunks(entry, [
         ...context.messageTexts,
         context.nextMessage,
-    ].filter(Boolean), options);
+    ].filter(Boolean), options, scanDepthSkew);
 
     if (scanChunks === null) {
         return '';
@@ -631,7 +666,7 @@ function createEntryScanText(
         ...scanChunks,
         ...readEntryScanSources(entry, context.sources),
         ...context.injects,
-        ...(scanState === 'recursion' ? recursionTexts : []),
+        ...(scanState !== 'min-activations' ? recursionTexts : []),
     ].filter(Boolean).join('\n');
 }
 
@@ -639,8 +674,9 @@ function readEntryScanChunks(
     entry: ReforgedWorldbookEntry,
     chunks: string[],
     options: ReforgedChatLorebookContextOptions,
+    scanDepthSkew = 0,
 ): string[] | null {
-    const scanDepth = entry.scanDepth ?? options.defaultScanDepth ?? null;
+    const scanDepth = resolveEntryScanDepth(entry, options, scanDepthSkew);
     if (scanDepth === null) {
         return chunks;
     }
@@ -651,6 +687,23 @@ function readEntryScanChunks(
     }
 
     return chunks.slice(-depth);
+}
+
+function resolveEntryScanDepth(
+    entry: ReforgedWorldbookEntry,
+    options: ReforgedChatLorebookContextOptions,
+    scanDepthSkew: number,
+): number | null {
+    if (entry.scanDepth !== null) {
+        return entry.scanDepth;
+    }
+
+    const defaultScanDepth = resolveDefaultScanDepth(options.defaultScanDepth);
+    if (defaultScanDepth === null) {
+        return null;
+    }
+
+    return defaultScanDepth + scanDepthSkew;
 }
 
 function readEntryScanSources(
@@ -686,7 +739,7 @@ function normalizeScanInjects(injects: string[] = []): string[] {
 
 function shouldScanEntryForState(
     entry: ReforgedWorldbookEntry,
-    scanState: ReforgedWorldbookScanState,
+    scanState: ReforgedWorldbookLoopState,
     currentDelayLevel: number,
     recursive: boolean,
 ): boolean {
@@ -732,6 +785,52 @@ function normalizeMaxRecursionSteps(value: number | undefined): number {
     }
 
     return Math.max(0, Math.floor(value));
+}
+
+function normalizeMinimumActivations(value: number | undefined): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return 0;
+    }
+
+    return Math.max(0, Math.floor(value));
+}
+
+function normalizeMinimumActivationsDepthMax(value: number | undefined): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return 0;
+    }
+
+    return Math.max(0, Math.floor(value));
+}
+
+function resolveDefaultScanDepth(value: number | null | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return null;
+    }
+
+    return Math.floor(value);
+}
+
+function countScanChunks(context: LorebookScanContext): number {
+    return context.messageTexts.length + (context.nextMessage ? 1 : 0);
+}
+
+function canAdvanceMinimumActivationScan(
+    options: ReforgedChatLorebookContextOptions,
+    scanDepthSkew: number,
+    maxScanChunks: number,
+    minimumActivationsDepthMax: number,
+): boolean {
+    const defaultScanDepth = resolveDefaultScanDepth(options.defaultScanDepth);
+    if (defaultScanDepth === null) {
+        return false;
+    }
+
+    const currentDepth = defaultScanDepth + scanDepthSkew;
+    return !(
+        (minimumActivationsDepthMax > 0 && currentDepth > minimumActivationsDepthMax) ||
+        currentDepth > maxScanChunks
+    );
 }
 
 function matchesWholeWord(haystack: string, needle: string): boolean {
