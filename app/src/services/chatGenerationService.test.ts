@@ -121,6 +121,40 @@ describe('chatGenerationService', () => {
         ]);
     });
 
+    it('formats routed worldbook entries as separate prompt sections', () => {
+        const session = createSession(['message-1']);
+        const messages = [
+            createMessage('message-1', 'user', 'Plot a safe course.'),
+        ];
+
+        expect(createChatEngineMessages(session, messages, {}, [createRoutedLorebook()])).toEqual([
+            {
+                role: 'system',
+                content: [
+                    'You are roleplaying as Astra. Stay in character and continue the scene naturally.',
+                    'Description: A navigator who reads star maps like sheet music.',
+                    'Personality: Calm, precise, quietly playful.',
+                    'Scenario: A damaged survey ship is drifting near a blue giant.',
+                    'World lore context:',
+                    'Use these selected lore notes as additional scene context.',
+                    'Lorebook: Astra Route Notes',
+                    'Before character:\nBefore lore.',
+                    'After character:\nAfter lore.',
+                    'Author note before:\nAuthor note before lore.',
+                    'Author note after:\nAuthor note after lore.',
+                    'Depth injections:',
+                    'Depth 4 (system):\nDepth lore.',
+                    'Outlet injections:',
+                    'Outlet navigation:\nOutlet lore.',
+                ].join('\n\n'),
+            },
+            {
+                role: 'user',
+                content: 'Plot a safe course.',
+            },
+        ]);
+    });
+
     it('reads messages in session order and ignores missing ids', () => {
         const session = createSession(['message-2', 'missing', 'message-1']);
         const messages = [
@@ -162,6 +196,67 @@ function createLorebook(): ReforgedChatLorebookContext {
                 content: 'A safe course means trading speed for silence.',
             },
         ],
+    };
+}
+
+function createRoutedLorebook(): ReforgedChatLorebookContext {
+    return {
+        id: 'worldbook-1',
+        name: 'Astra Route Notes',
+        entries: [
+            {
+                id: 'entry-before',
+                content: 'Before lore.',
+            },
+            {
+                id: 'entry-after',
+                content: 'After lore.',
+            },
+        ],
+        beforeEntries: [
+            {
+                id: 'entry-before',
+                content: 'Before lore.',
+            },
+        ],
+        afterEntries: [
+            {
+                id: 'entry-after',
+                content: 'After lore.',
+            },
+        ],
+        authorNoteBeforeEntries: [
+            {
+                id: 'entry-author-before',
+                content: 'Author note before lore.',
+            },
+        ],
+        authorNoteAfterEntries: [
+            {
+                id: 'entry-author-after',
+                content: 'Author note after lore.',
+            },
+        ],
+        depthEntries: [
+            {
+                depth: 4,
+                role: 'system',
+                entries: [
+                    {
+                        id: 'entry-depth',
+                        content: 'Depth lore.',
+                    },
+                ],
+            },
+        ],
+        outletEntries: {
+            navigation: [
+                {
+                    id: 'entry-outlet',
+                    content: 'Outlet lore.',
+                },
+            ],
+        },
     };
 }
 

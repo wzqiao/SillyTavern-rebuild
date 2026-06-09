@@ -3,6 +3,8 @@ import type {
     ReforgedChatEngineMessage,
     ReforgedChatGenerationOptions,
     ReforgedChatLorebookContext,
+    ReforgedChatLorebookDepthContext,
+    ReforgedChatLorebookEntryContext,
     ReforgedChatMessage,
     ReforgedChatSession,
 } from '@/contracts/chat';
@@ -113,6 +115,10 @@ function createLorebookSystemPrompt(lorebooks: ReforgedChatLorebookContext[]): s
 }
 
 function formatLorebook(lorebook: ReforgedChatLorebookContext): string {
+    if (hasRoutedLorebookEntries(lorebook)) {
+        return formatRoutedLorebook(lorebook);
+    }
+
     const entries = lorebook.entries
         .map((entry) => entry.content.trim())
         .filter(Boolean);
@@ -122,6 +128,65 @@ function formatLorebook(lorebook: ReforgedChatLorebookContext): string {
     }
 
     return [`Lorebook: ${lorebook.name}`, entries.join('\n\n')].join('\n\n');
+}
+
+function hasRoutedLorebookEntries(lorebook: ReforgedChatLorebookContext): boolean {
+    return Boolean(
+        lorebook.beforeEntries ||
+        lorebook.afterEntries ||
+        lorebook.authorNoteBeforeEntries ||
+        lorebook.authorNoteAfterEntries ||
+        lorebook.exampleEntries ||
+        lorebook.depthEntries ||
+        lorebook.outletEntries
+    );
+}
+
+function formatRoutedLorebook(lorebook: ReforgedChatLorebookContext): string {
+    const sections = [
+        formatEntryBucket('Before character', lorebook.beforeEntries),
+        formatEntryBucket('After character', lorebook.afterEntries),
+        formatEntryBucket('Author note before', lorebook.authorNoteBeforeEntries),
+        formatEntryBucket('Author note after', lorebook.authorNoteAfterEntries),
+        formatDepthEntries(lorebook.depthEntries),
+        formatOutletEntries(lorebook.outletEntries),
+    ].filter(Boolean);
+
+    return sections.length > 0 ? [`Lorebook: ${lorebook.name}`, ...sections].join('\n\n') : '';
+}
+
+function formatEntryBucket(label: string, entries: ReforgedChatLorebookEntryContext[] = []): string {
+    const content = formatEntryContents(entries);
+    return content ? `${label}:\n${content}` : '';
+}
+
+function formatDepthEntries(depthEntries: ReforgedChatLorebookDepthContext[] = []): string {
+    const sections = depthEntries
+        .map((depthEntry) => {
+            const content = formatEntryContents(depthEntry.entries);
+            return content ? `Depth ${depthEntry.depth} (${depthEntry.role}):\n${content}` : '';
+        })
+        .filter(Boolean);
+
+    return sections.length > 0 ? ['Depth injections:', ...sections].join('\n\n') : '';
+}
+
+function formatOutletEntries(outletEntries: Record<string, ReforgedChatLorebookEntryContext[]> = {}): string {
+    const sections = Object.entries(outletEntries)
+        .map(([outletName, entries]) => {
+            const content = formatEntryContents(entries);
+            return content ? `Outlet ${outletName}:\n${content}` : '';
+        })
+        .filter(Boolean);
+
+    return sections.length > 0 ? ['Outlet injections:', ...sections].join('\n\n') : '';
+}
+
+function formatEntryContents(entries: ReforgedChatLorebookEntryContext[]): string {
+    return entries
+        .map((entry) => entry.content.trim())
+        .filter(Boolean)
+        .join('\n\n');
 }
 
 function formatCharacterSection(label: string, value: string | undefined): string {

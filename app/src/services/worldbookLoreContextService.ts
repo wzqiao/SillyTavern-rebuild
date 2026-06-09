@@ -1,5 +1,9 @@
 import type {
+    ReforgedChatLorebookDepthContext,
     ReforgedChatLorebookContext,
+    ReforgedChatLorebookEntryContext,
+    ReforgedChatLorebookExampleContext,
+    ReforgedChatMessageRole,
     ReforgedChatMessageStatus,
 } from '@/contracts/chat';
 import type { ReforgedWorldbookEntry, ReforgedWorldbookLibraryItem } from '@/contracts/worldbook';
@@ -16,6 +20,7 @@ type WorldInfoSelectiveLogic = typeof WORLD_INFO_SELECTIVE_LOGIC[keyof typeof WO
 const WORLD_INFO_SELECTIVE_LOGIC_VALUES = new Set<number>(Object.values(WORLD_INFO_SELECTIVE_LOGIC));
 const REGEX_KEY_PATTERN = /^\/([\w\W]+?)\/([gimsuy]*)$/;
 const DEFAULT_GROUP_WEIGHT = 100;
+const DEFAULT_DEPTH = 4;
 const MAX_SCAN_DEPTH = 1000;
 
 interface ResolvedWorldbookMatchSettings {
@@ -109,21 +114,176 @@ export function createChatLorebookContext(
         options,
         matchSettings,
     );
+    const routedEntries = createRoutedLorebookEntries(candidates);
 
     return {
         id: libraryItem.id,
         name: libraryItem.worldbook.name,
-        entries: candidates
-            .sort((left, right) => {
-                const byInsertionOrder = right.entry.insertionOrder - left.entry.insertionOrder;
-                return byInsertionOrder || left.index - right.index;
-            })
-            .map(({ entry }) => ({
-                id: entry.id,
-                title: entry.comment.trim() || entry.primaryKeys.join(', ') || undefined,
-                content: entry.content.trim(),
-            })),
+        entries: sortCandidatesByLegacyEntryOrder(candidates).map(({ entry }) => createLorebookEntryContext(entry)),
+        beforeEntries: routedEntries.beforeEntries,
+        afterEntries: routedEntries.afterEntries,
+        authorNoteBeforeEntries: routedEntries.authorNoteBeforeEntries,
+        authorNoteAfterEntries: routedEntries.authorNoteAfterEntries,
+        exampleEntries: routedEntries.exampleEntries,
+        depthEntries: routedEntries.depthEntries,
+        outletEntries: routedEntries.outletEntries,
     };
+}
+
+interface RoutedLorebookEntries {
+    beforeEntries: ReforgedChatLorebookEntryContext[];
+    afterEntries: ReforgedChatLorebookEntryContext[];
+    authorNoteBeforeEntries: ReforgedChatLorebookEntryContext[];
+    authorNoteAfterEntries: ReforgedChatLorebookEntryContext[];
+    exampleEntries: ReforgedChatLorebookExampleContext[];
+    depthEntries: ReforgedChatLorebookDepthContext[];
+    outletEntries: Record<string, ReforgedChatLorebookEntryContext[]>;
+}
+
+function createRoutedLorebookEntries(candidates: ReforgedWorldbookEntryCandidate[]): RoutedLorebookEntries {
+    const routedEntries: RoutedLorebookEntries = {
+        beforeEntries: [],
+        afterEntries: [],
+        authorNoteBeforeEntries: [],
+        authorNoteAfterEntries: [],
+        exampleEntries: [],
+        depthEntries: [],
+        outletEntries: {},
+    };
+
+    for (const { entry } of sortCandidatesByLegacyEntryOrder(candidates)) {
+        const entryContext = createLorebookEntryContext(entry);
+        if (!entryContext.content) {
+            continue;
+        }
+
+        switch (entry.position) {
+            case 'before':
+                routedEntries.beforeEntries.unshift(entryContext);
+                break;
+            case 'after':
+                routedEntries.afterEntries.unshift(entryContext);
+                break;
+            case 'author-note-top':
+                routedEntries.authorNoteBeforeEntries.unshift(entryContext);
+                break;
+            case 'author-note-bottom':
+                routedEntries.authorNoteAfterEntries.unshift(entryContext);
+                break;
+            case 'examples-top':
+                routedEntries.exampleEntries.unshift(createLorebookExampleContext(entry, 'before'));
+                break;
+            case 'examples-bottom':
+                routedEntries.exampleEntries.unshift(createLorebookExampleContext(entry, 'after'));
+                break;
+            case 'at-depth':
+                appendDepthEntry(routedEntries.depthEntries, entry, entryContext);
+                break;
+            case 'outlet':
+                appendOutletEntry(routedEntries.outletEntries, entry, entryContext);
+                break;
+            default:
+                routedEntries.beforeEntries.unshift(entryContext);
+                break;
+        }
+    }
+
+    return routedEntries;
+}
+
+function sortCandidatesByPromptOrder(
+    candidates: ReforgedWorldbookEntryCandidate[],
+): ReforgedWorldbookEntryCandidate[] {
+    return [...candidates].sort((left, right) => {
+        const byInsertionOrder = left.entry.insertionOrder - right.entry.insertionOrder;
+        return byInsertionOrder || left.index - right.index;
+    });
+}
+
+function sortCandidatesByLegacyEntryOrder(
+    candidates: ReforgedWorldbookEntryCandidate[],
+): ReforgedWorldbookEntryCandidate[] {
+    return [...candidates].sort((left, right) => {
+        const byInsertionOrder = right.entry.insertionOrder - left.entry.insertionOrder;
+        return byInsertionOrder || left.index - right.index;
+    });
+}
+
+function createLorebookEntryContext(entry: ReforgedWorldbookEntry): ReforgedChatLorebookEntryContext {
+    return {
+        id: entry.id,
+        title: entry.comment.trim() || entry.primaryKeys.join(', ') || undefined,
+        content: entry.content.trim(),
+    };
+}
+
+function createLorebookExampleContext(
+    entry: ReforgedWorldbookEntry,
+    position: ReforgedChatLorebookExampleContext['position'],
+): ReforgedChatLorebookExampleContext {
+    const entryContext = createLorebookEntryContext(entry);
+    return {
+        position,
+        content: entryContext.content,
+        sourceEntryId: entryContext.id,
+        title: entryContext.title,
+    };
+}
+
+function appendDepthEntry(
+    depthEntries: ReforgedChatLorebookDepthContext[],
+    entry: ReforgedWorldbookEntry,
+    entryContext: ReforgedChatLorebookEntryContext,
+): void {
+    const depth = normalizeRoutedDepth(entry.depth);
+    const role = normalizeRoutedRole(entry.role);
+    const existingDepthEntry = depthEntries.find((item) => item.depth === depth && item.role === role);
+    if (existingDepthEntry) {
+        existingDepthEntry.entries.unshift(entryContext);
+        return;
+    }
+
+    depthEntries.push({
+        depth,
+        role,
+        entries: [entryContext],
+    });
+}
+
+function appendOutletEntry(
+    outletEntries: Record<string, ReforgedChatLorebookEntryContext[]>,
+    entry: ReforgedWorldbookEntry,
+    entryContext: ReforgedChatLorebookEntryContext,
+): void {
+    const outletName = entry.outletName.trim();
+    if (!outletName) {
+        return;
+    }
+
+    outletEntries[outletName] = [
+        ...(outletEntries[outletName] ?? []),
+        entryContext,
+    ];
+}
+
+function normalizeRoutedDepth(value: number | null): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return DEFAULT_DEPTH;
+    }
+
+    return Math.max(0, Math.floor(value));
+}
+
+function normalizeRoutedRole(value: string | number | null): ReforgedChatMessageRole {
+    if (value === 1 || value === '1' || value === 'user') {
+        return 'user';
+    }
+
+    if (value === 2 || value === '2' || value === 'assistant') {
+        return 'assistant';
+    }
+
+    return 'system';
 }
 
 function activateWorldbookEntries(

@@ -54,10 +54,35 @@ export interface ReforgedChatLorebookEntryContext {
 }
 
 // DRAFT: 待主干评审
+export type ReforgedChatLorebookExamplePosition = 'before' | 'after';
+
+// DRAFT: 待主干评审
+export interface ReforgedChatLorebookExampleContext {
+    position: ReforgedChatLorebookExamplePosition;
+    content: string;
+    sourceEntryId?: string;
+    title?: string;
+}
+
+// DRAFT: 待主干评审
+export interface ReforgedChatLorebookDepthContext {
+    depth: number;
+    role: ReforgedChatMessageRole;
+    entries: ReforgedChatLorebookEntryContext[];
+}
+
+// DRAFT: 待主干评审
 export interface ReforgedChatLorebookContext {
     id: string;
     name: string;
     entries: ReforgedChatLorebookEntryContext[];
+    beforeEntries?: ReforgedChatLorebookEntryContext[];
+    afterEntries?: ReforgedChatLorebookEntryContext[];
+    authorNoteBeforeEntries?: ReforgedChatLorebookEntryContext[];
+    authorNoteAfterEntries?: ReforgedChatLorebookEntryContext[];
+    exampleEntries?: ReforgedChatLorebookExampleContext[];
+    depthEntries?: ReforgedChatLorebookDepthContext[];
+    outletEntries?: Record<string, ReforgedChatLorebookEntryContext[]>;
 }
 
 // DRAFT: 待主干评审

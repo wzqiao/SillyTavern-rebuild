@@ -50,7 +50,7 @@ describe('createChatLorebookContext', () => {
             },
         } satisfies ReforgedWorldbookLibraryItem, {
             includeInactivePreviewEntries: true,
-        })).toEqual({
+        })).toMatchObject({
             id: 'worldbook-1',
             name: 'Astra Route Notes',
             entries: [
@@ -2441,6 +2441,252 @@ describe('createChatLorebookContext', () => {
         }).entries.map((entry) => entry.id)).toEqual([
             'entry-seed',
         ]);
+    });
+
+    it('routes activated entries into SillyTavern-style prompt buckets', () => {
+        const context = createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-before-high',
+                comment: 'Before high',
+                content: 'Before high lore.',
+                constant: true,
+                insertionOrder: 120,
+                position: 'before',
+            }),
+            createEntry({
+                id: 'entry-before-low',
+                comment: 'Before low',
+                content: 'Before low lore.',
+                constant: true,
+                insertionOrder: 80,
+                position: 'before',
+            }),
+            createEntry({
+                id: 'entry-after',
+                comment: 'After',
+                content: 'After lore.',
+                constant: true,
+                insertionOrder: 110,
+                position: 'after',
+            }),
+            createEntry({
+                id: 'entry-author-before',
+                comment: 'Author before',
+                content: 'Author before lore.',
+                constant: true,
+                insertionOrder: 100,
+                position: 'author-note-top',
+            }),
+            createEntry({
+                id: 'entry-author-after',
+                comment: 'Author after',
+                content: 'Author after lore.',
+                constant: true,
+                insertionOrder: 90,
+                position: 'author-note-bottom',
+            }),
+            createEntry({
+                id: 'entry-example-before',
+                comment: 'Example before',
+                content: 'Example before lore.',
+                constant: true,
+                insertionOrder: 70,
+                position: 'examples-top',
+            }),
+            createEntry({
+                id: 'entry-example-after',
+                comment: 'Example after',
+                content: 'Example after lore.',
+                constant: true,
+                insertionOrder: 60,
+                position: 'examples-bottom',
+            }),
+        ]));
+
+        expect(context.entries.map((entry) => entry.id)).toEqual([
+            'entry-before-high',
+            'entry-after',
+            'entry-author-before',
+            'entry-author-after',
+            'entry-before-low',
+            'entry-example-before',
+            'entry-example-after',
+        ]);
+        expect(context.beforeEntries?.map((entry) => entry.id)).toEqual([
+            'entry-before-low',
+            'entry-before-high',
+        ]);
+        expect(context.afterEntries?.map((entry) => entry.id)).toEqual([
+            'entry-after',
+        ]);
+        expect(context.authorNoteBeforeEntries?.map((entry) => entry.id)).toEqual([
+            'entry-author-before',
+        ]);
+        expect(context.authorNoteAfterEntries?.map((entry) => entry.id)).toEqual([
+            'entry-author-after',
+        ]);
+        expect(context.exampleEntries).toEqual([
+            {
+                position: 'after',
+                content: 'Example after lore.',
+                sourceEntryId: 'entry-example-after',
+                title: 'Example after',
+            },
+            {
+                position: 'before',
+                content: 'Example before lore.',
+                sourceEntryId: 'entry-example-before',
+                title: 'Example before',
+            },
+        ]);
+    });
+
+    it('groups at-depth entries by normalized depth and role', () => {
+        const context = createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-depth-system-high',
+                comment: 'Depth system high',
+                content: 'Depth system high lore.',
+                constant: true,
+                depth: 6,
+                insertionOrder: 120,
+                position: 'at-depth',
+                role: 0,
+            }),
+            createEntry({
+                id: 'entry-depth-user',
+                comment: 'Depth user',
+                content: 'Depth user lore.',
+                constant: true,
+                depth: 6,
+                insertionOrder: 110,
+                position: 'at-depth',
+                role: 1,
+            }),
+            createEntry({
+                id: 'entry-depth-system-low',
+                comment: 'Depth system low',
+                content: 'Depth system low lore.',
+                constant: true,
+                depth: 6,
+                insertionOrder: 100,
+                position: 'at-depth',
+                role: 'system',
+            }),
+            createEntry({
+                id: 'entry-depth-default',
+                comment: 'Depth default',
+                content: 'Depth default lore.',
+                constant: true,
+                insertionOrder: 90,
+                position: 'at-depth',
+                role: null,
+            }),
+        ]));
+
+        expect(context.depthEntries).toEqual([
+            {
+                depth: 6,
+                role: 'system',
+                entries: [
+                    {
+                        id: 'entry-depth-system-low',
+                        title: 'Depth system low',
+                        content: 'Depth system low lore.',
+                    },
+                    {
+                        id: 'entry-depth-system-high',
+                        title: 'Depth system high',
+                        content: 'Depth system high lore.',
+                    },
+                ],
+            },
+            {
+                depth: 6,
+                role: 'user',
+                entries: [
+                    {
+                        id: 'entry-depth-user',
+                        title: 'Depth user',
+                        content: 'Depth user lore.',
+                    },
+                ],
+            },
+            {
+                depth: 4,
+                role: 'system',
+                entries: [
+                    {
+                        id: 'entry-depth-default',
+                        title: 'Depth default',
+                        content: 'Depth default lore.',
+                    },
+                ],
+            },
+        ]);
+    });
+
+    it('routes outlet entries by name and keeps SillyTavern descending order', () => {
+        const context = createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-outlet-high',
+                comment: 'Outlet high',
+                content: 'Outlet high lore.',
+                constant: true,
+                insertionOrder: 120,
+                outletName: 'navigation',
+                position: 'outlet',
+            }),
+            createEntry({
+                id: 'entry-outlet-low',
+                comment: 'Outlet low',
+                content: 'Outlet low lore.',
+                constant: true,
+                insertionOrder: 80,
+                outletName: 'navigation',
+                position: 'outlet',
+            }),
+            createEntry({
+                id: 'entry-outlet-empty',
+                comment: 'Outlet empty',
+                content: 'Outlet empty lore.',
+                constant: true,
+                insertionOrder: 70,
+                outletName: '',
+                position: 'outlet',
+            }),
+            createEntry({
+                id: 'entry-outlet-other',
+                comment: 'Outlet other',
+                content: 'Outlet other lore.',
+                constant: true,
+                insertionOrder: 60,
+                outletName: 'signals',
+                position: 'outlet',
+            }),
+        ]));
+
+        expect(context.outletEntries).toEqual({
+            navigation: [
+                {
+                    id: 'entry-outlet-high',
+                    title: 'Outlet high',
+                    content: 'Outlet high lore.',
+                },
+                {
+                    id: 'entry-outlet-low',
+                    title: 'Outlet low',
+                    content: 'Outlet low lore.',
+                },
+            ],
+            signals: [
+                {
+                    id: 'entry-outlet-other',
+                    title: 'Outlet other',
+                    content: 'Outlet other lore.',
+                },
+            ],
+        });
     });
 
     it('suppresses delayed timed-effect entries until enough scan chunks are available', () => {
