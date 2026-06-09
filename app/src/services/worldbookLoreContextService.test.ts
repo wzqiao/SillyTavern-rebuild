@@ -1090,6 +1090,235 @@ describe('createChatLorebookContext', () => {
             'entry-scan-text-override',
         ]);
     });
+
+    it('matches entry opt-in keys against global scan sources', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-persona',
+                comment: 'Persona source',
+                content: 'Persona lore.',
+                primaryKeys: ['pilot alias'],
+                matchPersonaDescription: true,
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-character-description',
+                comment: 'Character description source',
+                content: 'Character description lore.',
+                primaryKeys: ['silver jacket'],
+                matchCharacterDescription: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-character-personality',
+                comment: 'Character personality source',
+                content: 'Character personality lore.',
+                primaryKeys: ['careful optimist'],
+                matchCharacterPersonality: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-depth-prompt',
+                comment: 'Depth prompt source',
+                content: 'Depth prompt lore.',
+                primaryKeys: ['hidden engine room'],
+                matchCharacterDepthPrompt: true,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-scenario',
+                comment: 'Scenario source',
+                content: 'Scenario lore.',
+                primaryKeys: ['orbital market'],
+                matchScenario: true,
+                insertionOrder: 70,
+            }),
+            createEntry({
+                id: 'entry-creator-notes',
+                comment: 'Creator notes source',
+                content: 'Creator notes lore.',
+                primaryKeys: ['ancient oath'],
+                matchCreatorNotes: true,
+                insertionOrder: 60,
+            }),
+            createEntry({
+                id: 'entry-without-source-flag',
+                comment: 'No source flag',
+                content: 'No source flag lore.',
+                primaryKeys: ['pilot alias'],
+                insertionOrder: 50,
+            }),
+        ]), {
+            scanSources: {
+                personaDescription: 'The user is known by the pilot alias.',
+                characterDescription: 'The captain wears a silver jacket.',
+                characterPersonality: 'A careful optimist under pressure.',
+                characterDepthPrompt: 'Mention the hidden engine room at depth.',
+                scenario: 'The crew waits at an orbital market.',
+                creatorNotes: 'The character keeps an ancient oath secret.',
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-persona',
+            'entry-character-description',
+            'entry-character-personality',
+            'entry-depth-prompt',
+            'entry-scenario',
+            'entry-creator-notes',
+        ]);
+    });
+
+    it('does not match global scan sources when corresponding entry flags are off', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-no-source-flag',
+                comment: 'No source flag',
+                content: 'No source flag lore.',
+                primaryKeys: ['persona marker'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-wrong-source-flag',
+                comment: 'Wrong source flag',
+                content: 'Wrong source flag lore.',
+                primaryKeys: ['persona marker'],
+                matchScenario: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-empty-source',
+                comment: 'Empty source',
+                content: 'Empty source lore.',
+                primaryKeys: ['empty marker'],
+                matchPersonaDescription: true,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-chat-baseline',
+                comment: 'Chat baseline',
+                content: 'Chat baseline lore.',
+                primaryKeys: ['history marker'],
+                insertionOrder: 70,
+            }),
+        ]), {
+            messages: [
+                { content: 'The history marker remains in chat.', status: 'sent' },
+            ],
+            scanSources: {
+                personaDescription: 'The persona marker is only in persona data.',
+                scenario: '   ',
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-chat-baseline',
+        ]);
+    });
+
+    it('uses global scan sources for selective secondary keys', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-secondary-from-source',
+                comment: 'Secondary from source',
+                content: 'Secondary from source lore.',
+                primaryKeys: ['primary route'],
+                secondaryKeys: ['careful optimist'],
+                selective: true,
+                matchCharacterPersonality: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-secondary-source-flag-off',
+                comment: 'Secondary source flag off',
+                content: 'Secondary source flag off lore.',
+                primaryKeys: ['primary route'],
+                secondaryKeys: ['careful optimist'],
+                selective: true,
+                insertionOrder: 90,
+            }),
+        ]), {
+            nextMessage: 'Follow the primary route.',
+            scanSources: {
+                characterPersonality: 'A careful optimist under pressure.',
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-secondary-from-source',
+        ]);
+    });
+
+    it('keeps global scan sources independent from per-entry history scanDepth', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-source-inside-depth',
+                comment: 'Source inside depth',
+                content: 'Source inside depth lore.',
+                primaryKeys: ['persona marker'],
+                scanDepth: 1,
+                matchPersonaDescription: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-history-outside-depth',
+                comment: 'History outside depth',
+                content: 'History outside depth lore.',
+                primaryKeys: ['history marker'],
+                scanDepth: 1,
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The history marker is only in older chat.', status: 'sent' },
+                { content: 'The recent chat marker does not match.', status: 'sent' },
+            ],
+            scanSources: {
+                personaDescription: 'The persona marker is outside chat history.',
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-source-inside-depth',
+        ]);
+    });
+
+    it('returns no non-override scan haystack when scanDepth resolves to zero even if global sources are enabled', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-source-with-zero-depth',
+                comment: 'Source with zero depth',
+                content: 'Source with zero depth lore.',
+                primaryKeys: ['persona marker'],
+                scanDepth: 0,
+                matchPersonaDescription: true,
+                insertionOrder: 100,
+            }),
+        ]), {
+            scanSources: {
+                personaDescription: 'The persona marker is outside chat history.',
+            },
+        }).entries.map((entry) => entry.id)).toEqual([]);
+    });
+
+    it('does not apply global scan sources when explicit scan text is provided', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-from-override',
+                comment: 'Override source',
+                content: 'Override source lore.',
+                primaryKeys: ['override marker'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-from-global-source',
+                comment: 'Global source',
+                content: 'Global source lore.',
+                primaryKeys: ['persona marker'],
+                matchPersonaDescription: true,
+                insertionOrder: 90,
+            }),
+        ]), {
+            scanText: 'The override marker wins.',
+            scanSources: {
+                personaDescription: 'The persona marker is ignored by explicit scan text.',
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-from-override',
+        ]);
+    });
 });
 
 function createLibraryItem(entries: ReforgedWorldbookEntry[]): ReforgedWorldbookLibraryItem {

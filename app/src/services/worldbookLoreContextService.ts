@@ -27,6 +27,7 @@ interface LorebookScanContext {
     overrideText: string | null;
     messageTexts: string[];
     nextMessage: string;
+    sources: Required<ReforgedChatLorebookScanSources>;
 }
 
 interface ReforgedWorldbookEntryCandidate {
@@ -39,6 +40,15 @@ export interface ReforgedChatLorebookScanMessage {
     status?: ReforgedChatMessageStatus;
 }
 
+export interface ReforgedChatLorebookScanSources {
+    personaDescription?: string;
+    characterDescription?: string;
+    characterPersonality?: string;
+    characterDepthPrompt?: string;
+    scenario?: string;
+    creatorNotes?: string;
+}
+
 export interface ReforgedChatLorebookContextOptions {
     defaultCaseSensitive?: boolean;
     defaultMatchWholeWords?: boolean;
@@ -49,6 +59,7 @@ export interface ReforgedChatLorebookContextOptions {
     scanText?: string;
     messages?: ReforgedChatLorebookScanMessage[];
     nextMessage?: string;
+    scanSources?: ReforgedChatLorebookScanSources;
 }
 
 export function createChatLorebookContext(
@@ -395,6 +406,7 @@ function createLorebookScanContext(options: ReforgedChatLorebookContextOptions):
             overrideText: options.scanText.trim(),
             messageTexts: [],
             nextMessage: '',
+            sources: normalizeScanSources(options.scanSources),
         };
     }
 
@@ -405,6 +417,7 @@ function createLorebookScanContext(options: ReforgedChatLorebookContextOptions):
             .map((message) => message.content.trim())
             .filter(Boolean),
         nextMessage: options.nextMessage?.trim() ?? '',
+        sources: normalizeScanSources(options.scanSources),
     };
 }
 
@@ -417,17 +430,26 @@ function createEntryScanText(
         return context.overrideText;
     }
 
-    return readEntryScanChunks(entry, [
+    const scanChunks = readEntryScanChunks(entry, [
         ...context.messageTexts,
         context.nextMessage,
-    ].filter(Boolean), options).join('\n');
+    ].filter(Boolean), options);
+
+    if (scanChunks === null) {
+        return '';
+    }
+
+    return [
+        ...scanChunks,
+        ...readEntryScanSources(entry, context.sources),
+    ].filter(Boolean).join('\n');
 }
 
 function readEntryScanChunks(
     entry: ReforgedWorldbookEntry,
     chunks: string[],
     options: ReforgedChatLorebookContextOptions,
-): string[] {
+): string[] | null {
     const scanDepth = entry.scanDepth ?? options.defaultScanDepth ?? null;
     if (scanDepth === null) {
         return chunks;
@@ -435,10 +457,35 @@ function readEntryScanChunks(
 
     const depth = Math.min(MAX_SCAN_DEPTH, Math.floor(scanDepth));
     if (depth <= 0) {
-        return [];
+        return null;
     }
 
     return chunks.slice(-depth);
+}
+
+function readEntryScanSources(
+    entry: ReforgedWorldbookEntry,
+    sources: Required<ReforgedChatLorebookScanSources>,
+): string[] {
+    return [
+        entry.matchPersonaDescription ? sources.personaDescription : '',
+        entry.matchCharacterDescription ? sources.characterDescription : '',
+        entry.matchCharacterPersonality ? sources.characterPersonality : '',
+        entry.matchCharacterDepthPrompt ? sources.characterDepthPrompt : '',
+        entry.matchScenario ? sources.scenario : '',
+        entry.matchCreatorNotes ? sources.creatorNotes : '',
+    ].filter(Boolean);
+}
+
+function normalizeScanSources(sources: ReforgedChatLorebookScanSources = {}): Required<ReforgedChatLorebookScanSources> {
+    return {
+        personaDescription: sources.personaDescription?.trim() ?? '',
+        characterDescription: sources.characterDescription?.trim() ?? '',
+        characterPersonality: sources.characterPersonality?.trim() ?? '',
+        characterDepthPrompt: sources.characterDepthPrompt?.trim() ?? '',
+        scenario: sources.scenario?.trim() ?? '',
+        creatorNotes: sources.creatorNotes?.trim() ?? '',
+    };
 }
 
 function matchesWholeWord(haystack: string, needle: string): boolean {
