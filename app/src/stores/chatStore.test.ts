@@ -264,6 +264,212 @@ describe('useChatStore', () => {
         expect(store.pendingAbortController).toBeNull();
     });
 
+    it('streams chat-completion snapshots into the assistant message before completion', async () => {
+        const firstChunkObserved = deferred<void>();
+        const releaseFinalChunk = deferred<void>();
+        async function* streamData() {
+            yield {
+                text: 'Runtime part',
+                swipes: ['Alt part'],
+            };
+            firstChunkObserved.resolve(undefined);
+            await releaseFinalChunk.promise;
+            yield {
+                text: 'Runtime final reply.',
+                swipes: ['Runtime final swipe.'],
+            };
+        }
+
+        const sendChatCompletion = vi.fn(async (): Promise<unknown> => streamData());
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(
+            vi.fn(async () => {
+                throw new Error('generateText should not be called for chat-completion runtime');
+            }),
+            sendChatCompletion,
+        ));
+
+        const sendPromise = store.sendUserMessage({
+            content: 'Stream runtime.',
+            character: astra,
+            runtime: {
+                mode: 'chat-completion',
+                chatCompletionType: 'normal',
+            },
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        await firstChunkObserved.promise;
+
+        const streamingAssistant = store.selectedMessages.at(-1);
+        expect(streamingAssistant).toMatchObject({
+            role: 'assistant',
+            content: 'Runtime part',
+            status: 'generating',
+            alternatives: [],
+            activeAlternativeIndex: -1,
+        });
+        expect(store.generation.status).toBe('generating');
+
+        releaseFinalChunk.resolve(undefined);
+
+        await expect(sendPromise).resolves.toMatchObject({
+            ok: true,
+            assistantMessage: {
+                content: 'Runtime final reply.',
+                status: 'sent',
+                activeAlternativeIndex: 0,
+                alternatives: [
+                    expect.objectContaining({ content: 'Runtime final reply.' }),
+                    expect.objectContaining({ content: 'Runtime final swipe.' }),
+                ],
+            },
+        });
+        expect(store.generation.status).toBe('idle');
+        expect(store.pendingAbortController).toBeNull();
+    });
+
+    it('keeps a cancelled streaming runtime message failed when late chunks arrive', async () => {
+        const firstChunkObserved = deferred<void>();
+        const releaseLateChunk = deferred<void>();
+        async function* streamData() {
+            yield { text: 'Partial before cancel.' };
+            firstChunkObserved.resolve(undefined);
+            await releaseLateChunk.promise;
+            yield { text: 'Late text that must not overwrite cancellation.' };
+        }
+
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(vi.fn(async () => 'unused'), vi.fn(async () => streamData())));
+
+        const sendPromise = store.sendUserMessage({
+            content: 'Cancel runtime stream.',
+            runtime: {
+                mode: 'chat-completion',
+            },
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        await firstChunkObserved.promise;
+        expect(store.selectedMessages.at(-1)).toMatchObject({
+            role: 'assistant',
+            content: 'Partial before cancel.',
+            status: 'generating',
+        });
+
+        expect(store.cancelGeneration('2026-06-09T00:00:03.000Z')).toBe(true);
+        releaseLateChunk.resolve(undefined);
+
+        await expect(sendPromise).resolves.toMatchObject({
+            ok: false,
+            error: { code: 'generation-cancelled' },
+        });
+        expect(store.selectedMessages.at(-1)).toMatchObject({
+            role: 'assistant',
+            content: 'Partial before cancel.',
+            status: 'failed',
+            error: { code: 'generation-cancelled' },
+        });
+        expect(store.generation.status).toBe('cancelled');
+        expect(store.pendingAbortController).toBeNull();
+    });
+
+    it('keeps partial streamed content when the runtime stream fails', async () => {
+        async function* brokenStream() {
+            yield { text: 'Partial before failure.' };
+            throw new Error('stream exploded');
+        }
+
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(vi.fn(async () => 'unused'), vi.fn(async () => brokenStream())));
+
+        const result = await store.sendUserMessage({
+            content: 'Break runtime stream.',
+            runtime: {
+                mode: 'chat-completion',
+            },
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        expect(result).toMatchObject({
+            ok: false,
+            error: {
+                code: 'generation-failed',
+                detail: 'Chat completion stream failed: stream exploded',
+            },
+            assistantMessage: {
+                content: 'Partial before failure.',
+                status: 'failed',
+            },
+        });
+    });
+
+    it('uses the first non-empty runtime alternative when the primary reply is empty', async () => {
+        const sendChatCompletion = vi.fn(async (): Promise<unknown> => ({
+            choices: [
+                { message: { content: '   ' } },
+                { message: { content: '' } },
+                { message: { content: 'Runtime fallback swipe.' } },
+            ],
+        }));
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(vi.fn(async () => 'unused'), sendChatCompletion));
+
+        const result = await store.sendUserMessage({
+            content: 'Need fallback.',
+            runtime: {
+                mode: 'chat-completion',
+            },
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            assistantMessage: {
+                content: 'Runtime fallback swipe.',
+                activeAlternativeIndex: 0,
+                alternatives: [
+                    expect.objectContaining({ content: 'Runtime fallback swipe.' }),
+                ],
+            },
+        });
+    });
+
+    it('leaves the active alternative unset when runtime returns no text', async () => {
+        const sendChatCompletion = vi.fn(async (): Promise<unknown> => ({
+            choices: [
+                { message: { content: '   ' } },
+                { message: { content: '' } },
+            ],
+        }));
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(vi.fn(async () => 'unused'), sendChatCompletion));
+
+        const result = await store.sendUserMessage({
+            content: 'Empty runtime.',
+            runtime: {
+                mode: 'chat-completion',
+            },
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            assistantMessage: {
+                content: '',
+                activeAlternativeIndex: -1,
+                alternatives: [],
+            },
+        });
+    });
+
     it('rejects empty messages and missing adapters without mutating chat history', async () => {
         const store = useChatStore();
 

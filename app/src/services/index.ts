@@ -14,5 +14,6 @@ export {
     collectChatCompletionResult,
     createChatCompletionRequest,
     normalizeChatCompletionEvents,
+    sendChatRuntimeEvents,
     sendChatRuntimeCompletion,
 } from './chatRuntimeService';

@@ -32,8 +32,27 @@ export async function sendChatRuntimeCompletion(
     adapter: HeadlessEngineAdapter,
     input: ReforgedChatRuntimeRequestInput,
 ): Promise<ReforgedChatRuntimeResult> {
+    let result: ReforgedChatRuntimeResult | null = null;
+
+    for await (const event of sendChatRuntimeEvents(adapter, input)) {
+        if (event.type === 'complete') {
+            result = event.result;
+        }
+    }
+
+    if (!result) {
+        throw new ReforgedChatRuntimeNormalizationError('Chat completion response did not produce a final result.');
+    }
+
+    return result;
+}
+
+export async function* sendChatRuntimeEvents(
+    adapter: HeadlessEngineAdapter,
+    input: ReforgedChatRuntimeRequestInput,
+): AsyncGenerator<ReforgedChatRuntimeEvent> {
     const rawResponse = await adapter.sendChatCompletion(createChatCompletionRequest(input));
-    return collectChatCompletionResult(rawResponse);
+    yield* normalizeChatCompletionEvents(rawResponse);
 }
 
 export async function collectChatCompletionResult(rawResponse: unknown): Promise<ReforgedChatRuntimeResult> {
@@ -62,7 +81,7 @@ export async function* normalizeChatCompletionEvents(rawResponse: unknown): Asyn
         try {
             for await (const chunk of stream) {
                 chunkCount += 1;
-                snapshot = normalizeStreamChunk(chunk, chunkCount);
+                snapshot = mergeStreamSnapshot(snapshot, normalizeStreamChunk(chunk, chunkCount));
                 yield {
                     type: 'snapshot',
                     snapshot,
@@ -116,6 +135,27 @@ function normalizeStreamChunk(chunk: unknown, chunkCount: number): ReforgedChatR
         finishReason: readFinishReason(record),
         source: 'stream',
         chunkCount,
+    };
+}
+
+function mergeStreamSnapshot(
+    previous: ReforgedChatRuntimeSnapshot,
+    next: ReforgedChatRuntimeSnapshot,
+): ReforgedChatRuntimeSnapshot {
+    return {
+        ...next,
+        text: next.text || previous.text,
+        alternatives: next.alternatives.length > 0 ? next.alternatives : previous.alternatives,
+        reasoning: next.reasoning || previous.reasoning,
+        reasoningSignature: next.reasoningSignature ?? previous.reasoningSignature,
+        images: next.images.length > 0 ? next.images : previous.images,
+        toolCalls: next.toolCalls.length > 0 ? next.toolCalls : previous.toolCalls,
+        toolSignatures: {
+            ...previous.toolSignatures,
+            ...next.toolSignatures,
+        },
+        logprobs: next.logprobs ?? previous.logprobs,
+        finishReason: next.finishReason ?? previous.finishReason,
     };
 }
 

@@ -348,6 +348,31 @@ describe('chatRuntimeService', () => {
         ]);
     });
 
+    it('keeps prior streaming text when a later chunk has only metadata', async () => {
+        async function* streamData() {
+            yield {
+                text: 'Partial text',
+                swipes: ['Alt text'],
+            };
+            yield {
+                logprobs: { token: 'meta-only' },
+                state: {
+                    toolSignatures: { 'tool-1': 'tool-sig' },
+                },
+            };
+        }
+
+        await expect(collectChatCompletionResult(streamData())).resolves.toMatchObject({
+            completed: true,
+            text: 'Partial text',
+            alternatives: ['Alt text'],
+            toolSignatures: { 'tool-1': 'tool-sig' },
+            logprobs: { token: 'meta-only' },
+            source: 'stream',
+            chunkCount: 2,
+        });
+    });
+
     it('sends through the adapter and collects a stable runtime result', async () => {
         const sendChatCompletion = vi.fn(async (_request: HeadlessChatCompletionRequest) => ({
             choices: [{ message: { content: 'Runtime reply.' } }],

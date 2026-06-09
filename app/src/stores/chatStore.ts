@@ -8,6 +8,7 @@ import type {
     ReforgedChatMessageAlternative,
     ReforgedChatPendingRequest,
     ReforgedChatReadiness,
+    ReforgedChatRuntimeResult,
     ReforgedChatSendFailure,
     ReforgedChatSendInput,
     ReforgedChatSendResult,
@@ -17,7 +18,7 @@ import type {
 import {
     createChatGenerationRequest,
     readReforgedSessionMessages,
-    sendChatRuntimeCompletion,
+    sendChatRuntimeEvents,
 } from '@/services';
 
 type Clock = () => string;
@@ -219,16 +220,34 @@ export const useChatStore = defineStore('chat', {
             };
 
             try {
-                const runtimeResult = isChatCompletionRuntime
-                    ? await sendChatRuntimeCompletion(adapter, {
+                let runtimeResult: ReforgedChatRuntimeResult | null = null;
+
+                if (isChatCompletionRuntime) {
+                    for await (const event of sendChatRuntimeEvents(adapter, {
                         session,
                         messages: this.messages,
                         lorebooks: input.lorebooks,
                         generation: input.generation,
                         type: input.runtime?.chatCompletionType,
                         signal: abortController?.signal,
-                    })
-                    : null;
+                    })) {
+                        if (!this.isActivePendingRequest(pendingRequest.id)) {
+                            return createSendFailureResult(
+                                createChatError('generation-cancelled', 'Generation was cancelled before completion.'),
+                                session,
+                                userMessage,
+                                assistantMessage,
+                            );
+                        }
+
+                        if (event.type === 'snapshot') {
+                            assistantMessage.content = event.snapshot.text;
+                        } else {
+                            runtimeResult = event.result;
+                        }
+                    }
+                }
+
                 const reply = runtimeResult?.text ?? await adapter.generateText(request);
                 if (!this.isActivePendingRequest(pendingRequest.id)) {
                     return createSendFailureResult(
@@ -240,15 +259,17 @@ export const useChatStore = defineStore('chat', {
                 }
 
                 const finishedAt = clock();
-                const normalizedReply = reply.trim();
-                assistantMessage.content = normalizedReply;
+                const assistantAlternatives = [
+                    reply,
+                    ...(runtimeResult?.alternatives ?? []),
+                ]
+                    .map((alternative) => alternative.trim())
+                    .filter((alternative) => alternative.length > 0);
+                assistantMessage.content = assistantAlternatives[0] ?? reply.trim();
                 assistantMessage.status = 'sent';
                 assistantMessage.updatedAt = finishedAt;
-                assistantMessage.alternatives = [
-                    this.createAlternative(normalizedReply, finishedAt),
-                    ...(runtimeResult?.alternatives ?? []).map((alternative) => this.createAlternative(alternative.trim(), finishedAt)),
-                ].filter((alternative) => alternative.content.length > 0);
-                assistantMessage.activeAlternativeIndex = 0;
+                assistantMessage.alternatives = assistantAlternatives.map((alternative) => this.createAlternative(alternative, finishedAt));
+                assistantMessage.activeAlternativeIndex = assistantMessage.alternatives.length > 0 ? 0 : -1;
                 session.updatedAt = finishedAt;
                 this.pendingAbortController = null;
                 this.generation = idleGenerationState();
