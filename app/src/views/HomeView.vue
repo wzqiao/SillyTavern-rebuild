@@ -77,10 +77,15 @@ const demoAdapter: HeadlessEngineAdapter = {
 
 const selectedRoster = computed(() => characterStore.selectedCharacter);
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
-const selectedLorebooks = computed(() => selectedWorldbook.value ? [createChatLorebookContext(selectedWorldbook.value)] : []);
+const selectedMessages = computed(() => chatStore.selectedMessages);
+const selectedLorebooks = computed(() => selectedWorldbook.value
+  ? [createChatLorebookContext(selectedWorldbook.value, {
+      messages: selectedMessages.value,
+      nextMessage: draftMessage.value,
+    })]
+  : []);
 const selectedLorebook = computed(() => selectedLorebooks.value[0] ?? null);
 const selectedWorldbookPreview = computed(() => selectedLorebook.value?.entries.slice(0, 3) ?? []);
-const selectedMessages = computed(() => chatStore.selectedMessages);
 const activeSession = computed(() => chatStore.selectedSession);
 const readiness = computed(() => chatStore.readiness);
 const runtimeAdapterReady = computed(() => adapterMode.value === 'runtime' && runtimeDiagnostics.value?.ok === true && readiness.value.hasAdapter);
@@ -460,11 +465,18 @@ async function sendMessage(): Promise<void> {
     return;
   }
 
+  const lorebooksForSend = selectedWorldbook.value
+    ? [createChatLorebookContext(selectedWorldbook.value, {
+        messages: selectedMessages.value,
+        nextMessage: content,
+      })]
+    : [];
+
   draftMessage.value = '';
   const result = await chatStore.sendUserMessage({
     content,
     character: selectedRoster.value ? toChatCharacter(selectedRoster.value) : activeSession.value?.character,
-    lorebooks: selectedLorebooks.value,
+    lorebooks: lorebooksForSend,
     runtime: {
       mode: adapterMode.value === 'runtime' ? 'chat-completion' : 'generate-text',
       chatCompletionType: adapterMode.value === 'runtime' ? 'quiet' : undefined,

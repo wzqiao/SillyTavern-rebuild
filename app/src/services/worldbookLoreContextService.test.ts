@@ -65,7 +65,172 @@ describe('createChatLorebookContext', () => {
             ],
         });
     });
+
+    it('activates entries by primary and secondary keys when scan text is provided', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-primary',
+                comment: 'Blue giant hazards',
+                content: 'Blue giant lore.',
+                primaryKeys: ['blue giant'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-selective-matched',
+                comment: 'Safe course protocol',
+                content: 'Safe course lore.',
+                primaryKeys: ['course'],
+                secondaryKeys: ['safe'],
+                selective: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-selective-missing-secondary',
+                comment: 'Captain protocol',
+                content: 'Captain lore.',
+                primaryKeys: ['captain'],
+                secondaryKeys: ['distress'],
+                selective: true,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-unmatched',
+                comment: 'Hangar details',
+                content: 'Hangar lore.',
+                primaryKeys: ['hangar'],
+                insertionOrder: 70,
+            }),
+            createEntry({
+                id: 'entry-constant',
+                comment: 'Always on',
+                content: 'Constant lore.',
+                constant: true,
+                insertionOrder: 60,
+            }),
+        ]), {
+            scanText: 'A safe course around the blue giant, captain.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-primary',
+            'entry-selective-matched',
+            'entry-constant',
+        ]);
+    });
+
+    it('respects case-sensitive and whole-word matching hints', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-case-sensitive',
+                comment: 'Beacon',
+                content: 'Uppercase beacon lore.',
+                primaryKeys: ['BEACON'],
+                caseSensitive: true,
+            }),
+            createEntry({
+                id: 'entry-case-insensitive',
+                comment: 'Signal',
+                content: 'Signal lore.',
+                primaryKeys: ['SIGNAL'],
+            }),
+            createEntry({
+                id: 'entry-whole-word',
+                comment: 'Rig',
+                content: 'Rig lore.',
+                primaryKeys: ['rig'],
+                matchWholeWords: true,
+            }),
+            createEntry({
+                id: 'entry-partial-word',
+                comment: 'Nav',
+                content: 'Nav lore.',
+                primaryKeys: ['nav'],
+                matchWholeWords: true,
+            }),
+        ]), {
+            scanText: 'The beacon signal mentions a cargo rig and navigation drift.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-case-insensitive',
+            'entry-whole-word',
+        ]);
+    });
+
+    it('uses Unicode-aware whole-word boundaries', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-cjk-contained',
+                comment: 'Navigation',
+                content: 'Navigation lore.',
+                primaryKeys: ['导航'],
+                matchWholeWords: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-cjk-delimited',
+                comment: 'Signal',
+                content: 'Signal lore.',
+                primaryKeys: ['信标'],
+                matchWholeWords: true,
+                insertionOrder: 90,
+            }),
+        ]), {
+            scanText: '超导航系统离线。发现 信标。',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-cjk-delimited',
+        ]);
+    });
+
+    it('can build scan text from chat messages and the next user message', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-from-next',
+                comment: 'Blue giant hazards',
+                content: 'Blue giant lore.',
+                primaryKeys: ['blue giant'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-from-history',
+                comment: 'Safe course protocol',
+                content: 'Safe course lore.',
+                primaryKeys: ['safe course'],
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-from-failed-message',
+                comment: 'Failed signal',
+                content: 'Failed lore.',
+                primaryKeys: ['distress signal'],
+                insertionOrder: 80,
+            }),
+        ]), {
+            messages: [
+                { content: 'Plot a safe course.', status: 'sent' },
+                { content: 'Ignore this distress signal.', status: 'failed' },
+            ],
+            nextMessage: 'Skirt the blue giant.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-from-next',
+            'entry-from-history',
+        ]);
+    });
 });
+
+function createLibraryItem(entries: ReforgedWorldbookEntry[]): ReforgedWorldbookLibraryItem {
+    return {
+        id: 'worldbook-1',
+        importedAt: '2026-06-09T00:00:00.000Z',
+        source: {
+            fileName: 'astra-routes-worldbook.json',
+            format: 'json',
+        },
+        warnings: [],
+        worldbook: {
+            name: 'Astra Route Notes',
+            source: 'sillytavern-world-info',
+            raw: { entries: {} },
+            entries,
+        },
+    };
+}
 
 function createEntry(overrides: Partial<ReforgedWorldbookEntry> & Pick<ReforgedWorldbookEntry, 'id' | 'comment' | 'content'>): ReforgedWorldbookEntry {
     return {
