@@ -11,6 +11,7 @@ export interface ReforgedChatLorebookScanMessage {
 
 export interface ReforgedChatLorebookContextOptions {
     generationTrigger?: string;
+    includeInactivePreviewEntries?: boolean;
     scanText?: string;
     messages?: ReforgedChatLorebookScanMessage[];
     nextMessage?: string;
@@ -49,11 +50,19 @@ function shouldInjectEntry(
         return false;
     }
 
-    if (!shouldMatchGenerationTrigger(entry, options.generationTrigger)) {
+    if (!shouldMatchGenerationTrigger(entry, options)) {
         return false;
     }
 
-    if (entry.constant || !scanText) {
+    if (entry.constant) {
+        return true;
+    }
+
+    if (!scanText) {
+        return Boolean(options.includeInactivePreviewEntries);
+    }
+
+    if (options.includeInactivePreviewEntries) {
         return true;
     }
 
@@ -71,8 +80,9 @@ function shouldInjectEntry(
 
 function shouldMatchGenerationTrigger(
     entry: ReforgedWorldbookEntry,
-    generationTrigger = 'normal',
+    options: ReforgedChatLorebookContextOptions,
 ): boolean {
+    const generationTrigger = options.generationTrigger ?? 'normal';
     const trigger = generationTrigger.trim() || 'normal';
     const triggers = entry.triggers
         .map((trigger) => trigger.trim())

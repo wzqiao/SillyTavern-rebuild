@@ -81,6 +81,7 @@ const selectedMessages = computed(() => chatStore.selectedMessages);
 const selectedLorebooks = computed(() => selectedWorldbook.value
   ? [createChatLorebookContext(selectedWorldbook.value, {
       generationTrigger: 'normal',
+      includeInactivePreviewEntries: true,
       messages: selectedMessages.value,
       nextMessage: draftMessage.value,
     })]

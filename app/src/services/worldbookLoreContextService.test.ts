@@ -48,7 +48,9 @@ describe('createChatLorebookContext', () => {
                     }),
                 ],
             },
-        } satisfies ReforgedWorldbookLibraryItem)).toEqual({
+        } satisfies ReforgedWorldbookLibraryItem, {
+            includeInactivePreviewEntries: true,
+        })).toEqual({
             id: 'worldbook-1',
             name: 'Astra Route Notes',
             entries: [
@@ -64,6 +66,61 @@ describe('createChatLorebookContext', () => {
                 },
             ],
         });
+    });
+
+    it('does not inject keyed entries without scan text unless preview mode is explicit', () => {
+        const libraryItem = createLibraryItem([
+            createEntry({
+                id: 'entry-keyed',
+                comment: 'Keyed lore',
+                content: 'Keyed lore.',
+                primaryKeys: ['blue giant'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-empty-keyless',
+                comment: 'Keyless lore',
+                content: 'Keyless lore.',
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-constant',
+                comment: 'Always on',
+                content: 'Constant lore.',
+                constant: true,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-preview-continue',
+                comment: 'Preview continue trigger',
+                content: 'Preview continue lore.',
+                primaryKeys: ['blue giant'],
+                triggers: ['continue'],
+                insertionOrder: 70,
+            }),
+        ]);
+
+        expect(createChatLorebookContext(libraryItem).entries.map((entry) => entry.id)).toEqual([
+            'entry-constant',
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            includeInactivePreviewEntries: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-keyed',
+            'entry-empty-keyless',
+            'entry-constant',
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            generationTrigger: 'continue',
+            includeInactivePreviewEntries: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-keyed',
+            'entry-empty-keyless',
+            'entry-constant',
+            'entry-preview-continue',
+        ]);
     });
 
     it('activates entries by primary and secondary keys when scan text is provided', () => {
