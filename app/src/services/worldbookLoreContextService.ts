@@ -14,6 +14,7 @@ const WORLD_INFO_SELECTIVE_LOGIC = {
 type WorldInfoSelectiveLogic = typeof WORLD_INFO_SELECTIVE_LOGIC[keyof typeof WORLD_INFO_SELECTIVE_LOGIC];
 
 const WORLD_INFO_SELECTIVE_LOGIC_VALUES = new Set<number>(Object.values(WORLD_INFO_SELECTIVE_LOGIC));
+const REGEX_KEY_PATTERN = /^\/([\w\W]+?)\/([gimsuy]*)$/;
 
 export interface ReforgedChatLorebookScanMessage {
     content: string;
@@ -159,14 +160,41 @@ function normalizeSelectiveLogic(value: number | null): number {
 }
 
 function matchesKey(scanText: string, key: string, entry: ReforgedWorldbookEntry): boolean {
+    const regexKey = parseRegexKey(key);
+    if (regexKey) {
+        return regexKey.test(scanText);
+    }
+
     const haystack = entry.caseSensitive ? scanText : scanText.toLocaleLowerCase();
     const needle = entry.caseSensitive ? key : key.toLocaleLowerCase();
 
     if (entry.matchWholeWords) {
+        if (needle.split(/\s+/).length > 1) {
+            return haystack.includes(needle);
+        }
+
         return matchesWholeWord(haystack, needle);
     }
 
     return haystack.includes(needle);
+}
+
+function parseRegexKey(key: string): RegExp | null {
+    const match = key.match(REGEX_KEY_PATTERN);
+    if (!match) {
+        return null;
+    }
+
+    const [, rawPattern, flags] = match;
+    if (/(^|[^\\])\//.test(rawPattern)) {
+        return null;
+    }
+
+    try {
+        return new RegExp(rawPattern.replace('\\/', '/'), flags);
+    } catch {
+        return null;
+    }
 }
 
 function createLorebookScanText(options: ReforgedChatLorebookContextOptions): string {

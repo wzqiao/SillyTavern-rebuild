@@ -508,6 +508,82 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('supports SillyTavern-style regex keys before plaintext matching options', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-regex-case',
+                comment: 'Regex case override',
+                content: 'Regex case lore.',
+                primaryKeys: ['/blue\\s+giant/i'],
+                caseSensitive: true,
+                matchWholeWords: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-regex-whole-word',
+                comment: 'Regex whole-word override',
+                content: 'Regex whole-word lore.',
+                primaryKeys: ['/rig/i'],
+                matchWholeWords: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-secondary-regex',
+                comment: 'Secondary regex',
+                content: 'Secondary regex lore.',
+                primaryKeys: ['hazard'],
+                secondaryKeys: ['/alpha\\/(?:beta)/i'],
+                selective: true,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-invalid-regex',
+                comment: 'Invalid regex',
+                content: 'Invalid regex lore.',
+                primaryKeys: ['/literal route/ii'],
+                insertionOrder: 70,
+            }),
+            createEntry({
+                id: 'entry-unescaped-slash',
+                comment: 'Unescaped slash regex',
+                content: 'Unescaped slash lore.',
+                primaryKeys: ['/alpha/beta/i'],
+                insertionOrder: 60,
+            }),
+        ]), {
+            scanText: 'The BLUE giant hazard sits beside cargo rigging and ALPHA/beta, not a literal route.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-regex-case',
+            'entry-regex-whole-word',
+            'entry-secondary-regex',
+        ]);
+    });
+
+    it('matches whole-word multi-word keys as exact phrases like SillyTavern', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-multi-word-phrase',
+                comment: 'Cargo rig phrase',
+                content: 'Cargo rig phrase lore.',
+                primaryKeys: ['cargo rig'],
+                matchWholeWords: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-single-word',
+                comment: 'Rig single word',
+                content: 'Rig single-word lore.',
+                primaryKeys: ['rig'],
+                matchWholeWords: true,
+                insertionOrder: 90,
+            }),
+        ]), {
+            scanText: 'The cargo rigging crew reroutes power.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-multi-word-phrase',
+        ]);
+    });
+
     it('can build scan text from chat messages and the next user message', () => {
         expect(createChatLorebookContext(createLibraryItem([
             createEntry({
