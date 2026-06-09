@@ -2037,6 +2037,188 @@ describe('createChatLorebookContext', () => {
             'entry-combined-recursion',
         ]);
     });
+
+    it('prevents later recursion scans from activating another entry in an already activated inclusion group', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-group-winner',
+                comment: 'Group winner',
+                content: 'The winning route exposes a recursive marker.',
+                primaryKeys: ['primary route'],
+                group: 'route-group',
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-recursive-loser',
+                comment: 'Recursive loser',
+                content: 'Recursive loser lore.',
+                primaryKeys: ['recursive marker'],
+                group: 'route-group',
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-group-winner',
+        ]);
+    });
+
+    it('does not lock an inclusion group when its earlier candidate fails probability', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-recursion-seed',
+                comment: 'Recursion seed',
+                content: 'The seed exposes a recursive marker.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-probability-loser',
+                comment: 'Probability loser',
+                content: 'Probability loser lore.',
+                primaryKeys: ['primary route'],
+                group: 'route-group',
+                probability: 0,
+                useProbability: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-recursive-winner',
+                comment: 'Recursive winner',
+                content: 'Recursive winner lore.',
+                primaryKeys: ['recursive marker'],
+                group: 'route-group',
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            random: () => 1,
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-recursion-seed',
+            'entry-recursive-winner',
+        ]);
+    });
+
+    it('matches SillyTavern raw group equality for cross-loop comma-group locks', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-comma-group-winner',
+                comment: 'Comma group winner',
+                content: 'The comma group exposes a recursive marker.',
+                primaryKeys: ['primary route'],
+                group: 'alpha, beta',
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-alpha-recursive',
+                comment: 'Alpha recursive',
+                content: 'Alpha recursive lore.',
+                primaryKeys: ['recursive marker'],
+                group: 'alpha',
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-comma-group-winner',
+            'entry-alpha-recursive',
+        ]);
+    });
+
+    it('locks later comma-group entries when a previous single raw group matches one parsed group name', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-alpha-winner',
+                comment: 'Alpha winner',
+                content: 'The alpha group exposes a recursive marker.',
+                primaryKeys: ['primary route'],
+                group: 'alpha',
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-comma-recursive',
+                comment: 'Comma recursive',
+                content: 'Comma recursive lore.',
+                primaryKeys: ['recursive marker'],
+                group: 'alpha, beta',
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            recursive: true,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-alpha-winner',
+        ]);
+    });
+
+    it('applies activated inclusion group state during minimum activation scans', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-recent-winner',
+                comment: 'Recent winner',
+                content: 'Recent winner lore.',
+                primaryKeys: ['recent marker'],
+                group: 'route-group',
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-min-activation-loser',
+                comment: 'Min activation loser',
+                content: 'Min activation loser lore.',
+                primaryKeys: ['older marker'],
+                group: 'route-group',
+                insertionOrder: 90,
+            }),
+        ]), {
+            defaultScanDepth: 1,
+            messages: [
+                { content: 'The older marker is outside the initial scan.', status: 'sent' },
+                { content: 'The recent marker is inside the initial scan.', status: 'sent' },
+            ],
+            minimumActivations: 2,
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-recent-winner',
+        ]);
+    });
+
+    it('applies activated inclusion group state during delayed recursion scans', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-initial-winner',
+                comment: 'Initial winner',
+                content: 'Initial winner lore.',
+                primaryKeys: ['primary route'],
+                group: 'route-group',
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-delayed-loser',
+                comment: 'Delayed loser',
+                content: 'Delayed loser lore.',
+                primaryKeys: ['primary route'],
+                group: 'route-group',
+                delayUntilRecursion: true,
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-initial-winner',
+        ]);
+    });
 });
 
 function createLibraryItem(entries: ReforgedWorldbookEntry[]): ReforgedWorldbookLibraryItem {

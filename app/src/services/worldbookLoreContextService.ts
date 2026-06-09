@@ -144,6 +144,7 @@ function activateWorldbookEntries(
         const successfulCandidates = filterCandidatesByProbability(
             filterInclusionGroups(
                 loopCandidates,
+                Array.from(activated.keys()),
                 scanContext,
                 options,
                 matchSettings,
@@ -239,6 +240,7 @@ function shouldInjectEntry(
 
 function filterInclusionGroups(
     candidates: ReforgedWorldbookEntryCandidate[],
+    previouslyActivatedEntries: ReforgedWorldbookEntry[],
     scanContext: LorebookScanContext,
     options: ReforgedChatLorebookContextOptions,
     matchSettings: ResolvedWorldbookMatchSettings,
@@ -252,6 +254,7 @@ function filterInclusionGroups(
 
     const winners = selectInclusionGroupWinners(
         candidates,
+        previouslyActivatedEntries,
         scanContext,
         options,
         matchSettings,
@@ -279,6 +282,7 @@ function filterCandidatesByProbability(
 
 function selectInclusionGroupWinners(
     candidates: ReforgedWorldbookEntryCandidate[],
+    previouslyActivatedEntries: ReforgedWorldbookEntry[],
     scanContext: LorebookScanContext,
     options: ReforgedChatLorebookContextOptions,
     matchSettings: ResolvedWorldbookMatchSettings,
@@ -289,8 +293,15 @@ function selectInclusionGroupWinners(
     const winners = new Set(candidates.map(({ entry }) => entry));
     const grouped = groupCandidatesByInclusionGroup(candidates);
 
-    for (const groupCandidates of grouped.values()) {
+    for (const [group, groupCandidates] of grouped.entries()) {
         const activeGroup = groupCandidates.filter(({ entry }) => winners.has(entry));
+        if (wasInclusionGroupAlreadyActivated(group, previouslyActivatedEntries)) {
+            for (const { entry } of activeGroup) {
+                winners.delete(entry);
+            }
+            continue;
+        }
+
         if (activeGroup.length <= 1) {
             continue;
         }
@@ -319,6 +330,13 @@ function selectInclusionGroupWinners(
     }
 
     return winners;
+}
+
+function wasInclusionGroupAlreadyActivated(
+    group: string,
+    previouslyActivatedEntries: ReforgedWorldbookEntry[],
+): boolean {
+    return previouslyActivatedEntries.some((entry) => entry.group === group);
 }
 
 function groupCandidatesByInclusionGroup(
