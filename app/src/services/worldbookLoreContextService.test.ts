@@ -269,6 +269,175 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('filters inclusion groups by override priority and weighted random winners', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-override-low',
+                comment: 'Override low',
+                content: 'Override low lore.',
+                primaryKeys: ['primary'],
+                group: 'override-group',
+                groupOverride: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-override-high',
+                comment: 'Override high',
+                content: 'Override high lore.',
+                primaryKeys: ['primary'],
+                group: 'override-group',
+                groupOverride: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-weight-low',
+                comment: 'Weight low',
+                content: 'Weight low lore.',
+                primaryKeys: ['primary'],
+                group: 'weighted-group',
+                groupWeight: 10,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-weight-high',
+                comment: 'Weight high',
+                content: 'Weight high lore.',
+                primaryKeys: ['primary'],
+                group: 'weighted-group',
+                groupWeight: 90,
+                insertionOrder: 70,
+            }),
+            createEntry({
+                id: 'entry-ungrouped',
+                comment: 'Ungrouped',
+                content: 'Ungrouped lore.',
+                primaryKeys: ['primary'],
+                insertionOrder: 60,
+            }),
+        ]), {
+            random: () => 0.2,
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-override-high',
+            'entry-weight-high',
+            'entry-ungrouped',
+        ]);
+    });
+
+    it('applies inclusion group filtering after constant activation and before probability rolls', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-constant-loser',
+                comment: 'Constant loser',
+                content: 'Constant loser lore.',
+                constant: true,
+                group: 'constant-group',
+                groupWeight: 10,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-keyed-winner-fails-probability',
+                comment: 'Keyed winner fails probability',
+                content: 'Keyed winner fails probability lore.',
+                primaryKeys: ['primary'],
+                group: 'constant-group',
+                groupWeight: 90,
+                probability: 50,
+                useProbability: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-ungrouped',
+                comment: 'Ungrouped',
+                content: 'Ungrouped lore.',
+                primaryKeys: ['primary'],
+                insertionOrder: 80,
+            }),
+        ]), {
+            random: createRandomSequence([0.2, 0.51]),
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-ungrouped',
+        ]);
+    });
+
+    it('does not filter inclusion groups while previewing inactive entries', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-preview-first',
+                comment: 'Preview first',
+                content: 'Preview first lore.',
+                primaryKeys: ['primary'],
+                group: 'preview-group',
+                groupWeight: 1,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-preview-second',
+                comment: 'Preview second',
+                content: 'Preview second lore.',
+                primaryKeys: ['primary'],
+                group: 'preview-group',
+                groupWeight: 1,
+                insertionOrder: 90,
+            }),
+        ]), {
+            includeInactivePreviewEntries: true,
+            random: () => {
+                throw new Error('Preview should not roll inclusion groups.');
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-preview-first',
+            'entry-preview-second',
+        ]);
+    });
+
+    it('ignores empty group names and blank CSV tokens during inclusion-group filtering', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-empty-group',
+                comment: 'Empty group',
+                content: 'Empty group lore.',
+                primaryKeys: ['primary'],
+                group: '',
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-blank-csv-group',
+                comment: 'Blank CSV group',
+                content: 'Blank CSV group lore.',
+                primaryKeys: ['primary'],
+                group: ' , ',
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-alpha-low',
+                comment: 'Alpha low',
+                content: 'Alpha low lore.',
+                primaryKeys: ['primary'],
+                group: 'alpha, , ',
+                groupWeight: 1,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-alpha-high',
+                comment: 'Alpha high',
+                content: 'Alpha high lore.',
+                primaryKeys: ['primary'],
+                group: 'alpha',
+                groupWeight: 99,
+                insertionOrder: 70,
+            }),
+        ]), {
+            random: () => 0.5,
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-empty-group',
+            'entry-blank-csv-group',
+            'entry-alpha-high',
+        ]);
+    });
+
     it('matches SillyTavern selective logic modes for secondary keys', () => {
         expect(createChatLorebookContext(createLibraryItem([
             createEntry({

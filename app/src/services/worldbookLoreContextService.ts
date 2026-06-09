@@ -15,10 +15,16 @@ type WorldInfoSelectiveLogic = typeof WORLD_INFO_SELECTIVE_LOGIC[keyof typeof WO
 
 const WORLD_INFO_SELECTIVE_LOGIC_VALUES = new Set<number>(Object.values(WORLD_INFO_SELECTIVE_LOGIC));
 const REGEX_KEY_PATTERN = /^\/([\w\W]+?)\/([gimsuy]*)$/;
+const DEFAULT_GROUP_WEIGHT = 100;
 
 interface ResolvedWorldbookMatchSettings {
     caseSensitive: boolean;
     matchWholeWords: boolean;
+}
+
+interface ReforgedWorldbookEntryCandidate {
+    entry: ReforgedWorldbookEntry;
+    index: number;
 }
 
 export interface ReforgedChatLorebookScanMessage {
@@ -43,13 +49,14 @@ export function createChatLorebookContext(
 ): ReforgedChatLorebookContext {
     const scanText = createLorebookScanText(options);
     const matchSettings = resolveMatchSettings(options);
+    const candidates = libraryItem.worldbook.entries
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => shouldInjectEntry(entry, scanText, options, matchSettings));
 
     return {
         id: libraryItem.id,
         name: libraryItem.worldbook.name,
-        entries: libraryItem.worldbook.entries
-            .map((entry, index) => ({ entry, index }))
-            .filter(({ entry }) => shouldInjectEntry(entry, scanText, options, matchSettings))
+        entries: filterInclusionGroups(candidates, options)
             .filter(({ entry }) => shouldPassProbability(entry, options))
             .sort((left, right) => {
                 const byInsertionOrder = right.entry.insertionOrder - left.entry.insertionOrder;
@@ -101,6 +108,105 @@ function shouldInjectEntry(
     return matchesSelectiveSecondaryKeys(scanText, entry, matchSettings);
 }
 
+function filterInclusionGroups(
+    candidates: ReforgedWorldbookEntryCandidate[],
+    options: ReforgedChatLorebookContextOptions,
+): ReforgedWorldbookEntryCandidate[] {
+    if (options.includeInactivePreviewEntries) {
+        return candidates;
+    }
+
+    const winners = selectInclusionGroupWinners(candidates, options);
+    return candidates.filter(({ entry }) => winners.has(entry));
+}
+
+function selectInclusionGroupWinners(
+    candidates: ReforgedWorldbookEntryCandidate[],
+    options: ReforgedChatLorebookContextOptions,
+): Set<ReforgedWorldbookEntry> {
+    const winners = new Set(candidates.map(({ entry }) => entry));
+    const grouped = groupCandidatesByInclusionGroup(candidates);
+
+    for (const groupCandidates of grouped.values()) {
+        const activeGroup = groupCandidates.filter(({ entry }) => winners.has(entry));
+        if (activeGroup.length <= 1) {
+            continue;
+        }
+
+        const winner = selectInclusionGroupWinner(activeGroup, options);
+        for (const { entry } of activeGroup) {
+            if (entry !== winner?.entry) {
+                winners.delete(entry);
+            }
+        }
+    }
+
+    return winners;
+}
+
+function groupCandidatesByInclusionGroup(
+    candidates: ReforgedWorldbookEntryCandidate[],
+): Map<string, ReforgedWorldbookEntryCandidate[]> {
+    const grouped = new Map<string, ReforgedWorldbookEntryCandidate[]>();
+
+    for (const candidate of candidates) {
+        for (const group of parseInclusionGroups(candidate.entry.group)) {
+            const groupCandidates = grouped.get(group) ?? [];
+            groupCandidates.push(candidate);
+            grouped.set(group, groupCandidates);
+        }
+    }
+
+    return grouped;
+}
+
+function parseInclusionGroups(value: string): string[] {
+    return value
+        .split(/,\s*/)
+        .map((group) => group.trim())
+        .filter(Boolean);
+}
+
+function selectInclusionGroupWinner(
+    candidates: ReforgedWorldbookEntryCandidate[],
+    options: ReforgedChatLorebookContextOptions,
+): ReforgedWorldbookEntryCandidate | null {
+    const overrideWinner = candidates
+        .filter(({ entry }) => entry.groupOverride)
+        .sort((left, right) => {
+            const byInsertionOrder = right.entry.insertionOrder - left.entry.insertionOrder;
+            return byInsertionOrder || left.index - right.index;
+        })[0];
+    if (overrideWinner) {
+        return overrideWinner;
+    }
+
+    const totalWeight = candidates.reduce((sum, { entry }) => sum + normalizeGroupWeight(entry.groupWeight), 0);
+    if (totalWeight <= 0) {
+        return candidates[0] ?? null;
+    }
+
+    const roll = readRandom(options) * totalWeight;
+    let currentWeight = 0;
+
+    for (const candidate of candidates) {
+        currentWeight += normalizeGroupWeight(candidate.entry.groupWeight);
+        if (roll <= currentWeight) {
+            return candidate;
+        }
+    }
+
+    return candidates.at(-1) ?? null;
+}
+
+function normalizeGroupWeight(value: number | null): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return DEFAULT_GROUP_WEIGHT;
+    }
+
+    return Math.max(0, value);
+}
+
 function shouldPassProbability(
     entry: ReforgedWorldbookEntry,
     options: ReforgedChatLorebookContextOptions,
@@ -127,12 +233,16 @@ function normalizeProbability(value: number | null): number {
 }
 
 function readProbabilityRoll(options: ReforgedChatLorebookContextOptions): number {
-    const randomValue = options.random?.() ?? Math.random();
+    const randomValue = readRandom(options);
     if (!Number.isFinite(randomValue)) {
         return 100;
     }
 
     return Math.min(100, Math.max(0, randomValue * 100));
+}
+
+function readRandom(options: ReforgedChatLorebookContextOptions): number {
+    return options.random?.() ?? Math.random();
 }
 
 function shouldMatchGenerationTrigger(
