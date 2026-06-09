@@ -32,7 +32,7 @@ interface DirectBackendStreamState {
   text: string;
   reasoning: string;
   reasoningSignature: string | null;
-  toolCalls: unknown[];
+  toolCalls: Record<string, unknown>[];
   toolSignatures: Record<string, string>;
   logprobs: unknown;
   finishReason: string | null;
@@ -279,7 +279,38 @@ function mergeDirectBackendChunk(state: DirectBackendStreamState, chunk: Record<
       : [];
 
   if (toolCalls.length > 0) {
-    state.toolCalls = toolCalls;
+    mergeToolCallDeltas(state, toolCalls);
+  }
+}
+
+function mergeToolCallDeltas(state: DirectBackendStreamState, deltas: unknown[]): void {
+  for (const [fallbackIndex, item] of deltas.entries()) {
+    if (!isRecord(item)) {
+      continue;
+    }
+
+    const index = typeof item.index === 'number' && Number.isInteger(item.index)
+      ? item.index
+      : fallbackIndex;
+    const existing = state.toolCalls[index] ?? {};
+    const existingFunction = isRecord(existing.function) ? existing.function : {};
+    const deltaFunction = isRecord(item.function) ? item.function : {};
+    const nextFunction = {
+      ...existingFunction,
+      ...deltaFunction,
+    };
+    const existingArguments = readString(existingFunction.arguments) ?? '';
+    const deltaArguments = readString(deltaFunction.arguments) ?? '';
+
+    if (existingArguments || deltaArguments) {
+      nextFunction.arguments = `${existingArguments}${deltaArguments}`;
+    }
+
+    state.toolCalls[index] = {
+      ...existing,
+      ...item,
+      function: nextFunction,
+    };
   }
 }
 

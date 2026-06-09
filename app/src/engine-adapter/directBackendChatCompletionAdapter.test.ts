@@ -95,7 +95,7 @@ describe('directBackendChatCompletionAdapter', () => {
     });
   });
 
-  it('normalizes OpenAI SSE chunks into cumulative runtime snapshots without exposing the API key', async () => {
+  it('normalizes OpenAI SSE chunks and streaming tool calls without exposing the API key', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const fetcher = vi.fn<typeof fetch>(async (input) => {
@@ -105,7 +105,8 @@ describe('directBackendChatCompletionAdapter', () => {
 
       return new Response(toStream([
         'data: {"choices":[{"delta":{"content":"Hel"},"logprobs":null}]}\n\n',
-        'data: {"choices":[{"delta":{"content":"lo"},"finish_reason":"stop"}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"lo","tool_calls":[{"index":0,"id":"call_weather","type":"function","function":{"name":"get_weather","arguments":"{\\"city\\""}}]}}]}\n\n',
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\\"Shanghai\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
         'data: [DONE]\n\n',
       ]), {
         status: 200,
@@ -113,13 +114,22 @@ describe('directBackendChatCompletionAdapter', () => {
     });
 
     const rawResponse = await sendDirectBackendChatCompletion(createRequest(), { fetch: fetcher });
-    await expect(collectChatCompletionResult(rawResponse)).resolves.toMatchObject({
+    const result = await collectChatCompletionResult(rawResponse);
+    expect(result).toMatchObject({
       completed: true,
       text: 'Hello',
       source: 'stream',
-      chunkCount: 2,
-      finishReason: 'stop',
+      chunkCount: 3,
+      finishReason: 'tool_calls',
+      toolCalls: [{
+        id: 'call_weather',
+        type: 'function',
+        name: 'get_weather',
+        argumentsText: '{"city":"Shanghai"}',
+        argumentsJson: { city: 'Shanghai' },
+      }],
     });
+    expect(JSON.stringify(result)).not.toContain(runtimeConnection.apiKey);
     expect(JSON.stringify(rawResponse)).not.toContain(runtimeConnection.apiKey);
     expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining(runtimeConnection.apiKey));
     expect(consoleWarn).not.toHaveBeenCalledWith(expect.stringContaining(runtimeConnection.apiKey));

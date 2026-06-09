@@ -28,8 +28,10 @@ The direct request must:
 - Fetch `/csrf-token` before the POST.
 - Use same-origin credentials and `X-CSRF-Token`.
 - Send `chat_completion_source: 'openai'`, `reverse_proxy`, `proxy_password`, `model`, `messages`, and `stream`.
-- Keep API keys out of stores, chat messages, snapshots, diagnostics, and local logs.
+- Avoid copying API keys into chat stores, chat messages, runtime snapshots, diagnostics, or local logs.
 - Avoid `public/scripts/openai.js` settings/preset mutation paths.
+
+The current connection UI keeps the draft API key in Pinia memory state until the user clears it or refreshes the page. This is accepted for M0 as "memory-only, not persisted"; a stricter "only in call stack / closure" secret boundary would need a separate connection-store redesign.
 
 ## Alternatives Considered
 
@@ -53,4 +55,5 @@ The direct request must:
 - `HeadlessChatCompletionRequest` now has optional `runtimeConnection`, `responseLength`, and `stream` fields.
 - This is still a same-origin ST backend path, not a direct browser-to-provider request.
 - Residual risk: SillyTavern backend debug logging may include upstream request bodies, prompts, responses, or error bodies. The normal OpenAI-compatible request body sent upstream does not include `proxy_password`, but prompts and responses may still appear in backend logs.
+- Residual risk: OpenAI-compatible streaming tool calls are provider-specific. The adapter now merges common OpenAI `delta.tool_calls[index].function.arguments` chunks, but broader tool-call compatibility should be rechecked before exposing tool execution UX.
 - Future hardening should either gate ST debug logging for this seam or move memory-only Runtime requests behind a Reforged-owned backend/session layer.
