@@ -3,6 +3,7 @@
 import type {
     HeadlessEngineAdapter,
     HeadlessChatCompletionRequest,
+    HeadlessChatCompletionRuntimeConnection,
     HeadlessGenerationRequest,
     ReforgedChatCompletionMessage,
     ReforgedChatRole,
@@ -116,6 +117,7 @@ export interface ReforgedChatSendInput {
     generation?: ReforgedChatGenerationOptions;
     adapter?: HeadlessEngineAdapter;
     runtime?: ReforgedChatRuntimeOptions;
+    runtimeConnection?: HeadlessChatCompletionRuntimeConnection | null;
 }
 
 // DRAFT: 待主干评审
@@ -235,4 +237,5 @@ export interface ReforgedChatRuntimeRequestInput {
     generation?: ReforgedChatGenerationOptions;
     type?: HeadlessChatCompletionRequest['type'];
     signal?: AbortSignal;
+    runtimeConnection?: HeadlessChatCompletionRuntimeConnection | null;
 }

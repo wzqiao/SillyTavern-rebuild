@@ -73,8 +73,11 @@ const selectedMessages = computed(() => chatStore.selectedMessages);
 const activeSession = computed(() => chatStore.selectedSession);
 const readiness = computed(() => chatStore.readiness);
 const runtimeAdapterReady = computed(() => adapterMode.value === 'runtime' && runtimeDiagnostics.value?.ok === true && readiness.value.hasAdapter);
-// ST sendOpenAIRequest has no app-side per-request connection injection seam yet.
-const runtimeConnectionInjected = computed(() => false);
+const runtimeConnectionInjected = computed(() => (
+  adapterMode.value === 'runtime' &&
+  chatStore.engineAdapter?.supportsDirectBackendChatCompletion === true &&
+  connectionStore.hasAppliedDraft
+));
 const lastImportResult = computed(() => characterStore.lastImportResult);
 const adapterModeLabel = computed(() => adapterMode.value === 'demo' ? 'Demo adapter' : 'Runtime adapter');
 const hasChatTarget = computed(() => Boolean(activeSession.value || selectedRoster.value));
@@ -205,9 +208,10 @@ async function activateRuntimeAdapter(): Promise<void> {
       return;
     }
 
+    const canInjectRuntimeConnection = runtimeAdapter.supportsDirectBackendChatCompletion === true && connectionStore.hasAppliedDraft;
     runtimeNotice.value = connectionStore.runtimeHandoff({
       runtimeAdapterReady: true,
-      runtimeConnectionInjected: runtimeConnectionInjected.value,
+      runtimeConnectionInjected: canInjectRuntimeConnection,
     }).message;
     chatStore.setEngineAdapter(runtimeAdapter);
   } catch (error) {
@@ -394,6 +398,7 @@ async function sendMessage(): Promise<void> {
       mode: adapterMode.value === 'runtime' ? 'chat-completion' : 'generate-text',
       chatCompletionType: adapterMode.value === 'runtime' ? 'quiet' : undefined,
     },
+    runtimeConnection: adapterMode.value === 'runtime' ? handoff.connection : null,
     generation: {
       api: handoff.generation.api,
       responseLength: 220,
@@ -587,7 +592,7 @@ function describeError(error: unknown): string {
                 </li>
               </ul>
               <p class="mt-2 text-stone-400">
-                未验证、不持久化、刷新后清空；真实连通性仍由 Runtime adapter 与同源 SillyTavern 设置验证。
+                未验证、不持久化、刷新后清空；Runtime 会通过同源 SillyTavern 后端 direct seam 尝试真实请求。
               </p>
             </div>
           </section>

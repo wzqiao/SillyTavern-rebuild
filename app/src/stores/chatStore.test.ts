@@ -252,6 +252,8 @@ describe('useChatStore', () => {
             type: 'normal',
             signal: expect.any(AbortSignal),
             jsonSchema: null,
+            responseLength: null,
+            runtimeConnection: null,
         });
         expect(result.assistantMessage).toMatchObject({
             content: 'Runtime primary reply.',
@@ -262,6 +264,40 @@ describe('useChatStore', () => {
             ],
         });
         expect(store.pendingAbortController).toBeNull();
+    });
+
+    it('passes memory-only runtime connections through chat-completion requests', async () => {
+        const runtimeConnection = {
+            provider: 'openai-compatible' as const,
+            baseUrl: 'https://api.example.test/v1',
+            model: 'example-chat-model',
+            apiKey: 'sk-memory-only-secret',
+            api: 'openai' as const,
+        };
+        const sendChatCompletion = vi.fn(async (): Promise<unknown> => ({
+            choices: [{ message: { content: 'Connected runtime reply.' } }],
+        }));
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(vi.fn(async () => 'unused'), sendChatCompletion));
+
+        const result = await store.sendUserMessage({
+            content: 'Use direct backend.',
+            runtime: {
+                mode: 'chat-completion',
+            },
+            runtimeConnection,
+            generation: {
+                responseLength: 96,
+            },
+        });
+
+        expect(result.ok).toBe(true);
+        expect(sendChatCompletion).toHaveBeenCalledWith(expect.objectContaining({
+            responseLength: 96,
+            runtimeConnection,
+        }));
+        expect(JSON.stringify(store.messages)).not.toContain(runtimeConnection.apiKey);
+        expect(JSON.stringify(store.generation)).not.toContain(runtimeConnection.apiKey);
     });
 
     it('streams chat-completion snapshots into the assistant message before completion', async () => {

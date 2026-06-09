@@ -25,6 +25,8 @@ export function createChatCompletionRequest(input: ReforgedChatRuntimeRequestInp
         type: input.type ?? 'quiet',
         signal: input.signal,
         jsonSchema: input.generation?.jsonSchema ?? null,
+        responseLength: input.generation?.responseLength ?? null,
+        runtimeConnection: input.runtimeConnection ?? null,
     };
 }
 

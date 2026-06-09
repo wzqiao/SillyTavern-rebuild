@@ -219,6 +219,60 @@ describe('createHeadlessEngineAdapter', () => {
     );
   });
 
+  it('uses direct backend chat completion when a runtime connection is provided', async () => {
+    const sendOpenAIRequest = vi.fn().mockResolvedValue({ ok: false });
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (input === '/csrf-token') {
+        return new Response(JSON.stringify({ token: 'csrf-token-1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      expect(input).toBe('/api/backends/chat-completions/generate');
+      expect(init).toMatchObject({
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': 'csrf-token-1',
+        },
+      });
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        chat_completion_source: 'openai',
+        reverse_proxy: 'https://api.example.test/v1',
+        proxy_password: 'sk-memory-only-secret',
+        model: 'example-chat-model',
+        stream: false,
+      });
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'direct' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const adapter = createHeadlessEngineAdapter({
+      loadScriptModule: async () => ({}),
+      loadOpenAIModule: async () => ({ sendOpenAIRequest }),
+      directBackendChatCompletion: { fetch: fetcher },
+    });
+
+    await expect(
+      adapter.sendChatCompletion({
+        messages: [{ role: 'user', content: 'Ping' }],
+        stream: false,
+        runtimeConnection: {
+          provider: 'openai-compatible',
+          baseUrl: 'https://api.example.test/v1',
+          model: 'example-chat-model',
+          apiKey: 'sk-memory-only-secret',
+        },
+      }),
+    ).resolves.toEqual({ choices: [{ message: { content: 'direct' } }] });
+
+    expect(adapter.supportsDirectBackendChatCompletion).toBe(true);
+    expect(sendOpenAIRequest).not.toHaveBeenCalled();
+  });
+
   it('throws a typed error when a required headless export is missing', async () => {
     const adapter = createHeadlessEngineAdapter({
       loadScriptModule: async () => ({}),

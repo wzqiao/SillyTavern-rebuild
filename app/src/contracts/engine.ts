@@ -49,6 +49,17 @@ export interface HeadlessChatCompletionRequest {
   type?: ExtensibleString<'quiet' | 'normal' | 'continue' | 'impersonate'>;
   signal?: AbortSignal;
   jsonSchema?: ReforgedJsonSchema | null;
+  responseLength?: number | null;
+  stream?: boolean;
+  runtimeConnection?: HeadlessChatCompletionRuntimeConnection | null;
+}
+
+export interface HeadlessChatCompletionRuntimeConnection {
+  provider: ExtensibleString<'openai-compatible'>;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  api?: ReforgedGenerationApi;
 }
 
 export type EngineCapabilityId = 'generateRaw' | 'generateRawData' | 'sendOpenAIRequest';
@@ -104,6 +115,7 @@ export interface EngineAdapterDiagnostics {
 }
 
 export interface HeadlessEngineAdapter {
+  supportsDirectBackendChatCompletion?: boolean;
   inspect(options?: EngineAdapterInspectOptions): Promise<EngineAdapterDiagnostics>;
   generateText(request: HeadlessGenerationRequest): Promise<string>;
   generateRawData(request: HeadlessRawDataRequest): Promise<unknown>;

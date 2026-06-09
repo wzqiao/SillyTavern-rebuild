@@ -10,6 +10,10 @@ import type {
   HeadlessGenerationRequest,
   HeadlessRawDataRequest,
 } from '@/contracts/engine';
+import {
+  sendDirectBackendChatCompletion,
+  type DirectBackendChatCompletionDependencies,
+} from './directBackendChatCompletionAdapter';
 
 interface SillyTavernScriptModule {
   generateRaw?: (params: HeadlessGenerationRequest) => Promise<string>;
@@ -31,6 +35,7 @@ interface SillyTavernOpenAIModule {
 export interface HeadlessEngineAdapterDependencies {
   loadScriptModule?: () => Promise<SillyTavernScriptModule>;
   loadOpenAIModule?: () => Promise<SillyTavernOpenAIModule>;
+  directBackendChatCompletion?: DirectBackendChatCompletionDependencies;
   getRuntimeGlobal?: () => EngineAdapterRuntimeGlobal;
   now?: () => Date;
 }
@@ -77,6 +82,8 @@ export function createHeadlessEngineAdapter(
   const now = dependencies.now ?? (() => new Date());
 
   return {
+    supportsDirectBackendChatCompletion: true,
+
     async inspect(options: EngineAdapterInspectOptions = {}): Promise<EngineAdapterDiagnostics> {
       const warnings: string[] = [];
       const blockers: string[] = [];
@@ -204,6 +211,10 @@ export function createHeadlessEngineAdapter(
     },
 
     async sendChatCompletion(request: HeadlessChatCompletionRequest): Promise<unknown> {
+      if (request.runtimeConnection) {
+        return sendDirectBackendChatCompletion(request, dependencies.directBackendChatCompletion);
+      }
+
       const sendOpenAIRequest = await loadOpenAIFunction(loadOpenAIModule);
       const signal = request.signal ?? new AbortController().signal;
       return sendOpenAIRequest(request.type ?? 'quiet', request.messages, signal, {

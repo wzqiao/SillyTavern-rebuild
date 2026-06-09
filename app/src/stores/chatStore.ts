@@ -230,6 +230,7 @@ export const useChatStore = defineStore('chat', {
                         generation: input.generation,
                         type: input.runtime?.chatCompletionType,
                         signal: abortController?.signal,
+                        runtimeConnection: input.runtimeConnection ?? null,
                     })) {
                         if (!this.isActivePendingRequest(pendingRequest.id)) {
                             return createSendFailureResult(

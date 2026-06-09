@@ -61,6 +61,8 @@ describe('chatRuntimeService', () => {
             type: 'normal',
             signal: abortController.signal,
             jsonSchema: { returnInvalid: true },
+            responseLength: null,
+            runtimeConnection: null,
         });
     });
 
@@ -398,6 +400,8 @@ describe('chatRuntimeService', () => {
             type: 'quiet',
             signal: undefined,
             jsonSchema: null,
+            responseLength: null,
+            runtimeConnection: null,
         });
     });
 
