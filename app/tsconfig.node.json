@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "composite": true,
+    "outDir": "./node_modules/.tmp",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
