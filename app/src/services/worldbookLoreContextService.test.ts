@@ -116,6 +116,90 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('filters entries by generation trigger with normal as the default trigger', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-normal',
+                comment: 'Normal trigger',
+                content: 'Normal lore.',
+                primaryKeys: ['primary'],
+                triggers: ['normal'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-continue',
+                comment: 'Continue trigger',
+                content: 'Continue lore.',
+                primaryKeys: ['primary'],
+                triggers: [' continue '],
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-unfiltered',
+                comment: 'Unfiltered trigger',
+                content: 'Unfiltered lore.',
+                primaryKeys: ['primary'],
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-constant-continue',
+                comment: 'Constant continue trigger',
+                content: 'Constant continue lore.',
+                constant: true,
+                triggers: ['continue'],
+                insertionOrder: 70,
+            }),
+        ]), {
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-normal',
+            'entry-unfiltered',
+        ]);
+    });
+
+    it('activates entries that match the requested generation trigger', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-normal',
+                comment: 'Normal trigger',
+                content: 'Normal lore.',
+                primaryKeys: ['primary'],
+                triggers: ['normal'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-continue',
+                comment: 'Continue trigger',
+                content: 'Continue lore.',
+                primaryKeys: ['primary'],
+                triggers: ['continue'],
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-constant-continue',
+                comment: 'Constant continue trigger',
+                content: 'Constant continue lore.',
+                constant: true,
+                triggers: ['continue'],
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-unfiltered',
+                comment: 'Unfiltered trigger',
+                content: 'Unfiltered lore.',
+                primaryKeys: ['primary'],
+                insertionOrder: 70,
+            }),
+        ]), {
+            generationTrigger: 'continue',
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-continue',
+            'entry-constant-continue',
+            'entry-unfiltered',
+        ]);
+    });
+
     it('respects case-sensitive and whole-word matching hints', () => {
         expect(createChatLorebookContext(createLibraryItem([
             createEntry({

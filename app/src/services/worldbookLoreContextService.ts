@@ -10,6 +10,7 @@ export interface ReforgedChatLorebookScanMessage {
 }
 
 export interface ReforgedChatLorebookContextOptions {
+    generationTrigger?: string;
     scanText?: string;
     messages?: ReforgedChatLorebookScanMessage[];
     nextMessage?: string;
@@ -26,7 +27,7 @@ export function createChatLorebookContext(
         name: libraryItem.worldbook.name,
         entries: libraryItem.worldbook.entries
             .map((entry, index) => ({ entry, index }))
-            .filter(({ entry }) => shouldInjectEntry(entry, scanText))
+            .filter(({ entry }) => shouldInjectEntry(entry, scanText, options))
             .sort((left, right) => {
                 const byInsertionOrder = right.entry.insertionOrder - left.entry.insertionOrder;
                 return byInsertionOrder || left.index - right.index;
@@ -39,8 +40,16 @@ export function createChatLorebookContext(
     };
 }
 
-function shouldInjectEntry(entry: ReforgedWorldbookEntry, scanText: string): boolean {
+function shouldInjectEntry(
+    entry: ReforgedWorldbookEntry,
+    scanText: string,
+    options: ReforgedChatLorebookContextOptions,
+): boolean {
     if (!entry.enabled || !entry.content.trim()) {
+        return false;
+    }
+
+    if (!shouldMatchGenerationTrigger(entry, options.generationTrigger)) {
         return false;
     }
 
@@ -58,6 +67,22 @@ function shouldInjectEntry(entry: ReforgedWorldbookEntry, scanText: string): boo
     }
 
     return matchesAnyKey(scanText, entry.secondaryKeys, entry);
+}
+
+function shouldMatchGenerationTrigger(
+    entry: ReforgedWorldbookEntry,
+    generationTrigger = 'normal',
+): boolean {
+    const trigger = generationTrigger.trim() || 'normal';
+    const triggers = entry.triggers
+        .map((trigger) => trigger.trim())
+        .filter(Boolean);
+
+    if (triggers.length === 0) {
+        return true;
+    }
+
+    return triggers.includes(trigger);
 }
 
 function matchesAnyKey(scanText: string, keys: string[], entry: ReforgedWorldbookEntry): boolean {

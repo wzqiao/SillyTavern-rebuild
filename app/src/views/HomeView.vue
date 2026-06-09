@@ -80,6 +80,7 @@ const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
 const selectedMessages = computed(() => chatStore.selectedMessages);
 const selectedLorebooks = computed(() => selectedWorldbook.value
   ? [createChatLorebookContext(selectedWorldbook.value, {
+      generationTrigger: 'normal',
       messages: selectedMessages.value,
       nextMessage: draftMessage.value,
     })]
@@ -467,6 +468,7 @@ async function sendMessage(): Promise<void> {
 
   const lorebooksForSend = selectedWorldbook.value
     ? [createChatLorebookContext(selectedWorldbook.value, {
+        generationTrigger: 'normal',
         messages: selectedMessages.value,
         nextMessage: content,
       })]
