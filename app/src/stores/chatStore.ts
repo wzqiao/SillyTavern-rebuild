@@ -22,6 +22,18 @@ import {
 } from '@/services';
 
 type Clock = () => string;
+type AssistantActionMode = 'replace' | 'continue';
+
+type ReforgedChatAssistantActionInput = Omit<ReforgedChatSendInput, 'content' | 'sessionId'>;
+
+interface ReforgedChatAssistantActionSuccess {
+    ok: true;
+    session: ReforgedChatSession;
+    userMessage: ReforgedChatMessage | null;
+    assistantMessage: ReforgedChatMessage;
+}
+
+type ReforgedChatAssistantActionResult = ReforgedChatAssistantActionSuccess | ReforgedChatSendFailure;
 
 interface ChatStoreState {
     sessions: ReforgedChatSession[];
@@ -358,6 +370,50 @@ export const useChatStore = defineStore('chat', {
             return true;
         },
 
+        async regenerateAssistantMessage(
+            messageId: string,
+            input: ReforgedChatAssistantActionInput = {},
+            clock: Clock = createIsoTimestamp,
+        ): Promise<ReforgedChatAssistantActionResult> {
+            return this.generateAssistantMessageAction(messageId, input, 'replace', clock);
+        },
+
+        async continueAssistantMessage(
+            messageId: string,
+            input: ReforgedChatAssistantActionInput = {},
+            clock: Clock = createIsoTimestamp,
+        ): Promise<ReforgedChatAssistantActionResult> {
+            const assistantMessage = this.messages.find((item) => item.id === messageId);
+            if (!assistantMessage?.content.trim()) {
+                return this.recordSendFailure(
+                    createChatError('empty-message', 'Assistant content is required before continuing.'),
+                    assistantMessage ? this.sessions.find((session) => session.id === assistantMessage.sessionId) ?? null : null,
+                    null,
+                    assistantMessage ?? null,
+                );
+            }
+
+            return this.generateAssistantMessageAction(messageId, input, 'continue', clock);
+        },
+
+        async retryFailedAssistantMessage(
+            messageId: string,
+            input: ReforgedChatAssistantActionInput = {},
+            clock: Clock = createIsoTimestamp,
+        ): Promise<ReforgedChatAssistantActionResult> {
+            const assistantMessage = this.messages.find((item) => item.id === messageId);
+            if (assistantMessage?.status !== 'failed') {
+                return this.recordSendFailure(
+                    createChatError('generation-failed', 'Only failed assistant messages can be retried.'),
+                    assistantMessage ? this.sessions.find((session) => session.id === assistantMessage.sessionId) ?? null : null,
+                    null,
+                    assistantMessage ?? null,
+                );
+            }
+
+            return this.generateAssistantMessageAction(messageId, input, 'replace', clock);
+        },
+
         cancelGeneration(finishedAt = createIsoTimestamp()): boolean {
             const pendingRequest = this.generation.pendingRequest;
             if (this.generation.status !== 'generating' || !pendingRequest) {
@@ -398,7 +454,7 @@ export const useChatStore = defineStore('chat', {
             return true;
         },
 
-        deleteMessage(messageId: string): boolean {
+        deleteMessage(messageId: string, deletedAt = createIsoTimestamp()): boolean {
             const messageIndex = this.messages.findIndex((message) => message.id === messageId);
             if (messageIndex < 0) {
                 return false;
@@ -408,6 +464,7 @@ export const useChatStore = defineStore('chat', {
             const session = this.sessions.find((item) => item.id === message.sessionId);
             if (session) {
                 session.messageIds = session.messageIds.filter((id) => id !== messageId);
+                session.updatedAt = deletedAt;
             }
 
             return true;
@@ -474,6 +531,219 @@ export const useChatStore = defineStore('chat', {
             this.nextGenerationLocalId = 1;
         },
 
+        async generateAssistantMessageAction(
+            messageId: string,
+            input: ReforgedChatAssistantActionInput,
+            mode: AssistantActionMode,
+            clock: Clock,
+        ): Promise<ReforgedChatAssistantActionResult> {
+            const assistantMessage = this.messages.find((item) => item.id === messageId);
+            const session = assistantMessage
+                ? this.sessions.find((item) => item.id === assistantMessage.sessionId) ?? null
+                : null;
+
+            if (!assistantMessage || assistantMessage.role !== 'assistant' || !session) {
+                return this.recordSendFailure(
+                    createChatError('session-not-found', 'Assistant message or session was not found.'),
+                    session,
+                    null,
+                    assistantMessage ?? null,
+                );
+            }
+
+            if (this.isGenerating) {
+                return this.recordSendFailure(
+                    createChatError('generation-in-progress', 'A generation is already in progress.'),
+                    session,
+                    null,
+                    assistantMessage,
+                );
+            }
+
+            const adapter = input.adapter ?? this.engineAdapter;
+            if (!adapter) {
+                return this.recordSendFailure(
+                    createChatError('adapter-not-configured', 'Configure a headless engine adapter before sending chat messages.'),
+                    session,
+                    null,
+                    assistantMessage,
+                );
+            }
+
+            if (input.character) {
+                session.character = input.character;
+                session.title = session.title || input.character.name;
+            }
+
+            const startedAt = clock();
+            const previousStatus = assistantMessage.status;
+            const previousContent = assistantMessage.content;
+            const userMessage = this.findPreviousUserMessage(session, assistantMessage.id);
+            const requestMessages = this.readMessagesThrough(session, assistantMessage.id, mode === 'continue');
+            const isChatCompletionRuntime = input.runtime?.mode === 'chat-completion';
+            const abortController = isChatCompletionRuntime ? new AbortController() : null;
+            this.pendingAbortController = abortController ? markRaw(abortController) : null;
+            const pendingRequest = this.createPendingRequest(
+                session.id,
+                userMessage?.id ?? assistantMessage.id,
+                assistantMessage.id,
+                startedAt,
+                Boolean(abortController),
+            );
+
+            assistantMessage.status = 'generating';
+            assistantMessage.error = undefined;
+            assistantMessage.updatedAt = startedAt;
+            session.updatedAt = startedAt;
+            this.generation = {
+                status: 'generating',
+                sessionId: session.id,
+                userMessageId: userMessage?.id ?? null,
+                assistantMessageId: assistantMessage.id,
+                pendingRequest,
+                startedAt,
+                finishedAt: null,
+                error: null,
+            };
+
+            try {
+                let runtimeResult: ReforgedChatRuntimeResult | null = null;
+                const baseContent = previousContent.trim();
+
+                if (isChatCompletionRuntime) {
+                    const runtimeConnection = input.runtimeConnectionProvider?.() ?? null;
+                    if (input.runtimeConnectionProvider && !runtimeConnection) {
+                        throw createChatError(
+                            'runtime-connection-unavailable',
+                            'Runtime API key is no longer available in memory.',
+                        );
+                    }
+
+                    for await (const event of sendChatRuntimeEvents(adapter, {
+                        session,
+                        messages: requestMessages,
+                        lorebooks: input.lorebooks,
+                        generation: input.generation,
+                        type: input.runtime?.chatCompletionType,
+                        signal: abortController?.signal,
+                        runtimeConnection,
+                    })) {
+                        if (!this.isActivePendingRequest(pendingRequest.id)) {
+                            return createSendFailureResult(
+                                createChatError('generation-cancelled', 'Generation was cancelled before completion.'),
+                                session,
+                                userMessage,
+                                assistantMessage,
+                            );
+                        }
+
+                        if (event.type === 'snapshot') {
+                            assistantMessage.content = mode === 'continue'
+                                ? appendContinuation(baseContent, event.snapshot.text)
+                                : event.snapshot.text;
+                        } else {
+                            runtimeResult = event.result;
+                        }
+                    }
+                }
+
+                const request = createChatGenerationRequest({
+                    session,
+                    messages: requestMessages,
+                    lorebooks: input.lorebooks,
+                    generation: input.generation,
+                });
+                const reply = runtimeResult?.text ?? await adapter.generateText(request);
+                if (!this.isActivePendingRequest(pendingRequest.id)) {
+                    return createSendFailureResult(
+                        createChatError('generation-cancelled', 'Generation was cancelled before completion.'),
+                        session,
+                        userMessage,
+                        assistantMessage,
+                    );
+                }
+
+                const finishedAt = clock();
+                const assistantAlternatives = normalizeAssistantAlternatives(reply, runtimeResult?.alternatives);
+                const primaryReply = assistantAlternatives[0] ?? reply.trim();
+                if (mode === 'continue') {
+                    const continuedContent = appendContinuation(baseContent, primaryReply);
+                    assistantMessage.content = continuedContent;
+                    this.replaceActiveAssistantAlternative(assistantMessage, continuedContent, finishedAt);
+
+                    for (const alternative of assistantAlternatives.slice(1)) {
+                        assistantMessage.alternatives.push(this.createAlternative(appendContinuation(baseContent, alternative), finishedAt));
+                    }
+                } else {
+                    const shouldPreserveExistingSwipes = previousStatus === 'sent' && previousContent.trim().length > 0;
+                    if (shouldPreserveExistingSwipes && assistantMessage.alternatives.length === 0) {
+                        assistantMessage.alternatives.push(this.createAlternative(previousContent, finishedAt));
+                    }
+
+                    if (!shouldPreserveExistingSwipes) {
+                        assistantMessage.alternatives = [];
+                    }
+
+                    for (const alternative of assistantAlternatives) {
+                        assistantMessage.alternatives.push(this.createAlternative(alternative, finishedAt));
+                    }
+
+                    assistantMessage.activeAlternativeIndex = assistantAlternatives.length > 0
+                        ? assistantMessage.alternatives.length - assistantAlternatives.length
+                        : -1;
+                    assistantMessage.content = assistantMessage.activeAlternativeIndex >= 0
+                        ? assistantMessage.alternatives[assistantMessage.activeAlternativeIndex]?.content ?? primaryReply
+                        : primaryReply;
+                }
+
+                assistantMessage.status = 'sent';
+                assistantMessage.error = undefined;
+                assistantMessage.updatedAt = finishedAt;
+                session.updatedAt = finishedAt;
+                this.pendingAbortController = null;
+                this.generation = idleGenerationState();
+
+                const result: ReforgedChatAssistantActionSuccess = {
+                    ok: true,
+                    session,
+                    userMessage,
+                    assistantMessage,
+                };
+                return result;
+            } catch (error) {
+                if (!this.isActivePendingRequest(pendingRequest.id)) {
+                    return createSendFailureResult(
+                        createChatError('generation-cancelled', 'Generation was cancelled before completion.'),
+                        session,
+                        userMessage,
+                        assistantMessage,
+                    );
+                }
+
+                const finishedAt = clock();
+                const chatError = isReforgedChatError(error)
+                    ? error
+                    : createChatError('generation-failed', 'The headless engine failed to generate a reply.', describeError(error));
+                assistantMessage.status = 'failed';
+                assistantMessage.error = chatError;
+                assistantMessage.updatedAt = finishedAt;
+                session.updatedAt = finishedAt;
+                this.pendingAbortController = null;
+                this.generation = {
+                    status: 'failed',
+                    sessionId: session.id,
+                    userMessageId: userMessage?.id ?? null,
+                    assistantMessageId: assistantMessage.id,
+                    pendingRequest: null,
+                    startedAt,
+                    finishedAt,
+                    error: chatError,
+                };
+
+                return this.recordSendFailure(chatError, session, userMessage, assistantMessage);
+            }
+        },
+
         resolveSessionForSend(input: ReforgedChatSendInput, createdAt: string): ReforgedChatSession | null {
             if (input.sessionId) {
                 const session = this.sessions.find((item) => item.id === input.sessionId) ?? null;
@@ -523,6 +793,19 @@ export const useChatStore = defineStore('chat', {
             return alternative;
         },
 
+        replaceActiveAssistantAlternative(message: ReforgedChatMessage, content: string, updatedAt: string): void {
+            if (message.activeAlternativeIndex >= 0 && message.alternatives[message.activeAlternativeIndex]) {
+                message.alternatives[message.activeAlternativeIndex] = {
+                    ...message.alternatives[message.activeAlternativeIndex],
+                    content,
+                };
+                return;
+            }
+
+            message.alternatives = [this.createAlternative(content, updatedAt)];
+            message.activeAlternativeIndex = 0;
+        },
+
         createPendingRequest(
             sessionId: string,
             userMessageId: string,
@@ -546,6 +829,41 @@ export const useChatStore = defineStore('chat', {
             return this.generation.status === 'generating' && this.generation.pendingRequest?.id === pendingRequestId;
         },
 
+        readMessagesThrough(
+            session: ReforgedChatSession,
+            messageId: string,
+            includeTarget: boolean,
+        ): ReforgedChatMessage[] {
+            const targetIndex = session.messageIds.indexOf(messageId);
+            if (targetIndex < 0) {
+                return [];
+            }
+
+            const messageIds = includeTarget
+                ? session.messageIds.slice(0, targetIndex + 1)
+                : session.messageIds.slice(0, targetIndex);
+
+            return messageIds
+                .map((id) => this.messages.find((message) => message.id === id))
+                .filter((message): message is ReforgedChatMessage => Boolean(message));
+        },
+
+        findPreviousUserMessage(session: ReforgedChatSession, messageId: string): ReforgedChatMessage | null {
+            const targetIndex = session.messageIds.indexOf(messageId);
+            if (targetIndex < 0) {
+                return null;
+            }
+
+            for (let index = targetIndex - 1; index >= 0; index -= 1) {
+                const message = this.messages.find((item) => item.id === session.messageIds[index]);
+                if (message?.role === 'user') {
+                    return message;
+                }
+            }
+
+            return null;
+        },
+
         recordSendFailure(
             error: ReforgedChatError,
             session: ReforgedChatSession | null,
@@ -558,6 +876,30 @@ export const useChatStore = defineStore('chat', {
         },
     },
 });
+
+function normalizeAssistantAlternatives(reply: string, alternatives: string[] = []): string[] {
+    return [
+        reply,
+        ...alternatives,
+    ]
+        .map((alternative) => alternative.trim())
+        .filter((alternative) => alternative.length > 0);
+}
+
+function appendContinuation(baseContent: string, continuation: string): string {
+    const normalizedBase = baseContent.trim();
+    const normalizedContinuation = continuation.trim();
+
+    if (!normalizedBase) {
+        return normalizedContinuation;
+    }
+
+    if (!normalizedContinuation) {
+        return normalizedBase;
+    }
+
+    return `${normalizedBase}\n\n${normalizedContinuation}`;
+}
 
 function createChatError(code: ReforgedChatError['code'], message: string, detail?: string): ReforgedChatError {
     return {
