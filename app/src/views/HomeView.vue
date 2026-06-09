@@ -109,6 +109,23 @@ const runtimeDiagnosticLines = computed(() => [
   ...(runtimeDiagnostics.value?.blockers ?? []),
   ...(runtimeDiagnostics.value?.warnings ?? []),
 ].slice(0, 3));
+const runtimeProbeLines = computed(() => (runtimeDiagnostics.value?.probes ?? [])
+  .map((probe) => `${probe.id}: ${probe.status} - ${probe.error ?? probe.detail}`));
+const runtimeCapabilityLines = computed(() => (runtimeDiagnostics.value?.capabilities ?? [])
+  .map((capability) => `${capability.id}: ${capability.available ? 'available' : 'missing'} (${capability.moduleId})`));
+const runtimeEnvironmentLine = computed(() => {
+  if (!runtimeDiagnostics.value) {
+    return null;
+  }
+
+  const environment = runtimeDiagnostics.value.environment;
+  return [
+    environment.locationHref ?? 'unknown location',
+    environment.hasDocument ? 'document' : 'no document',
+    environment.hasJQuery ? 'jQuery' : 'no jQuery',
+    environment.hasReadableStream ? 'ReadableStream' : 'no ReadableStream',
+  ].join(' · ');
+});
 const adapterStatusText = computed(() => {
   if (adapterMode.value === 'runtime' && runtimeBusy.value) {
     return 'checking SillyTavern runtime...';
@@ -219,7 +236,7 @@ function clearConnectionDraft(): void {
 async function activateRuntimeAdapter(): Promise<void> {
   adapterMode.value = 'runtime';
   runtimeBusy.value = true;
-  runtimeNotice.value = 'Checking same-origin SillyTavern runtime...';
+  runtimeNotice.value = 'Checking same-origin SillyTavern runtime with getContext probe...';
   runtimeDiagnostics.value = null;
   chatStore.setEngineAdapter(null);
   const handoff = connectionStore.runtimeHandoff({ runtimeAdapterReady: false });
@@ -229,12 +246,12 @@ async function activateRuntimeAdapter(): Promise<void> {
     return;
   }
 
-  runtimeNotice.value = 'Checking same-origin SillyTavern runtime...';
+  runtimeNotice.value = 'Checking same-origin SillyTavern runtime with getContext probe...';
 
   try {
     const { loadHeadlessEngineAdapter } = await import('@/engine-adapter/runtimeAdapterLoader');
     const runtimeAdapter = await loadHeadlessEngineAdapter();
-    const diagnostics = await runtimeAdapter.inspect();
+    const diagnostics = await runtimeAdapter.inspect({ probeContext: true });
     runtimeDiagnostics.value = diagnostics;
 
     if (!diagnostics.ok) {
@@ -896,6 +913,29 @@ function describeError(error: unknown): string {
                 :class="runtimeDiagnostics?.ok && connectionHandoff.canAttempt ? 'border-emerald-300/20 bg-emerald-300/10 text-emerald-100' : 'border-amber-300/20 bg-amber-300/10 text-amber-100'"
               >
                 <p class="font-bold">{{ runtimeNotice }}</p>
+                <p v-if="runtimeEnvironmentLine" class="mt-2 text-stone-200/80">
+                  {{ runtimeEnvironmentLine }}
+                </p>
+                <div v-if="runtimeCapabilityLines.length" class="mt-3">
+                  <p class="font-black uppercase tracking-[0.18em] text-stone-200/70">
+                    Capabilities
+                  </p>
+                  <ul class="mt-1 space-y-1">
+                    <li v-for="line in runtimeCapabilityLines" :key="line">
+                      {{ line }}
+                    </li>
+                  </ul>
+                </div>
+                <div v-if="runtimeProbeLines.length" class="mt-3">
+                  <p class="font-black uppercase tracking-[0.18em] text-stone-200/70">
+                    Probes
+                  </p>
+                  <ul class="mt-1 space-y-1">
+                    <li v-for="line in runtimeProbeLines" :key="line">
+                      {{ line }}
+                    </li>
+                  </ul>
+                </div>
                 <ul v-if="runtimeDiagnosticLines.length" class="mt-2 space-y-1">
                   <li v-for="line in runtimeDiagnosticLines" :key="line">
                     {{ line }}

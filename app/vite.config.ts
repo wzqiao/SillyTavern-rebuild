@@ -3,6 +3,33 @@ import vue from '@vitejs/plugin-vue';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 
+const SILLYTAVERN_DEV_ORIGIN = process.env.ST_REFORGED_ST_ORIGIN ?? 'http://127.0.0.1:8000';
+
+const sameOriginRuntimeProxy = [
+  '/script.js',
+  '/lib.js',
+  '/scripts',
+  '/css',
+  '/assets',
+  '/img',
+  '/backgrounds',
+  '/characters',
+  '/User Avatars',
+  '/extensions',
+  '/api',
+  '/csrf-token',
+].reduce<Record<string, { target: string; changeOrigin: boolean; secure: boolean }>>(
+  (proxy, route) => {
+    proxy[route] = {
+      target: SILLYTAVERN_DEV_ORIGIN,
+      changeOrigin: true,
+      secure: false,
+    };
+    return proxy;
+  },
+  {},
+);
+
 /**
  * 复用 SillyTavern 引擎模块。
  *
@@ -10,6 +37,9 @@ import path from 'node:path';
  * 构建时不打包,运行时由浏览器从 ST 页面同源加载真实模块。
  *   @sillytavern/script          -> /script.js
  *   @sillytavern/scripts/openai  -> /scripts/openai.js
+ *
+ * Vite dev server 通过 `server.proxy` 把这些同源 URL 反代到真实 ST 后端。
+ * 默认目标为 http://127.0.0.1:8000,可用 ST_REFORGED_ST_ORIGIN 覆盖。
  *
  * 注:URL 映射是 M0-A 的核心验证点,可能随集成方式调整。
  * 思路为自行实现(社区有类似实践),不复制任何 GPL/Aladdin 代码。
@@ -33,6 +63,9 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    proxy: sameOriginRuntimeProxy,
+  },
   build: { target: 'esnext', outDir: 'dist' },
 });
