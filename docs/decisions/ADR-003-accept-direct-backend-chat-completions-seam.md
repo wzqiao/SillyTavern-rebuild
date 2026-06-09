@@ -19,10 +19,10 @@ This allows ST-Reforged to attempt real chat-completion requests without mutatin
 ## Decision
 Add an `engine-adapter` direct backend chat-completions seam for OpenAI-compatible Runtime requests.
 
-The adapter may set `runtimeConnectionInjected: true` only when:
+Runtime mode may set `runtimeDirectRequestReady: true` only when:
 - A connection draft has been applied in memory.
 - The loaded runtime adapter advertises `supportsDirectBackendChatCompletion`.
-- The chat request carries the applied connection through `HeadlessChatCompletionRequest.runtimeConnection`.
+- The chat send input carries a provider function that can materialize a single-use runtime connection from the transient connection vault immediately before `HeadlessChatCompletionRequest.runtimeConnection` is built.
 
 The direct request must:
 - Fetch `/csrf-token` before the POST.
@@ -31,7 +31,7 @@ The direct request must:
 - Avoid copying API keys into chat stores, chat messages, runtime snapshots, diagnostics, or local logs.
 - Avoid `public/scripts/openai.js` settings/preset mutation paths.
 
-The current connection UI keeps the draft API key in Pinia memory state until the user clears it or refreshes the page. This is accepted for M0 as "memory-only, not persisted"; a stricter "only in call stack / closure" secret boundary would need a separate connection-store redesign.
+The connection and chat stores must not put raw API keys into Pinia's serializable state or action payloads. Pinia state keeps only non-sensitive metadata (`hasValue` and `maskedValue`), while the raw key lives in a module-scoped transient vault. Runtime mode gets the raw key through `takeRuntimeConnection()`, a single-use provider function on the runtime handoff that materializes a request object immediately before the chat-completion request is built.
 
 ## Alternatives Considered
 
@@ -53,7 +53,10 @@ The current connection UI keeps the draft API key in Pinia memory state until th
 ## Consequences
 - Runtime mode can attempt real OpenAI-compatible requests after an applied in-memory connection and passing adapter diagnostics.
 - `HeadlessChatCompletionRequest` now has optional `runtimeConnection`, `responseLength`, and `stream` fields.
+- `ReforgedConnectionRuntimeHandoff` exposes safe display metadata plus `takeRuntimeConnection()` instead of returning a long-lived raw-key object.
+- `ReforgedChatSendInput` accepts a `runtimeConnectionProvider` function instead of a raw `runtimeConnection` object so Pinia action payloads do not carry API keys.
 - This is still a same-origin ST backend path, not a direct browser-to-provider request.
+- Residual risk: the raw API key still exists in the password input DOM while the user types, in the transient in-memory vault after entry, and in the same-origin backend request body as `proxy_password`. The boundary here is "not in Pinia/devtools/serializable state or action payloads", not "never in browser memory".
 - Residual risk: SillyTavern backend debug logging may include upstream request bodies, prompts, responses, or error bodies. The normal OpenAI-compatible request body sent upstream does not include `proxy_password`, but prompts and responses may still appear in backend logs.
 - Residual risk: OpenAI-compatible streaming tool calls are provider-specific. The adapter now merges common OpenAI `delta.tool_calls[index].function.arguments` chunks, but broader tool-call compatibility should be rechecked before exposing tool execution UX.
 - Future hardening should either gate ST debug logging for this seam or move memory-only Runtime requests behind a Reforged-owned backend/session layer.

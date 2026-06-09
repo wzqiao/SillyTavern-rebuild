@@ -25,11 +25,25 @@ export type ReforgedConnectionRuntimeHandoffIssueCode =
     | 'runtime-connection-unwired';
 
 // DRAFT: 待主干评审
+export interface ReforgedConnectionSecretMetadata {
+    hasValue: boolean;
+    maskedValue: string;
+}
+
+// DRAFT: 待主干评审
 export interface ReforgedConnectionDraft {
     provider: ReforgedConnectionProvider;
     baseUrl: string;
     model: string;
-    apiKey: string;
+    apiKey: ReforgedConnectionSecretMetadata;
+}
+
+// DRAFT: 待主干评审
+export interface ReforgedConnectionDraftPatch {
+    provider?: ReforgedConnectionProvider;
+    baseUrl?: string;
+    model?: string;
+    apiKey?: ReforgedConnectionSecretMetadata;
 }
 
 // DRAFT: 待主干评审
@@ -75,9 +89,15 @@ export interface ReforgedConnectionResolvedRuntimeConfig extends ReforgedApplied
 }
 
 // DRAFT: 待主干评审
+export type ReforgedConnectionRuntimeRequestConfig =
+    Omit<ReforgedConnectionResolvedRuntimeConfig, 'apiKey'> & {
+        apiKey: string;
+    };
+
+// DRAFT: 待主干评审
 export interface ReforgedConnectionRuntimeHandoffInput {
     runtimeAdapterReady?: boolean;
-    runtimeConnectionInjected?: boolean;
+    runtimeDirectRequestReady?: boolean;
 }
 
 // DRAFT: 待主干评审
@@ -86,6 +106,7 @@ export interface ReforgedConnectionRuntimeHandoff {
     canAttempt: boolean;
     generation: ReforgedConnectionGenerationMapping;
     connection: ReforgedConnectionResolvedRuntimeConfig | null;
+    takeRuntimeConnection: (() => ReforgedConnectionRuntimeRequestConfig | null) | null;
     issues: ReforgedConnectionRuntimeHandoffIssue[];
     message: string;
 }

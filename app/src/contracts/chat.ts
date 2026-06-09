@@ -26,6 +26,7 @@ export type ReforgedChatErrorCode =
     | 'generation-cancelled'
     | 'generation-failed'
     | 'generation-in-progress'
+    | 'runtime-connection-unavailable'
     | 'session-not-found';
 
 // DRAFT: 待主干评审
@@ -117,7 +118,7 @@ export interface ReforgedChatSendInput {
     generation?: ReforgedChatGenerationOptions;
     adapter?: HeadlessEngineAdapter;
     runtime?: ReforgedChatRuntimeOptions;
-    runtimeConnection?: HeadlessChatCompletionRuntimeConnection | null;
+    runtimeConnectionProvider?: ReforgedChatRuntimeConnectionProvider | null;
 }
 
 // DRAFT: 待主干评审
@@ -184,6 +185,9 @@ export interface ReforgedChatRuntimeOptions {
     mode: ReforgedChatRuntimeMode;
     chatCompletionType?: HeadlessChatCompletionRequest['type'];
 }
+
+// DRAFT: 待主干评审
+export type ReforgedChatRuntimeConnectionProvider = () => HeadlessChatCompletionRuntimeConnection | null;
 
 // DRAFT: 待主干评审
 export type ReforgedChatRuntimeEventType = 'snapshot' | 'complete';

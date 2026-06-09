@@ -266,7 +266,7 @@ describe('useChatStore', () => {
         expect(store.pendingAbortController).toBeNull();
     });
 
-    it('passes memory-only runtime connections through chat-completion requests', async () => {
+    it('materializes memory-only runtime connections inside chat-completion requests', async () => {
         const runtimeConnection = {
             provider: 'openai-compatible' as const,
             baseUrl: 'https://api.example.test/v1',
@@ -285,7 +285,7 @@ describe('useChatStore', () => {
             runtime: {
                 mode: 'chat-completion',
             },
-            runtimeConnection,
+            runtimeConnectionProvider: () => runtimeConnection,
             generation: {
                 responseLength: 96,
             },
@@ -298,6 +298,47 @@ describe('useChatStore', () => {
         }));
         expect(JSON.stringify(store.messages)).not.toContain(runtimeConnection.apiKey);
         expect(JSON.stringify(store.generation)).not.toContain(runtimeConnection.apiKey);
+        expect(JSON.stringify({
+            content: 'Use direct backend.',
+            runtime: { mode: 'chat-completion' },
+            runtimeConnectionProvider: '[function]',
+            generation: { responseLength: 96 },
+        })).not.toContain(runtimeConnection.apiKey);
+    });
+
+    it('fails chat-completion runtime when the connection provider cannot materialize a secret', async () => {
+        const sendChatCompletion = vi.fn(async (): Promise<unknown> => ({
+            choices: [{ message: { content: 'should not be called' } }],
+        }));
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(vi.fn(async () => 'unused'), sendChatCompletion));
+
+        const result = await store.sendUserMessage({
+            content: 'Use missing runtime secret.',
+            runtime: {
+                mode: 'chat-completion',
+            },
+            runtimeConnectionProvider: () => null,
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        expect(result).toMatchObject({
+            ok: false,
+            error: {
+                code: 'runtime-connection-unavailable',
+                message: 'Runtime API key is no longer available in memory.',
+            },
+            assistantMessage: {
+                status: 'failed',
+                error: {
+                    code: 'runtime-connection-unavailable',
+                },
+            },
+        });
+        expect(sendChatCompletion).not.toHaveBeenCalled();
     });
 
     it('streams chat-completion snapshots into the assistant message before completion', async () => {

@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import { useCharacterStore, useChatStore, useConnectionStore, useWorldbookStore } from '@/stores';
+import { setConnectionDraftApiKeySecret } from '@/stores/connectionStore';
 import { createCharacterImportInputFromFile, createChatLorebookContext } from '@/services';
 import type { ReforgedCharacterImportResult, ReforgedCharacterRosterItem } from '@/contracts/character';
-import type { ReforgedChatCharacterContext, ReforgedChatMessage } from '@/contracts/chat';
+import type {
+  ReforgedChatCharacterContext,
+  ReforgedChatMessage,
+  ReforgedChatRuntimeConnectionProvider,
+} from '@/contracts/chat';
 import type { ReforgedConnectionDraftStatus } from '@/contracts/connection';
 import type {
   EngineAdapterDiagnostics,
@@ -37,6 +42,7 @@ const runtimeBusy = ref(false);
 const runtimeNotice = ref<string | null>(null);
 const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
 const chatScroll = ref<HTMLElement | null>(null);
+const connectionApiKeyField = ref<HTMLInputElement | null>(null);
 
 const demoAdapter: HeadlessEngineAdapter = {
   inspect: async () => ({
@@ -73,7 +79,7 @@ const selectedMessages = computed(() => chatStore.selectedMessages);
 const activeSession = computed(() => chatStore.selectedSession);
 const readiness = computed(() => chatStore.readiness);
 const runtimeAdapterReady = computed(() => adapterMode.value === 'runtime' && runtimeDiagnostics.value?.ok === true && readiness.value.hasAdapter);
-const runtimeConnectionInjected = computed(() => (
+const runtimeDirectRequestReady = computed(() => (
   adapterMode.value === 'runtime' &&
   chatStore.engineAdapter?.supportsDirectBackendChatCompletion === true &&
   connectionStore.hasAppliedDraft
@@ -83,7 +89,7 @@ const adapterModeLabel = computed(() => adapterMode.value === 'demo' ? 'Demo ada
 const hasChatTarget = computed(() => Boolean(activeSession.value || selectedRoster.value));
 const connectionHandoff = computed(() => connectionStore.runtimeHandoff({
   runtimeAdapterReady: runtimeAdapterReady.value,
-  runtimeConnectionInjected: runtimeConnectionInjected.value,
+  runtimeDirectRequestReady: runtimeDirectRequestReady.value,
 }));
 const connectionPanelStatus = computed(() => connectionSubmitStatus.value ?? connectionHandoff.value.status);
 const canAttemptRuntime = computed(() => adapterMode.value !== 'runtime' || connectionHandoff.value.canAttempt);
@@ -151,7 +157,12 @@ watch(() => selectedMessages.value.length, async () => {
 });
 
 watch(
-  () => [connectionStore.draft.baseUrl, connectionStore.draft.model, connectionStore.draft.apiKey],
+  () => [
+    connectionStore.draft.baseUrl,
+    connectionStore.draft.model,
+    connectionStore.draft.apiKey.hasValue,
+    connectionStore.draft.apiKey.maskedValue,
+  ],
   () => {
     connectionNotice.value = null;
     connectionIssueMessages.value = [];
@@ -173,10 +184,21 @@ function applyConnectionDraft(): void {
   connectionNotice.value = result.ok ? null : result.message;
   connectionIssueMessages.value = result.ok ? [] : result.issues.map((issue) => issue.message);
   connectionSubmitStatus.value = result.ok ? null : 'incomplete';
+  if (result.ok && connectionApiKeyField.value) {
+    connectionApiKeyField.value.value = '';
+  }
+}
+
+function updateConnectionApiKey(event: Event): void {
+  const input = event.target as HTMLInputElement;
+  setConnectionDraftApiKeySecret(connectionStore, input.value);
 }
 
 function clearConnectionDraft(): void {
   connectionStore.clearAll();
+  if (connectionApiKeyField.value) {
+    connectionApiKeyField.value.value = '';
+  }
   connectionNotice.value = 'Connection draft cleared. Demo mode still works offline.';
   connectionIssueMessages.value = [];
   connectionSubmitStatus.value = null;
@@ -208,10 +230,10 @@ async function activateRuntimeAdapter(): Promise<void> {
       return;
     }
 
-    const canInjectRuntimeConnection = runtimeAdapter.supportsDirectBackendChatCompletion === true && connectionStore.hasAppliedDraft;
+    const canUseDirectRuntimeRequest = runtimeAdapter.supportsDirectBackendChatCompletion === true && connectionStore.hasAppliedDraft;
     runtimeNotice.value = connectionStore.runtimeHandoff({
       runtimeAdapterReady: true,
-      runtimeConnectionInjected: canInjectRuntimeConnection,
+      runtimeDirectRequestReady: canUseDirectRuntimeRequest,
     }).message;
     chatStore.setEngineAdapter(runtimeAdapter);
   } catch (error) {
@@ -383,7 +405,26 @@ async function sendMessage(): Promise<void> {
     return;
   }
 
-  const handoff = connectionHandoff.value;
+  let handoff = connectionHandoff.value;
+  let runtimeConnectionProvider: ReforgedChatRuntimeConnectionProvider | null = null;
+  if (adapterMode.value === 'runtime') {
+    handoff = connectionStore.runtimeHandoff({
+      runtimeAdapterReady: runtimeAdapterReady.value,
+      runtimeDirectRequestReady: runtimeDirectRequestReady.value,
+    });
+
+    if (!handoff.canAttempt) {
+      runtimeNotice.value = handoff.message;
+      return;
+    }
+
+    runtimeConnectionProvider = handoff.takeRuntimeConnection;
+    if (!runtimeConnectionProvider) {
+      runtimeNotice.value = 'Runtime API key is no longer available in memory. Re-enter it and apply the draft again.';
+      return;
+    }
+  }
+
   if (adapterMode.value === 'runtime' && !handoff.canAttempt) {
     runtimeNotice.value = handoff.message;
     return;
@@ -398,7 +439,7 @@ async function sendMessage(): Promise<void> {
       mode: adapterMode.value === 'runtime' ? 'chat-completion' : 'generate-text',
       chatCompletionType: adapterMode.value === 'runtime' ? 'quiet' : undefined,
     },
-    runtimeConnection: adapterMode.value === 'runtime' ? handoff.connection : null,
+    runtimeConnectionProvider,
     generation: {
       api: handoff.generation.api,
       responseLength: 220,
@@ -549,12 +590,13 @@ function describeError(error: unknown): string {
                 placeholder="gpt-4.1-compatible"
               >
               <input
-                v-model="connectionStore.draft.apiKey"
+                ref="connectionApiKeyField"
                 class="field-input"
                 data-testid="connection-api-key-input"
                 type="password"
                 autocomplete="off"
                 placeholder="API key, kept in memory only"
+                @input="updateConnectionApiKey"
               >
             </div>
 

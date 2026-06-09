@@ -223,6 +223,14 @@ export const useChatStore = defineStore('chat', {
                 let runtimeResult: ReforgedChatRuntimeResult | null = null;
 
                 if (isChatCompletionRuntime) {
+                    const runtimeConnection = input.runtimeConnectionProvider?.() ?? null;
+                    if (input.runtimeConnectionProvider && !runtimeConnection) {
+                        throw createChatError(
+                            'runtime-connection-unavailable',
+                            'Runtime API key is no longer available in memory.',
+                        );
+                    }
+
                     for await (const event of sendChatRuntimeEvents(adapter, {
                         session,
                         messages: this.messages,
@@ -230,7 +238,7 @@ export const useChatStore = defineStore('chat', {
                         generation: input.generation,
                         type: input.runtime?.chatCompletionType,
                         signal: abortController?.signal,
-                        runtimeConnection: input.runtimeConnection ?? null,
+                        runtimeConnection,
                     })) {
                         if (!this.isActivePendingRequest(pendingRequest.id)) {
                             return createSendFailureResult(
@@ -294,7 +302,9 @@ export const useChatStore = defineStore('chat', {
                 }
 
                 const finishedAt = clock();
-                const chatError = createChatError('generation-failed', 'The headless engine failed to generate a reply.', describeError(error));
+                const chatError = isReforgedChatError(error)
+                    ? error
+                    : createChatError('generation-failed', 'The headless engine failed to generate a reply.', describeError(error));
                 assistantMessage.status = 'failed';
                 assistantMessage.error = chatError;
                 assistantMessage.updatedAt = finishedAt;
@@ -555,6 +565,17 @@ function createChatError(code: ReforgedChatError['code'], message: string, detai
         message,
         detail,
     };
+}
+
+function isReforgedChatError(error: unknown): error is ReforgedChatError {
+    return (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        'message' in error &&
+        typeof (error as ReforgedChatError).code === 'string' &&
+        typeof (error as ReforgedChatError).message === 'string'
+    );
 }
 
 function createSendFailureResult(

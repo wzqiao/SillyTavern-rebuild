@@ -3,9 +3,12 @@ import type {
     ReforgedAppliedConnectionDraft,
     ReforgedConnectionApplyResult,
     ReforgedConnectionDraft,
+    ReforgedConnectionDraftPatch,
     ReforgedConnectionDraftStatus,
     ReforgedConnectionGenerationMapping,
     ReforgedConnectionResolvedRuntimeConfig,
+    ReforgedConnectionRuntimeRequestConfig,
+    ReforgedConnectionSecretMetadata,
     ReforgedConnectionRuntimeHandoff,
     ReforgedConnectionRuntimeHandoffInput,
     ReforgedConnectionValidationIssue,
@@ -17,11 +20,18 @@ interface ConnectionStoreState {
     nextLocalId: number;
 }
 
+const connectionSecretVault = new Map<string, string>();
+const DRAFT_SECRET_SLOT = 'draft';
+
+type DraftNormalizeInput = Omit<ReforgedConnectionDraft, 'apiKey'> & {
+    apiKey: ReforgedConnectionDraft['apiKey'];
+};
+
 const emptyDraft = (): ReforgedConnectionDraft => ({
     provider: 'openai-compatible',
     baseUrl: '',
     model: '',
-    apiKey: '',
+    apiKey: emptySecretMetadata(),
 });
 
 export const useConnectionStore = defineStore('connection', {
@@ -57,7 +67,7 @@ export const useConnectionStore = defineStore('connection', {
         },
 
         maskedApiKey(state): string {
-            return maskSecret(state.appliedDraft?.apiKey ?? state.draft.apiKey);
+            return state.appliedDraft?.apiKey.maskedValue || state.draft.apiKey.maskedValue;
         },
 
         generationApi(state): ReforgedConnectionGenerationMapping {
@@ -68,14 +78,14 @@ export const useConnectionStore = defineStore('connection', {
             return (input = {}) => createRuntimeHandoff({
                 appliedDraft: state.appliedDraft,
                 draft: normalizeDraft(state.draft),
-                runtimeConnectionInjected: input.runtimeConnectionInjected === true,
+                runtimeDirectRequestReady: input.runtimeDirectRequestReady === true,
                 runtimeAdapterReady: input.runtimeAdapterReady === true,
             });
         },
     },
 
     actions: {
-        patchDraft(input: Partial<ReforgedConnectionDraft>): void {
+        patchDraft(input: ReforgedConnectionDraftPatch): void {
             this.draft = normalizeDraft({
                 ...this.draft,
                 ...input,
@@ -96,9 +106,20 @@ export const useConnectionStore = defineStore('connection', {
             }
 
             const existingId = this.appliedDraft?.id;
+            const appliedId = existingId ?? `connection-draft-${this.nextLocalId}`;
+            const draftSecret = readVaultSecret(DRAFT_SECRET_SLOT);
+            const secretIssue = validateDraftSecret(normalizedDraft, draftSecret);
+            if (secretIssue) {
+                return {
+                    ok: false,
+                    issues: [secretIssue],
+                    message: secretIssue.message,
+                };
+            }
+
             const appliedDraft: ReforgedAppliedConnectionDraft = {
                 ...normalizedDraft,
-                id: existingId ?? `connection-draft-${this.nextLocalId}`,
+                id: appliedId,
                 appliedAt,
             };
 
@@ -107,6 +128,7 @@ export const useConnectionStore = defineStore('connection', {
             }
 
             this.appliedDraft = appliedDraft;
+            setVaultSecret(appliedSecretSlot(appliedDraft.id), draftSecret);
             this.draft = {
                 provider: appliedDraft.provider,
                 baseUrl: appliedDraft.baseUrl,
@@ -123,6 +145,7 @@ export const useConnectionStore = defineStore('connection', {
 
         resetDraft(): void {
             if (!this.appliedDraft) {
+                clearVaultSecret(DRAFT_SECRET_SLOT);
                 this.draft = emptyDraft();
                 return;
             }
@@ -133,25 +156,46 @@ export const useConnectionStore = defineStore('connection', {
                 model: this.appliedDraft.model,
                 apiKey: this.appliedDraft.apiKey,
             };
+            setVaultSecret(DRAFT_SECRET_SLOT, readVaultSecret(appliedSecretSlot(this.appliedDraft.id)));
         },
 
         clearApiKey(): void {
-            this.draft.apiKey = '';
+            clearVaultSecret(DRAFT_SECRET_SLOT);
+            if (this.appliedDraft) {
+                clearVaultSecret(appliedSecretSlot(this.appliedDraft.id));
+                this.appliedDraft = null;
+            }
+            this.draft.apiKey = emptySecretMetadata();
         },
 
         clearAll(): void {
+            clearAllVaultSecrets();
             this.draft = emptyDraft();
             this.appliedDraft = null;
         },
     },
 });
 
-function normalizeDraft(draft: ReforgedConnectionDraft): ReforgedConnectionDraft {
+export function setConnectionDraftApiKeySecret(
+    store: ReturnType<typeof useConnectionStore>,
+    value: string,
+): void {
+    setVaultSecret(DRAFT_SECRET_SLOT, value);
+    store.patchDraft({
+        apiKey: createSecretMetadata(value),
+    });
+}
+
+export function resetConnectionSecretVaultForTest(): void {
+    clearAllVaultSecrets();
+}
+
+function normalizeDraft(draft: DraftNormalizeInput): ReforgedConnectionDraft {
     return {
         provider: 'openai-compatible',
         baseUrl: draft.baseUrl.trim().replace(/\/+$/g, ''),
         model: draft.model.trim(),
-        apiKey: draft.apiKey.trim(),
+        apiKey: draft.apiKey,
     };
 }
 
@@ -159,7 +203,7 @@ function createRuntimeHandoff(input: {
     appliedDraft: ReforgedAppliedConnectionDraft | null;
     draft: ReforgedConnectionDraft;
     runtimeAdapterReady: boolean;
-    runtimeConnectionInjected: boolean;
+    runtimeDirectRequestReady: boolean;
 }): ReforgedConnectionRuntimeHandoff {
     const generation = toGenerationMapping(input.draft.provider);
     const issues = validateDraft(input.draft);
@@ -170,6 +214,7 @@ function createRuntimeHandoff(input: {
             canAttempt: false,
             generation,
             connection: null,
+            takeRuntimeConnection: null,
             issues: [{
                 code: 'draft-empty',
                 message: 'Add an OpenAI-compatible draft before attempting Runtime mode.',
@@ -184,6 +229,7 @@ function createRuntimeHandoff(input: {
             canAttempt: false,
             generation,
             connection: null,
+            takeRuntimeConnection: null,
             issues: issues.map((issue) => ({
                 code: 'draft-incomplete',
                 field: issue.field,
@@ -199,6 +245,7 @@ function createRuntimeHandoff(input: {
             canAttempt: false,
             generation,
             connection: null,
+            takeRuntimeConnection: null,
             issues: [{
                 code: 'draft-unapplied',
                 message: 'Apply this complete draft before attempting Runtime mode.',
@@ -215,6 +262,7 @@ function createRuntimeHandoff(input: {
             canAttempt: false,
             generation,
             connection,
+            takeRuntimeConnection: null,
             issues: [{
                 code: 'runtime-unwired',
                 message: 'Runtime adapter is not ready; this applied draft has not been handed to a live request path.',
@@ -223,17 +271,35 @@ function createRuntimeHandoff(input: {
         };
     }
 
-    if (!input.runtimeConnectionInjected) {
+    if (!input.runtimeDirectRequestReady) {
         return {
             status: 'applied-but-unwired',
             canAttempt: false,
             generation,
             connection,
+            takeRuntimeConnection: null,
             issues: [{
                 code: 'runtime-connection-unwired',
-                message: 'Runtime adapter is ready, but the applied draft is not injected into SillyTavern request settings.',
+                message: 'Runtime adapter is ready, but the direct backend request path is not available.',
             }],
-            message: 'Runtime adapter is ready, but the applied connection draft is not wired into real requests yet.',
+            message: 'Runtime adapter is ready, but this build cannot materialize a direct backend request yet.',
+        };
+    }
+
+    const takeRuntimeConnection = createRuntimeConnectionTaker(connection);
+    if (!takeRuntimeConnection) {
+        return {
+            status: 'applied-but-unwired',
+            canAttempt: false,
+            generation,
+            connection,
+            takeRuntimeConnection: null,
+            issues: [{
+                code: 'runtime-connection-unwired',
+                field: 'apiKey',
+                message: 'Runtime adapter is ready, but the applied API key is no longer available in memory.',
+            }],
+            message: 'Applied API key is no longer available in memory. Re-enter it and apply the draft again.',
         };
     }
 
@@ -242,6 +308,7 @@ function createRuntimeHandoff(input: {
         canAttempt: true,
         generation,
         connection,
+        takeRuntimeConnection,
         issues: [],
         message: 'Applied draft is available for a Runtime request attempt, but it is still not persisted or connectivity-tested.',
     };
@@ -269,7 +336,7 @@ function validateDraft(draft: ReforgedConnectionDraft): ReforgedConnectionValida
         });
     }
 
-    if (!draft.apiKey) {
+    if (!draft.apiKey.hasValue) {
         issues.push({
             field: 'apiKey',
             message: 'API key is required before this draft can be applied.',
@@ -279,16 +346,34 @@ function validateDraft(draft: ReforgedConnectionDraft): ReforgedConnectionValida
     return issues;
 }
 
+function validateDraftSecret(
+    draft: ReforgedConnectionDraft,
+    secret: string,
+): ReforgedConnectionValidationIssue | null {
+    if (!draft.apiKey.hasValue || secret) {
+        return null;
+    }
+
+    return {
+        field: 'apiKey',
+        message: 'API key metadata exists, but the memory-only secret is no longer available.',
+    };
+}
+
 function isDraftEmpty(draft: ReforgedConnectionDraft): boolean {
-    return !draft.baseUrl.trim() && !draft.model.trim() && !draft.apiKey.trim();
+    return !draft.baseUrl.trim() && !draft.model.trim() && !draft.apiKey.hasValue;
 }
 
 function draftsMatch(appliedDraft: ReforgedAppliedConnectionDraft, draft: ReforgedConnectionDraft): boolean {
+    const appliedSecret = readVaultSecret(appliedSecretSlot(appliedDraft.id));
+    const draftSecret = readVaultSecret(DRAFT_SECRET_SLOT);
+
     return (
         appliedDraft.provider === draft.provider &&
         appliedDraft.baseUrl === draft.baseUrl &&
         appliedDraft.model === draft.model &&
-        appliedDraft.apiKey === draft.apiKey
+        appliedDraft.apiKey.hasValue === draft.apiKey.hasValue &&
+        (!draft.apiKey.hasValue || (appliedSecret.length > 0 && appliedSecret === draftSecret))
     );
 }
 
@@ -309,6 +394,75 @@ function toResolvedRuntimeConfig(appliedDraft: ReforgedAppliedConnectionDraft): 
         ...appliedDraft,
         ...toGenerationMapping(appliedDraft.provider),
     };
+}
+
+function createRuntimeConnectionTaker(
+    connection: ReforgedConnectionResolvedRuntimeConfig,
+): (() => ReforgedConnectionRuntimeRequestConfig | null) | null {
+    const slot = appliedSecretSlot(connection.id);
+    if (!readVaultSecret(slot)) {
+        return null;
+    }
+
+    let used = false;
+
+    return () => {
+        if (used) {
+            return null;
+        }
+
+        used = true;
+        const apiKey = readVaultSecret(slot);
+        if (!apiKey) {
+            return null;
+        }
+
+        return {
+            ...connection,
+            apiKey,
+        };
+    };
+}
+
+function emptySecretMetadata(): ReforgedConnectionSecretMetadata {
+    return {
+        hasValue: false,
+        maskedValue: '',
+    };
+}
+
+function createSecretMetadata(value: string): ReforgedConnectionSecretMetadata {
+    const secret = value.trim();
+    return {
+        hasValue: secret.length > 0,
+        maskedValue: maskSecret(secret),
+    };
+}
+
+function setVaultSecret(slot: string, value: string): void {
+    const secret = value.trim();
+    if (!secret) {
+        clearVaultSecret(slot);
+        return;
+    }
+
+    connectionSecretVault.set(slot, secret);
+}
+
+function readVaultSecret(slot: string): string {
+    return connectionSecretVault.get(slot) ?? '';
+}
+
+function clearVaultSecret(slot: string): void {
+    connectionSecretVault.delete(slot);
+}
+
+function clearAllVaultSecrets(): void {
+    connectionSecretVault.clear();
+}
+
+function appliedSecretSlot(id: string): string {
+    return `applied:${id}`;
 }
 
 function maskSecret(value: string): string {

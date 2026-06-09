@@ -1,22 +1,22 @@
 # ADR-002: Guard Runtime Connection Handoff Until a Request Injection Seam Exists
 
 ## Status
-Proposed
+Superseded in part by ADR-003
 
 ## Date
 2026-06-09
 
 ## Context
-ST-Reforged now has a memory-only OpenAI-compatible connection draft for `baseUrl`, `model`, and `apiKey`. The draft is intentionally not persisted. The next M0 question was whether this draft can be injected into real SillyTavern chat-completion runtime requests without changing `public/`, mutating legacy DOM, or writing SillyTavern global settings.
+ST-Reforged now has a memory-only OpenAI-compatible connection draft for `baseUrl`, `model`, and `apiKey`. The draft is intentionally not persisted. The next M0 question was whether this draft can reach real SillyTavern chat-completion runtime requests through a reviewed request path without changing `public/`, mutating legacy DOM, or writing SillyTavern global settings.
 
 The current headless runtime path calls `sendOpenAIRequest(type, messages, signal, { jsonSchema })` from `public/scripts/openai.js`. That function derives the model and request body from module-level `oai_settings`, then posts to `/api/backends/chat-completions/generate` with `getRequestHeaders()`. Its only options object field currently used by the app-side seam is `jsonSchema`.
 
 The backend chat-completions endpoint then selects provider URL and credentials from the generated request body plus backend secrets. For OpenAI it uses `request.body.reverse_proxy || API_OPENAI` and `readSecret(..., SECRET_KEYS.OPENAI, request.body.secret_id)`. For custom OpenAI-compatible endpoints it uses `request.body.custom_url` plus the backend custom secret. This is a SillyTavern settings/secrets path, not an app-side per-request `baseUrl/model/apiKey` handoff.
 
 ## Decision
-Do not treat a memory-only Reforged connection draft as usable runtime request configuration until a safe injection seam exists.
+Do not treat a memory-only Reforged connection draft as usable runtime request configuration until a safe request path exists.
 
-The connection runtime handoff state may report that a draft is complete and applied in memory, and it may report that the runtime adapter diagnostics passed. However, it must still remain `applied-but-unwired` unless the caller explicitly proves that the applied draft is injected into the real request path.
+The connection runtime handoff state may report that a draft is complete and applied in memory, and it may report that the runtime adapter diagnostics passed. However, it must still remain `applied-but-unwired` unless the caller explicitly proves that a reviewed direct backend request path can materialize the applied draft at send time.
 
 ## Alternatives Considered
 
@@ -42,6 +42,6 @@ The connection runtime handoff state may report that a draft is complete and app
 
 ## Consequences
 - Runtime mode can still run adapter diagnostics, but sending remains blocked when only the memory draft exists.
-- `ReforgedConnectionRuntimeHandoffInput` separates `runtimeAdapterReady` from `runtimeConnectionInjected`.
-- The UI should say that the adapter is ready but the connection draft is not wired into real SillyTavern requests yet.
-- A future implementation must explicitly set `runtimeConnectionInjected: true` only after building a reviewed settings bridge, backend session layer, or adapter shim.
+- `ReforgedConnectionRuntimeHandoffInput` separates `runtimeAdapterReady` from `runtimeDirectRequestReady`.
+- The UI should say that the adapter is ready but the direct backend request path is not available yet.
+- ADR-003 accepts a reviewed direct backend chat-completions seam. Current implementations must set `runtimeDirectRequestReady: true` only when that seam is available and the runtime adapter advertises it.
