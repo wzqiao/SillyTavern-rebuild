@@ -75,11 +75,21 @@ Captured on 2026-06-09 with a real SillyTavern backend at `http://127.0.0.1:8000
 - Expected warning: DOM-heavy `Generate()` is present but intentionally excluded from the adapter.
 - Browser console: no error/warn/log entries captured during the Runtime smoke.
 
+## Direct Backend Streaming Verification Result
+
+Captured on 2026-06-10 with a real SillyTavern backend at `http://127.0.0.1:8000` and Reforged Vite at `http://127.0.0.1:5173/`.
+
+- Vite dev startup initially failed during dependency pre-scan because `@sillytavern/script` and `@sillytavern/scripts/openai` were treated as local files (`/script.js` and `/scripts/openai.js`). `app/vite.config.ts` now excludes those external runtime module ids from `optimizeDeps`, after which Vite started cleanly.
+- `GET /csrf-token` through the Vite same-origin proxy returned a token and two signed session cookies.
+- `POST /api/backends/chat-completions/generate` through the Vite same-origin proxy succeeded with an OpenAI-compatible reverse proxy base URL normalized to a `/v1` endpoint, model `gpt-5.5`, `stream: true`, and a memory-only API key.
+- Streaming response result: HTTP 200, 2 parsed SSE chunks, `finishReason: "stop"`, and received text `Hello, runtime smoke test passed.`
+- CSRF note: direct script verification must preserve both ST session cookies (`session-*` and `session-*.sig`) from `/csrf-token`; sending only the first cookie causes `403 Invalid CSRF token`.
+- Secret handling: the real API key was supplied only to the transient verification process, was not written to source, docs, tests, Pinia state, or committed config, and was not included in captured output.
+
 ## Remaining M0 Verification
-- User-trigger one real OpenAI-compatible generation through the direct backend seam and confirm whether streaming data can be consumed end-to-end from same-origin Runtime mode.
 - Decide whether the direct backend seam is sufficient for M1 or should be replaced by a Reforged-owned backend/session settings layer before broader provider support.
 - Validate the file picker flow against a broader set of user-supplied JSON / PNG cards, including extensionless uploads that rely on MIME type detection.
 - Validate the visible worldbook library, file picker, and lightweight lore context injection against a broader set of user-supplied SillyTavern world info exports, then decide where to source character/persona/global scan data, macro values, scanned extension-prompt text, Reforged recursion/minimum-activation/token-budget settings, and chat/session timed-effect metadata, and how to wire routed depth/example/Author's Note/outlet buckets into native runtime placement.
-- Validate the gated Runtime mode against a real same-origin SillyTavern runtime during user send, including chat-completion request shape, normalized alternatives/swipes, and abort behavior.
+- Validate the gated Runtime mode through the `/chat` browser UI during user send, including connection-form handoff, normalized alternatives/swipes, and abort behavior.
 - Confirm whether legacy `sendOpenAIRequest()` is still needed after the direct backend seam, or whether Runtime chat-completion traffic should stay on the adapter-owned backend path to avoid legacy DOM/settings coupling.
 - Decide whether YAML, CHARX, and BYAF should be parsed in the front-end, delegated to the existing ST backend import endpoint, or deferred until after the M0 vertical slice.

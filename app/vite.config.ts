@@ -76,6 +76,12 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
   },
+  optimizeDeps: {
+    exclude: [
+      '@sillytavern/script',
+      '@sillytavern/scripts/openai',
+    ],
+  },
   server: {
     port: 5173,
     proxy: sameOriginRuntimeProxy,
