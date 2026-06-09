@@ -2219,6 +2219,173 @@ describe('createChatLorebookContext', () => {
             'entry-initial-winner',
         ]);
     });
+
+    it('suppresses delayed timed-effect entries until enough scan chunks are available', () => {
+        const libraryItem = createLibraryItem([
+            createEntry({
+                id: 'entry-delayed',
+                comment: 'Delayed timed effect',
+                content: 'Delayed timed-effect lore.',
+                primaryKeys: ['primary route'],
+                delay: 3,
+            }),
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+                { content: 'The primary route is still active.', status: 'sent' },
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+                { content: 'The primary route is still active.', status: 'sent' },
+                { content: 'The primary route has enough history.', status: 'sent' },
+            ],
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-delayed',
+        ]);
+    });
+
+    it('suppresses active cooldown entries unless they are also sticky', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-cooldown',
+                comment: 'Cooldown',
+                content: 'Cooldown lore.',
+                constant: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-cooldown-sticky',
+                comment: 'Cooldown sticky',
+                content: 'Cooldown sticky lore.',
+                constant: true,
+                insertionOrder: 90,
+            }),
+        ]), {
+            timedEffects: {
+                cooldownEntryIds: ['entry-cooldown', 'entry-cooldown-sticky'],
+                stickyEntryIds: ['entry-cooldown-sticky'],
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-cooldown-sticky',
+        ]);
+    });
+
+    it('activates sticky entries without keys and skips probability rerolls', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-sticky',
+                comment: 'Sticky',
+                content: 'Sticky lore.',
+                probability: 0,
+                useProbability: true,
+            }),
+        ]), {
+            random: () => {
+                throw new Error('Sticky entries should not roll probability.');
+            },
+            timedEffects: {
+                stickyEntryIds: ['entry-sticky'],
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-sticky',
+        ]);
+    });
+
+    it('forces sticky inclusion-group entries to win without weighted random selection', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-non-sticky-group',
+                comment: 'Non sticky group',
+                content: 'Non sticky group lore.',
+                primaryKeys: ['primary route'],
+                group: 'sticky-group',
+                groupWeight: 100,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-sticky-group',
+                comment: 'Sticky group',
+                content: 'Sticky group lore.',
+                group: 'sticky-group',
+                groupWeight: 0,
+                insertionOrder: 90,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            random: () => {
+                throw new Error('Sticky groups should not roll weighted random.');
+            },
+            timedEffects: {
+                stickyEntryIds: ['entry-sticky-group'],
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-sticky-group',
+        ]);
+    });
+
+    it('keeps multiple sticky entries in the same inclusion group', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-sticky-first',
+                comment: 'Sticky first',
+                content: 'Sticky first lore.',
+                group: 'sticky-group',
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-sticky-second',
+                comment: 'Sticky second',
+                content: 'Sticky second lore.',
+                group: 'sticky-group',
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-non-sticky',
+                comment: 'Non sticky',
+                content: 'Non sticky lore.',
+                primaryKeys: ['primary route'],
+                group: 'sticky-group',
+                insertionOrder: 80,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            random: () => {
+                throw new Error('Sticky groups should not roll weighted random.');
+            },
+            timedEffects: {
+                stickyEntryIds: ['entry-sticky-first', 'entry-sticky-second'],
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-sticky-first',
+            'entry-sticky-second',
+        ]);
+    });
+
+    it('lets sticky entries bypass delay-until-recursion gating', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-sticky-delay-until-recursion',
+                comment: 'Sticky delay until recursion',
+                content: 'Sticky delay-until-recursion lore.',
+                delayUntilRecursion: true,
+            }),
+        ]), {
+            timedEffects: {
+                stickyEntryIds: ['entry-sticky-delay-until-recursion'],
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-sticky-delay-until-recursion',
+        ]);
+    });
 });
 
 function createLibraryItem(entries: ReforgedWorldbookEntry[]): ReforgedWorldbookLibraryItem {

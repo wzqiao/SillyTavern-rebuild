@@ -36,6 +36,11 @@ interface ReforgedWorldbookEntryCandidate {
     index: number;
 }
 
+interface ResolvedWorldbookTimedEffects {
+    sticky: Set<string>;
+    cooldown: Set<string>;
+}
+
 type ReforgedWorldbookScanState = 'initial' | 'recursion';
 type ReforgedWorldbookLoopState = ReforgedWorldbookScanState | 'min-activations';
 
@@ -51,6 +56,11 @@ export interface ReforgedChatLorebookScanSources {
     characterDepthPrompt?: string;
     scenario?: string;
     creatorNotes?: string;
+}
+
+export interface ReforgedChatLorebookTimedEffects {
+    stickyEntryIds?: string[];
+    cooldownEntryIds?: string[];
 }
 
 export interface ReforgedChatLorebookContextOptions {
@@ -70,6 +80,7 @@ export interface ReforgedChatLorebookContextOptions {
     messages?: ReforgedChatLorebookScanMessage[];
     nextMessage?: string;
     scanSources?: ReforgedChatLorebookScanSources;
+    timedEffects?: ReforgedChatLorebookTimedEffects;
 }
 
 export function createChatLorebookContext(
@@ -111,6 +122,7 @@ function activateWorldbookEntries(
     const failedProbabilityChecks = new Set<ReforgedWorldbookEntry>();
     const recursionTexts: string[] = [];
     const delayedRecursionLevels = createDelayedRecursionLevels(entryCandidates.map(({ entry }) => entry));
+    const timedEffects = resolveTimedEffects(options);
     const canScanRecursively = scanContext.overrideText === null;
     const recursive = options.recursive === true && canScanRecursively;
     const maxRecursionSteps = normalizeMaxRecursionSteps(options.maxRecursionSteps);
@@ -133,12 +145,14 @@ function activateWorldbookEntries(
         const loopCandidates = entryCandidates
             .filter(({ entry }) => !activated.has(entry))
             .filter(({ entry }) => !failedProbabilityChecks.has(entry))
-            .filter(({ entry }) => shouldScanEntryForState(entry, currentScanState, currentDelayLevel, recursive))
+            .filter(({ entry }) => shouldScanEntryForTimedEffects(entry, timedEffects, maxScanChunks))
+            .filter(({ entry }) => shouldScanEntryForState(entry, currentScanState, currentDelayLevel, recursive, timedEffects))
             .filter(({ entry }) => shouldInjectEntry(
                 entry,
                 createEntryScanText(entry, scanContext, options, currentScanState, recursionTexts, scanDepthSkew),
                 options,
                 matchSettings,
+                timedEffects,
             ));
 
         const successfulCandidates = filterCandidatesByProbability(
@@ -151,9 +165,12 @@ function activateWorldbookEntries(
                 currentScanState,
                 recursionTexts,
                 scanDepthSkew,
+                timedEffects,
+                maxScanChunks,
             ),
             options,
             failedProbabilityChecks,
+            timedEffects,
         );
 
         for (const candidate of successfulCandidates) {
@@ -205,6 +222,7 @@ function shouldInjectEntry(
     scanText: string,
     options: ReforgedChatLorebookContextOptions,
     matchSettings: ResolvedWorldbookMatchSettings,
+    timedEffects: ResolvedWorldbookTimedEffects,
 ): boolean {
     if (!entry.enabled || !entry.content.trim()) {
         return false;
@@ -215,6 +233,10 @@ function shouldInjectEntry(
     }
 
     if (entry.constant) {
+        return true;
+    }
+
+    if (isTimedEffectActive('sticky', entry, timedEffects)) {
         return true;
     }
 
@@ -247,6 +269,8 @@ function filterInclusionGroups(
     scanState: ReforgedWorldbookLoopState = 'initial',
     recursionTexts: string[] = [],
     scanDepthSkew = 0,
+    timedEffects: ResolvedWorldbookTimedEffects,
+    scanChunkCount: number,
 ): ReforgedWorldbookEntryCandidate[] {
     if (options.includeInactivePreviewEntries) {
         return candidates;
@@ -261,6 +285,8 @@ function filterInclusionGroups(
         scanState,
         recursionTexts,
         scanDepthSkew,
+        timedEffects,
+        scanChunkCount,
     );
     return candidates.filter(({ entry }) => winners.has(entry));
 }
@@ -269,9 +295,10 @@ function filterCandidatesByProbability(
     candidates: ReforgedWorldbookEntryCandidate[],
     options: ReforgedChatLorebookContextOptions,
     failedProbabilityChecks: Set<ReforgedWorldbookEntry>,
+    timedEffects: ResolvedWorldbookTimedEffects,
 ): ReforgedWorldbookEntryCandidate[] {
     return candidates.filter(({ entry }) => {
-        const passed = shouldPassProbability(entry, options);
+        const passed = shouldPassProbability(entry, options, timedEffects);
         if (!passed) {
             failedProbabilityChecks.add(entry);
         }
@@ -289,6 +316,8 @@ function selectInclusionGroupWinners(
     scanState: ReforgedWorldbookLoopState,
     recursionTexts: string[],
     scanDepthSkew: number,
+    timedEffects: ResolvedWorldbookTimedEffects,
+    scanChunkCount: number,
 ): Set<ReforgedWorldbookEntry> {
     const winners = new Set(candidates.map(({ entry }) => entry));
     const grouped = groupCandidatesByInclusionGroup(candidates);
@@ -302,12 +331,24 @@ function selectInclusionGroupWinners(
             continue;
         }
 
-        if (activeGroup.length <= 1) {
+        const timedGroup = filterInclusionGroupByTimedEffects(activeGroup, timedEffects, scanChunkCount);
+        for (const { entry } of activeGroup) {
+            if (!timedGroup.some((candidate) => candidate.entry === entry)) {
+                winners.delete(entry);
+            }
+        }
+
+        if (timedGroup.some(({ entry }) => isTimedEffectActive('sticky', entry, timedEffects))) {
+            continue;
+        }
+
+        const activeTimedGroup = timedGroup.filter(({ entry }) => winners.has(entry));
+        if (activeTimedGroup.length <= 1) {
             continue;
         }
 
         const scoredGroup = filterInclusionGroupByScore(
-            activeGroup,
+            activeTimedGroup,
             scanContext,
             options,
             matchSettings,
@@ -315,14 +356,14 @@ function selectInclusionGroupWinners(
             recursionTexts,
             scanDepthSkew,
         );
-        for (const { entry } of activeGroup) {
+        for (const { entry } of activeTimedGroup) {
             if (!scoredGroup.some((candidate) => candidate.entry === entry)) {
                 winners.delete(entry);
             }
         }
 
         const winner = selectInclusionGroupWinner(scoredGroup, options);
-        for (const { entry } of activeGroup) {
+        for (const { entry } of activeTimedGroup) {
             if (entry !== winner?.entry) {
                 winners.delete(entry);
             }
@@ -353,6 +394,19 @@ function groupCandidatesByInclusionGroup(
     }
 
     return grouped;
+}
+
+function filterInclusionGroupByTimedEffects(
+    candidates: ReforgedWorldbookEntryCandidate[],
+    timedEffects: ResolvedWorldbookTimedEffects,
+    scanChunkCount: number,
+): ReforgedWorldbookEntryCandidate[] {
+    const stickyEntries = candidates.filter(({ entry }) => isTimedEffectActive('sticky', entry, timedEffects));
+    if (stickyEntries.length > 0) {
+        return stickyEntries;
+    }
+
+    return candidates.filter(({ entry }) => shouldScanEntryForTimedEffects(entry, timedEffects, scanChunkCount));
 }
 
 function filterInclusionGroupByScore(
@@ -470,8 +524,13 @@ function normalizeGroupWeight(value: number | null): number {
 function shouldPassProbability(
     entry: ReforgedWorldbookEntry,
     options: ReforgedChatLorebookContextOptions,
+    timedEffects: ResolvedWorldbookTimedEffects,
 ): boolean {
     if (options.includeInactivePreviewEntries || !entry.useProbability) {
+        return true;
+    }
+
+    if (isTimedEffectActive('sticky', entry, timedEffects)) {
         return true;
     }
 
@@ -760,21 +819,83 @@ function shouldScanEntryForState(
     scanState: ReforgedWorldbookLoopState,
     currentDelayLevel: number,
     recursive: boolean,
+    timedEffects: ResolvedWorldbookTimedEffects,
 ): boolean {
+    const isSticky = isTimedEffectActive('sticky', entry, timedEffects);
     const delayLevel = normalizeRecursionDelayLevel(entry.delayUntilRecursion);
-    if (scanState !== 'recursion' && delayLevel > 0) {
+    if (scanState !== 'recursion' && delayLevel > 0 && !isSticky) {
         return false;
     }
 
-    if (scanState === 'recursion' && delayLevel > currentDelayLevel) {
+    if (scanState === 'recursion' && delayLevel > currentDelayLevel && !isSticky) {
         return false;
     }
 
-    if (scanState === 'recursion' && recursive && entry.excludeRecursion) {
+    if (scanState === 'recursion' && recursive && entry.excludeRecursion && !isSticky) {
         return false;
     }
 
     return true;
+}
+
+function shouldScanEntryForTimedEffects(
+    entry: ReforgedWorldbookEntry,
+    timedEffects: ResolvedWorldbookTimedEffects,
+    scanChunkCount: number,
+): boolean {
+    const isSticky = isTimedEffectActive('sticky', entry, timedEffects);
+    const isCooldown = isTimedEffectActive('cooldown', entry, timedEffects);
+    if (isCooldown && !isSticky) {
+        return false;
+    }
+
+    if (isTimedDelayActive(entry, scanChunkCount)) {
+        return false;
+    }
+
+    return true;
+}
+
+function isTimedDelayActive(entry: ReforgedWorldbookEntry, scanChunkCount: number): boolean {
+    const delay = normalizeTimedEffectDuration(entry.delay);
+    return delay !== null && scanChunkCount < delay;
+}
+
+function isTimedEffectActive(
+    type: keyof ResolvedWorldbookTimedEffects,
+    entry: ReforgedWorldbookEntry,
+    timedEffects: ResolvedWorldbookTimedEffects,
+): boolean {
+    return getEntryTimedEffectIds(entry).some((id) => timedEffects[type].has(id));
+}
+
+function getEntryTimedEffectIds(entry: ReforgedWorldbookEntry): string[] {
+    return [
+        entry.id,
+        entry.uid === null ? '' : String(entry.uid),
+    ].filter(Boolean);
+}
+
+function resolveTimedEffects(options: ReforgedChatLorebookContextOptions): ResolvedWorldbookTimedEffects {
+    return {
+        sticky: normalizeTimedEffectIds(options.timedEffects?.stickyEntryIds),
+        cooldown: normalizeTimedEffectIds(options.timedEffects?.cooldownEntryIds),
+    };
+}
+
+function normalizeTimedEffectIds(ids: string[] = []): Set<string> {
+    return new Set(ids
+        .map((id) => id.trim())
+        .filter(Boolean));
+}
+
+function normalizeTimedEffectDuration(value: number | null): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return null;
+    }
+
+    const duration = Math.floor(value);
+    return duration > 0 ? duration : null;
 }
 
 function createDelayedRecursionLevels(entries: ReforgedWorldbookEntry[]): number[] {
