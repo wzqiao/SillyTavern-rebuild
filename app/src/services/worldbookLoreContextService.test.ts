@@ -173,6 +173,102 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('filters activated entries by probability with an injectable random source', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-probability-pass',
+                comment: 'Probability pass',
+                content: 'Probability pass lore.',
+                primaryKeys: ['primary'],
+                probability: 50,
+                useProbability: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-probability-fail',
+                comment: 'Probability fail',
+                content: 'Probability fail lore.',
+                primaryKeys: ['primary'],
+                probability: 50,
+                useProbability: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-probability-zero',
+                comment: 'Probability zero',
+                content: 'Probability zero lore.',
+                primaryKeys: ['primary'],
+                probability: 0,
+                useProbability: true,
+                insertionOrder: 80,
+            }),
+            createEntry({
+                id: 'entry-probability-hundred',
+                comment: 'Probability hundred',
+                content: 'Probability hundred lore.',
+                primaryKeys: ['primary'],
+                probability: 100,
+                useProbability: true,
+                insertionOrder: 70,
+            }),
+            createEntry({
+                id: 'entry-probability-disabled',
+                comment: 'Probability disabled',
+                content: 'Probability disabled lore.',
+                primaryKeys: ['primary'],
+                probability: 0,
+                useProbability: false,
+                insertionOrder: 60,
+            }),
+            createEntry({
+                id: 'entry-probability-null',
+                comment: 'Probability null',
+                content: 'Probability null lore.',
+                primaryKeys: ['primary'],
+                probability: null,
+                useProbability: true,
+                insertionOrder: 50,
+            }),
+            createEntry({
+                id: 'entry-constant-probability-fail',
+                comment: 'Constant probability fail',
+                content: 'Constant probability fail lore.',
+                constant: true,
+                probability: 0,
+                useProbability: true,
+                insertionOrder: 40,
+            }),
+        ]), {
+            random: createRandomSequence([0.5, 0.51, 0.01, 0.42]),
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-probability-pass',
+            'entry-probability-hundred',
+            'entry-probability-disabled',
+            'entry-probability-null',
+        ]);
+    });
+
+    it('does not apply probability while previewing inactive entries', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-probability-preview',
+                comment: 'Probability preview',
+                content: 'Probability preview lore.',
+                primaryKeys: ['primary'],
+                probability: 0,
+                useProbability: true,
+            }),
+        ]), {
+            includeInactivePreviewEntries: true,
+            random: () => {
+                throw new Error('Preview should not roll probability.');
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-probability-preview',
+        ]);
+    });
+
     it('matches SillyTavern selective logic modes for secondary keys', () => {
         expect(createChatLorebookContext(createLibraryItem([
             createEntry({
@@ -699,6 +795,11 @@ function createLibraryItem(entries: ReforgedWorldbookEntry[]): ReforgedWorldbook
             entries,
         },
     };
+}
+
+function createRandomSequence(values: number[]): () => number {
+    let index = 0;
+    return () => values[index++] ?? values.at(-1) ?? 1;
 }
 
 function createEntry(overrides: Partial<ReforgedWorldbookEntry> & Pick<ReforgedWorldbookEntry, 'id' | 'comment' | 'content'>): ReforgedWorldbookEntry {

@@ -31,6 +31,7 @@ export interface ReforgedChatLorebookContextOptions {
     defaultMatchWholeWords?: boolean;
     generationTrigger?: string;
     includeInactivePreviewEntries?: boolean;
+    random?: () => number;
     scanText?: string;
     messages?: ReforgedChatLorebookScanMessage[];
     nextMessage?: string;
@@ -49,6 +50,7 @@ export function createChatLorebookContext(
         entries: libraryItem.worldbook.entries
             .map((entry, index) => ({ entry, index }))
             .filter(({ entry }) => shouldInjectEntry(entry, scanText, options, matchSettings))
+            .filter(({ entry }) => shouldPassProbability(entry, options))
             .sort((left, right) => {
                 const byInsertionOrder = right.entry.insertionOrder - left.entry.insertionOrder;
                 return byInsertionOrder || left.index - right.index;
@@ -97,6 +99,40 @@ function shouldInjectEntry(
     }
 
     return matchesSelectiveSecondaryKeys(scanText, entry, matchSettings);
+}
+
+function shouldPassProbability(
+    entry: ReforgedWorldbookEntry,
+    options: ReforgedChatLorebookContextOptions,
+): boolean {
+    if (options.includeInactivePreviewEntries || !entry.useProbability) {
+        return true;
+    }
+
+    const probability = normalizeProbability(entry.probability);
+    if (probability >= 100) {
+        return true;
+    }
+
+    return readProbabilityRoll(options) <= probability;
+}
+
+function normalizeProbability(value: number | null): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        // Reforged currently represents missing ST probability defaults as null.
+        return 100;
+    }
+
+    return Math.min(100, Math.max(0, value));
+}
+
+function readProbabilityRoll(options: ReforgedChatLorebookContextOptions): number {
+    const randomValue = options.random?.() ?? Math.random();
+    if (!Number.isFinite(randomValue)) {
+        return 100;
+    }
+
+    return Math.min(100, Math.max(0, randomValue * 100));
 }
 
 function shouldMatchGenerationTrigger(
