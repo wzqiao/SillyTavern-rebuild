@@ -4,6 +4,17 @@ import type {
 } from '@/contracts/chat';
 import type { ReforgedWorldbookEntry, ReforgedWorldbookLibraryItem } from '@/contracts/worldbook';
 
+const WORLD_INFO_SELECTIVE_LOGIC = {
+    AND_ANY: 0,
+    NOT_ALL: 1,
+    NOT_ANY: 2,
+    AND_ALL: 3,
+} as const;
+
+type WorldInfoSelectiveLogic = typeof WORLD_INFO_SELECTIVE_LOGIC[keyof typeof WORLD_INFO_SELECTIVE_LOGIC];
+
+const WORLD_INFO_SELECTIVE_LOGIC_VALUES = new Set<number>(Object.values(WORLD_INFO_SELECTIVE_LOGIC));
+
 export interface ReforgedChatLorebookScanMessage {
     content: string;
     status?: ReforgedChatMessageStatus;
@@ -75,7 +86,7 @@ function shouldInjectEntry(
         return true;
     }
 
-    return matchesAnyKey(scanText, entry.secondaryKeys, entry);
+    return matchesSelectiveSecondaryKeys(scanText, entry);
 }
 
 function shouldMatchGenerationTrigger(
@@ -96,10 +107,55 @@ function shouldMatchGenerationTrigger(
 }
 
 function matchesAnyKey(scanText: string, keys: string[], entry: ReforgedWorldbookEntry): boolean {
+    return createKeyMatchResults(scanText, keys, entry)
+        .some((result) => result.matched);
+}
+
+function matchesSelectiveSecondaryKeys(scanText: string, entry: ReforgedWorldbookEntry): boolean {
+    const secondaryMatches = createKeyMatchResults(scanText, entry.secondaryKeys, entry);
+
+    if (secondaryMatches.length === 0) {
+        return true;
+    }
+
+    const matchedCount = secondaryMatches.filter((result) => result.matched).length;
+    const logic = normalizeSelectiveLogic(entry.selectiveLogic);
+
+    if (logic === WORLD_INFO_SELECTIVE_LOGIC.AND_ALL) {
+        return matchedCount === secondaryMatches.length;
+    }
+
+    if (logic === WORLD_INFO_SELECTIVE_LOGIC.NOT_ALL) {
+        return matchedCount < secondaryMatches.length;
+    }
+
+    if (logic === WORLD_INFO_SELECTIVE_LOGIC.NOT_ANY) {
+        return matchedCount === 0;
+    }
+
+    return matchedCount > 0;
+}
+
+function createKeyMatchResults(
+    scanText: string,
+    keys: string[],
+    entry: ReforgedWorldbookEntry,
+): { key: string; matched: boolean }[] {
     return keys
         .map((key) => key.trim())
         .filter(Boolean)
-        .some((key) => matchesKey(scanText, key, entry));
+        .map((key) => ({
+            key,
+            matched: matchesKey(scanText, key, entry),
+        }));
+}
+
+function normalizeSelectiveLogic(value: number | null): number {
+    if (typeof value === 'number' && WORLD_INFO_SELECTIVE_LOGIC_VALUES.has(value)) {
+        return value as WorldInfoSelectiveLogic;
+    }
+
+    return WORLD_INFO_SELECTIVE_LOGIC.AND_ANY;
 }
 
 function matchesKey(scanText: string, key: string, entry: ReforgedWorldbookEntry): boolean {

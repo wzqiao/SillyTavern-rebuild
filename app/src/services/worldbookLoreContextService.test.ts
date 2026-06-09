@@ -173,6 +173,195 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('matches SillyTavern selective logic modes for secondary keys', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'and-any-one',
+                comment: 'AND ANY one',
+                content: 'AND ANY lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha', 'missing'],
+                selective: true,
+                selectiveLogic: 0,
+            }),
+            createEntry({
+                id: 'and-any-none',
+                comment: 'AND ANY none',
+                content: 'AND ANY missing lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['missing'],
+                selective: true,
+                selectiveLogic: 0,
+            }),
+            createEntry({
+                id: 'not-all-partial',
+                comment: 'NOT ALL partial',
+                content: 'NOT ALL partial lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha', 'missing'],
+                selective: true,
+                selectiveLogic: 1,
+            }),
+            createEntry({
+                id: 'not-all-complete',
+                comment: 'NOT ALL complete',
+                content: 'NOT ALL complete lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha', 'beta'],
+                selective: true,
+                selectiveLogic: 1,
+            }),
+            createEntry({
+                id: 'not-any-none',
+                comment: 'NOT ANY none',
+                content: 'NOT ANY lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['missing'],
+                selective: true,
+                selectiveLogic: 2,
+            }),
+            createEntry({
+                id: 'not-any-one',
+                comment: 'NOT ANY one',
+                content: 'NOT ANY matched lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha', 'missing'],
+                selective: true,
+                selectiveLogic: 2,
+            }),
+            createEntry({
+                id: 'and-all-complete',
+                comment: 'AND ALL complete',
+                content: 'AND ALL lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha', 'beta'],
+                selective: true,
+                selectiveLogic: 3,
+            }),
+            createEntry({
+                id: 'and-all-partial',
+                comment: 'AND ALL partial',
+                content: 'AND ALL partial lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha', 'missing'],
+                selective: true,
+                selectiveLogic: 3,
+            }),
+        ]), {
+            scanText: 'The primary route includes alpha and beta markers.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'and-any-one',
+            'not-all-partial',
+            'not-any-none',
+            'and-all-complete',
+        ]);
+    });
+
+    it('falls back to AND ANY logic and activates primary-only selective entries', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'null-logic',
+                comment: 'Null logic',
+                content: 'Null logic lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha'],
+                selective: true,
+                selectiveLogic: null,
+            }),
+            createEntry({
+                id: 'unknown-logic',
+                comment: 'Unknown logic',
+                content: 'Unknown logic lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha'],
+                selective: true,
+                selectiveLogic: 99,
+            }),
+            createEntry({
+                id: 'unknown-logic-missing-secondary',
+                comment: 'Unknown logic missing secondary',
+                content: 'Unknown missing lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['missing'],
+                selective: true,
+                selectiveLogic: 99,
+            }),
+            createEntry({
+                id: 'empty-secondary',
+                comment: 'Empty secondary',
+                content: 'Empty secondary lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: [],
+                selective: true,
+                selectiveLogic: 3,
+            }),
+        ]), {
+            scanText: 'The primary route includes alpha markers.',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'null-logic',
+            'unknown-logic',
+            'empty-secondary',
+        ]);
+    });
+
+    it('keeps trigger filtering while previewing inactive selective entries', () => {
+        const libraryItem = createLibraryItem([
+            createEntry({
+                id: 'normal-selective-preview',
+                comment: 'Normal selective preview',
+                content: 'Normal selective preview lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['missing'],
+                selective: true,
+                selectiveLogic: 3,
+                triggers: ['normal'],
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'continue-selective-preview',
+                comment: 'Continue selective preview',
+                content: 'Continue selective preview lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['missing'],
+                selective: true,
+                selectiveLogic: 3,
+                triggers: ['continue'],
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'unfiltered-selective-preview',
+                comment: 'Unfiltered selective preview',
+                content: 'Unfiltered selective preview lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['missing'],
+                selective: true,
+                selectiveLogic: 3,
+                insertionOrder: 80,
+            }),
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            includeInactivePreviewEntries: true,
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'normal-selective-preview',
+            'unfiltered-selective-preview',
+        ]);
+
+        expect(createChatLorebookContext(libraryItem, {
+            generationTrigger: 'continue',
+            includeInactivePreviewEntries: true,
+            scanText: 'primary',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'continue-selective-preview',
+            'unfiltered-selective-preview',
+        ]);
+    });
+
     it('filters entries by generation trigger with normal as the default trigger', () => {
         expect(createChatLorebookContext(createLibraryItem([
             createEntry({
