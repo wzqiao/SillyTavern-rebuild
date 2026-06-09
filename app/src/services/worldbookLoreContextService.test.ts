@@ -438,6 +438,201 @@ describe('createChatLorebookContext', () => {
         ]);
     });
 
+    it('filters scored inclusion-group entries before weighted random winners', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-scored-low',
+                comment: 'Scored low',
+                content: 'Scored low lore.',
+                primaryKeys: ['primary', 'missing'],
+                group: 'score-group',
+                groupWeight: 99,
+                useGroupScoring: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-scored-high',
+                comment: 'Scored high',
+                content: 'Scored high lore.',
+                primaryKeys: ['primary', 'bonus'],
+                group: 'score-group',
+                groupWeight: 1,
+                useGroupScoring: true,
+                insertionOrder: 90,
+            }),
+        ]), {
+            random: () => 0,
+            scanText: 'primary bonus',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-scored-high',
+        ]);
+    });
+
+    it('keeps unscored inclusion-group entries while removing scored losers', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-scored-low',
+                comment: 'Scored low',
+                content: 'Scored low lore.',
+                primaryKeys: ['primary'],
+                group: 'mixed-score-group',
+                groupWeight: 1,
+                useGroupScoring: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-unscored-low',
+                comment: 'Unscored low',
+                content: 'Unscored low lore.',
+                primaryKeys: ['primary'],
+                group: 'mixed-score-group',
+                groupWeight: 99,
+                useGroupScoring: false,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-scored-high',
+                comment: 'Scored high',
+                content: 'Scored high lore.',
+                primaryKeys: ['primary', 'bonus'],
+                group: 'mixed-score-group',
+                groupWeight: 1,
+                useGroupScoring: true,
+                insertionOrder: 80,
+            }),
+        ]), {
+            random: () => 0.5,
+            scanText: 'primary bonus',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-unscored-low',
+        ]);
+    });
+
+    it('uses default group scoring for null entry hints', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-default-scored-low',
+                comment: 'Default scored low',
+                content: 'Default scored low lore.',
+                primaryKeys: ['primary'],
+                group: 'default-score-group',
+                groupWeight: 99,
+                useGroupScoring: null,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-default-scored-high',
+                comment: 'Default scored high',
+                content: 'Default scored high lore.',
+                primaryKeys: ['primary', 'bonus'],
+                group: 'default-score-group',
+                groupWeight: 1,
+                useGroupScoring: null,
+                insertionOrder: 90,
+            }),
+        ]), {
+            defaultUseGroupScoring: true,
+            random: () => 0,
+            scanText: 'primary bonus',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-default-scored-high',
+        ]);
+    });
+
+    it('scores only positive selective secondary logic for inclusion groups', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-and-any-score',
+                comment: 'AND ANY score',
+                content: 'AND ANY score lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha', 'beta'],
+                selective: true,
+                selectiveLogic: 0,
+                group: 'selective-score-group',
+                useGroupScoring: true,
+                insertionOrder: 100,
+            }),
+            createEntry({
+                id: 'entry-and-all-partial-score',
+                comment: 'AND ALL partial score',
+                content: 'AND ALL partial score lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['alpha', 'missing'],
+                selective: true,
+                selectiveLogic: 3,
+                group: 'selective-score-group',
+                useGroupScoring: true,
+                insertionOrder: 90,
+            }),
+            createEntry({
+                id: 'entry-not-any-no-secondary-score',
+                comment: 'NOT ANY no secondary score',
+                content: 'NOT ANY no secondary score lore.',
+                primaryKeys: ['primary'],
+                secondaryKeys: ['missing'],
+                selective: true,
+                selectiveLogic: 2,
+                group: 'selective-score-group',
+                useGroupScoring: true,
+                insertionOrder: 80,
+            }),
+        ]), {
+            random: () => 0,
+            scanText: 'primary alpha beta',
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-and-any-score',
+        ]);
+    });
+
+    it('scores group entries against global sources, scan injects, and recursive content', () => {
+        expect(createChatLorebookContext(createLibraryItem([
+            createEntry({
+                id: 'entry-seed',
+                comment: 'Seed',
+                content: 'Recursive route appears later.',
+                primaryKeys: ['primary route'],
+                insertionOrder: 120,
+            }),
+            createEntry({
+                id: 'entry-scored-low',
+                comment: 'Scored low',
+                content: 'Scored low lore.',
+                primaryKeys: ['recursive route'],
+                group: 'context-score-group',
+                useGroupScoring: true,
+                insertionOrder: 110,
+            }),
+            createEntry({
+                id: 'entry-scored-high',
+                comment: 'Scored high',
+                content: 'Scored high lore.',
+                primaryKeys: ['recursive route'],
+                secondaryKeys: ['persona marker', 'inject marker'],
+                selective: true,
+                selectiveLogic: 0,
+                group: 'context-score-group',
+                useGroupScoring: true,
+                matchPersonaDescription: true,
+                insertionOrder: 100,
+            }),
+        ]), {
+            messages: [
+                { content: 'The primary route is active.', status: 'sent' },
+            ],
+            maxRecursionSteps: 2,
+            random: () => 0,
+            recursive: true,
+            scanInjects: ['Inject marker is present.'],
+            scanSources: {
+                personaDescription: 'Persona marker is present.',
+            },
+        }).entries.map((entry) => entry.id)).toEqual([
+            'entry-seed',
+            'entry-scored-high',
+        ]);
+    });
+
     it('matches SillyTavern selective logic modes for secondary keys', () => {
         expect(createChatLorebookContext(createLibraryItem([
             createEntry({

@@ -56,6 +56,7 @@ export interface ReforgedChatLorebookContextOptions {
     defaultCaseSensitive?: boolean;
     defaultMatchWholeWords?: boolean;
     defaultScanDepth?: number | null;
+    defaultUseGroupScoring?: boolean;
     generationTrigger?: string;
     includeInactivePreviewEntries?: boolean;
     maxRecursionSteps?: number;
@@ -134,7 +135,14 @@ function activateWorldbookEntries(
             ));
 
         const successfulCandidates = filterCandidatesByProbability(
-            filterInclusionGroups(loopCandidates, options),
+            filterInclusionGroups(
+                loopCandidates,
+                scanContext,
+                options,
+                matchSettings,
+                currentScanState,
+                recursionTexts,
+            ),
             options,
             failedProbabilityChecks,
         );
@@ -209,13 +217,17 @@ function shouldInjectEntry(
 
 function filterInclusionGroups(
     candidates: ReforgedWorldbookEntryCandidate[],
+    scanContext: LorebookScanContext,
     options: ReforgedChatLorebookContextOptions,
+    matchSettings: ResolvedWorldbookMatchSettings,
+    scanState: ReforgedWorldbookScanState = 'initial',
+    recursionTexts: string[] = [],
 ): ReforgedWorldbookEntryCandidate[] {
     if (options.includeInactivePreviewEntries) {
         return candidates;
     }
 
-    const winners = selectInclusionGroupWinners(candidates, options);
+    const winners = selectInclusionGroupWinners(candidates, scanContext, options, matchSettings, scanState, recursionTexts);
     return candidates.filter(({ entry }) => winners.has(entry));
 }
 
@@ -236,7 +248,11 @@ function filterCandidatesByProbability(
 
 function selectInclusionGroupWinners(
     candidates: ReforgedWorldbookEntryCandidate[],
+    scanContext: LorebookScanContext,
     options: ReforgedChatLorebookContextOptions,
+    matchSettings: ResolvedWorldbookMatchSettings,
+    scanState: ReforgedWorldbookScanState,
+    recursionTexts: string[],
 ): Set<ReforgedWorldbookEntry> {
     const winners = new Set(candidates.map(({ entry }) => entry));
     const grouped = groupCandidatesByInclusionGroup(candidates);
@@ -247,7 +263,21 @@ function selectInclusionGroupWinners(
             continue;
         }
 
-        const winner = selectInclusionGroupWinner(activeGroup, options);
+        const scoredGroup = filterInclusionGroupByScore(
+            activeGroup,
+            scanContext,
+            options,
+            matchSettings,
+            scanState,
+            recursionTexts,
+        );
+        for (const { entry } of activeGroup) {
+            if (!scoredGroup.some((candidate) => candidate.entry === entry)) {
+                winners.delete(entry);
+            }
+        }
+
+        const winner = selectInclusionGroupWinner(scoredGroup, options);
         for (const { entry } of activeGroup) {
             if (entry !== winner?.entry) {
                 winners.delete(entry);
@@ -272,6 +302,70 @@ function groupCandidatesByInclusionGroup(
     }
 
     return grouped;
+}
+
+function filterInclusionGroupByScore(
+    candidates: ReforgedWorldbookEntryCandidate[],
+    scanContext: LorebookScanContext,
+    options: ReforgedChatLorebookContextOptions,
+    matchSettings: ResolvedWorldbookMatchSettings,
+    scanState: ReforgedWorldbookScanState,
+    recursionTexts: string[],
+): ReforgedWorldbookEntryCandidate[] {
+    if (!candidates.some(({ entry }) => shouldUseGroupScoring(entry, options))) {
+        return candidates;
+    }
+
+    const scoredCandidates = candidates.map((candidate) => ({
+        candidate,
+        score: calculateGroupScore(
+            candidate.entry,
+            createEntryScanText(candidate.entry, scanContext, options, scanState, recursionTexts),
+            matchSettings,
+        ),
+    }));
+    const maxScore = Math.max(...scoredCandidates.map(({ score }) => score));
+
+    return scoredCandidates
+        .filter(({ candidate, score }) => !shouldUseGroupScoring(candidate.entry, options) || score >= maxScore)
+        .map(({ candidate }) => candidate);
+}
+
+function shouldUseGroupScoring(
+    entry: ReforgedWorldbookEntry,
+    options: ReforgedChatLorebookContextOptions,
+): boolean {
+    return entry.useGroupScoring ?? options.defaultUseGroupScoring ?? false;
+}
+
+function calculateGroupScore(
+    entry: ReforgedWorldbookEntry,
+    scanText: string,
+    matchSettings: ResolvedWorldbookMatchSettings,
+): number {
+    const primaryMatches = createKeyMatchResults(scanText, entry.primaryKeys, entry, matchSettings);
+    if (primaryMatches.length === 0) {
+        return 0;
+    }
+
+    const primaryScore = primaryMatches.filter(({ matched }) => matched).length;
+    const secondaryMatches = createKeyMatchResults(scanText, entry.secondaryKeys, entry, matchSettings);
+    if (secondaryMatches.length === 0) {
+        return primaryScore;
+    }
+
+    const secondaryScore = secondaryMatches.filter(({ matched }) => matched).length;
+    const logic = normalizeSelectiveLogic(entry.selectiveLogic);
+
+    if (logic === WORLD_INFO_SELECTIVE_LOGIC.AND_ANY) {
+        return primaryScore + secondaryScore;
+    }
+
+    if (logic === WORLD_INFO_SELECTIVE_LOGIC.AND_ALL && secondaryScore === secondaryMatches.length) {
+        return primaryScore + secondaryScore;
+    }
+
+    return primaryScore;
 }
 
 function parseInclusionGroups(value: string): string[] {
