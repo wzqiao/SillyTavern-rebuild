@@ -2,7 +2,11 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import { useCharacterStore, useChatStore, useConnectionStore, useWorldbookStore } from '@/stores';
 import { setConnectionDraftApiKeySecret } from '@/stores/connectionStore';
-import { createCharacterImportInputFromFile, createChatLorebookContext } from '@/services';
+import {
+  createCharacterImportInputFromFile,
+  createChatLorebookContext,
+  createWorldbookImportInputFromFile,
+} from '@/services';
 import type { ReforgedCharacterImportResult, ReforgedCharacterRosterItem } from '@/contracts/character';
 import type {
   ReforgedChatCharacterContext,
@@ -34,6 +38,7 @@ const editingMessageId = ref<string | null>(null);
 const editingContent = ref('');
 const importBusy = ref(false);
 const importNotice = ref<string | null>(null);
+const worldbookImportBusy = ref(false);
 const connectionNotice = ref<string | null>(null);
 const connectionIssueMessages = ref<string[]>([]);
 const connectionSubmitStatus = ref<ReforgedConnectionDraftStatus | null>(null);
@@ -367,6 +372,31 @@ function importPastedWorldbook(): void {
 
   if (result.ok) {
     pastedWorldbook.value = '';
+  }
+}
+
+async function importWorldbookFromFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  worldbookImportBusy.value = true;
+  worldbookNotice.value = null;
+
+  try {
+    const result = worldbookStore.importWorldbook(
+      await createWorldbookImportInputFromFile(file),
+      new Date().toISOString(),
+    );
+
+    handleWorldbookImportResult(result);
+  } catch (error) {
+    worldbookNotice.value = `Worldbook import failed: ${describeError(error)}`;
+  } finally {
+    worldbookImportBusy.value = false;
+    input.value = '';
   }
 }
 
@@ -740,7 +770,20 @@ function describeError(error: unknown): string {
               </button>
             </div>
 
-            <div class="space-y-2">
+            <label class="file-drop">
+              <input
+                class="sr-only"
+                data-testid="worldbook-file-input"
+                type="file"
+                accept=".json,application/json"
+                @change="importWorldbookFromFile"
+              >
+              <span class="text-3xl">+</span>
+              <span class="text-sm font-semibold">选择 JSON 世界书</span>
+              <span class="text-xs text-stone-400">{{ worldbookImportBusy ? 'Reading lorebook...' : 'SillyTavern world info / Character Book JSON' }}</span>
+            </label>
+
+            <div class="mt-4 space-y-2">
               <input
                 v-model="pastedWorldbookFileName"
                 class="field-input"
