@@ -271,7 +271,7 @@ describe('useChatStore', () => {
             provider: 'openai-compatible' as const,
             baseUrl: 'https://api.example.test/v1',
             model: 'example-chat-model',
-            apiKey: 'sk-memory-only-secret',
+            apiKey: 'memory-only-secret',
             api: 'openai' as const,
         };
         const sendChatCompletion = vi.fn(async (): Promise<unknown> => ({
@@ -699,6 +699,181 @@ describe('useChatStore', () => {
         expect(result.assistantMessage.content).toBe('First version');
         expect(store.deleteMessage(result.userMessage.id)).toBe(true);
         expect(store.selectedMessages.map((message) => message.id)).toEqual([result.assistantMessage.id]);
+    });
+
+    it('regenerates an assistant message as a new active swipe without adding a user message', async () => {
+        const generateText = vi
+            .fn(async () => 'First version')
+            .mockResolvedValueOnce('First version')
+            .mockResolvedValueOnce('Regenerated version');
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(generateText));
+
+        const result = await store.sendUserMessage({
+            content: 'Draft a reply',
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) {
+            return;
+        }
+
+        await expect(store.regenerateAssistantMessage(result.assistantMessage.id, {}, sequenceClock([
+            '2026-06-09T00:00:03.000Z',
+            '2026-06-09T00:00:04.000Z',
+        ]))).resolves.toMatchObject({
+            ok: true,
+            assistantMessage: {
+                content: 'Regenerated version',
+                activeAlternativeIndex: 1,
+                alternatives: [
+                    expect.objectContaining({ content: 'First version' }),
+                    expect.objectContaining({ content: 'Regenerated version' }),
+                ],
+            },
+        });
+
+        expect(store.selectedMessages.map((message) => [message.role, message.content])).toEqual([
+            ['user', 'Draft a reply'],
+            ['assistant', 'Regenerated version'],
+        ]);
+        expect(generateText).toHaveBeenLastCalledWith(expect.objectContaining({
+            prompt: [
+                {
+                    role: 'user',
+                    content: 'Draft a reply',
+                },
+            ],
+        }));
+        expect(store.generation.status).toBe('idle');
+    });
+
+    it('continues an assistant message by including the current assistant content in context', async () => {
+        const generateText = vi
+            .fn(async () => 'First version')
+            .mockResolvedValueOnce('First version')
+            .mockResolvedValueOnce('More detail.');
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(generateText));
+
+        const result = await store.sendUserMessage({
+            content: 'Draft a reply',
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) {
+            return;
+        }
+
+        await expect(store.continueAssistantMessage(result.assistantMessage.id, {}, sequenceClock([
+            '2026-06-09T00:00:03.000Z',
+            '2026-06-09T00:00:04.000Z',
+        ]))).resolves.toMatchObject({
+            ok: true,
+            assistantMessage: {
+                content: 'First version\n\nMore detail.',
+                activeAlternativeIndex: 0,
+                alternatives: [
+                    expect.objectContaining({ content: 'First version\n\nMore detail.' }),
+                ],
+            },
+        });
+
+        expect(generateText).toHaveBeenLastCalledWith(expect.objectContaining({
+            prompt: [
+                {
+                    role: 'user',
+                    content: 'Draft a reply',
+                },
+                {
+                    role: 'assistant',
+                    content: 'First version',
+                },
+            ],
+        }));
+    });
+
+    it('retries a failed assistant message in place and clears the failed state', async () => {
+        const generateText = vi.fn(async (_request: HeadlessGenerationRequest): Promise<string> => 'Recovered reply');
+        generateText.mockRejectedValueOnce(new Error('provider offline'));
+        const store = useChatStore();
+        store.setEngineAdapter(createFakeAdapter(generateText));
+
+        const failedResult = await store.sendUserMessage({
+            content: 'Anyone there?',
+        }, sequenceClock([
+            '2026-06-09T00:00:00.000Z',
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+        ]));
+
+        expect(failedResult.ok).toBe(false);
+        if (failedResult.ok || !failedResult.assistantMessage) {
+            return;
+        }
+
+        await expect(store.retryFailedAssistantMessage(failedResult.assistantMessage.id, {}, sequenceClock([
+            '2026-06-09T00:00:03.000Z',
+            '2026-06-09T00:00:04.000Z',
+        ]))).resolves.toMatchObject({
+            ok: true,
+            assistantMessage: {
+                content: 'Recovered reply',
+                status: 'sent',
+                error: undefined,
+                activeAlternativeIndex: 0,
+            },
+        });
+
+        expect(store.selectedMessages.map((message) => [message.role, message.content, message.status])).toEqual([
+            ['user', 'Anyone there?', 'sent'],
+            ['assistant', 'Recovered reply', 'sent'],
+        ]);
+        expect(generateText).toHaveBeenLastCalledWith(expect.objectContaining({
+            prompt: [
+                {
+                    role: 'user',
+                    content: 'Anyone there?',
+                },
+            ],
+        }));
+    });
+
+    it('prevents assistant actions while another generation is active', async () => {
+        const pending = deferred<string>();
+        const store = useChatStore();
+        const greetingSession = store.startSession({ character: astra }, '2026-06-09T00:00:00.000Z');
+        const greetingMessageId = greetingSession.messageIds[0];
+        store.setEngineAdapter(createFakeAdapter(vi.fn((_request: HeadlessGenerationRequest) => pending.promise)));
+
+        const sendPromise = store.sendUserMessage({ content: 'Hold position.' }, sequenceClock([
+            '2026-06-09T00:00:01.000Z',
+            '2026-06-09T00:00:02.000Z',
+            '2026-06-09T00:00:03.000Z',
+        ]));
+
+        await expect(store.regenerateAssistantMessage(greetingMessageId)).resolves.toMatchObject({
+            ok: false,
+            error: {
+                code: 'generation-in-progress',
+            },
+        });
+
+        pending.resolve('Holding.');
+        await expect(sendPromise).resolves.toMatchObject({
+            ok: true,
+            assistantMessage: {
+                content: 'Holding.',
+            },
+        });
     });
 
     it('clears chat state and resets local id counters', () => {

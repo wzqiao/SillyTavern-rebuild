@@ -9,11 +9,16 @@ import type {
     ReforgedChatCharacterContext,
     ReforgedChatMessage,
     ReforgedChatRuntimeConnectionProvider,
+    ReforgedChatSendInput,
 } from '@/contracts/chat';
 import type { ReforgedUiTone } from '@/contracts/ui';
 import type { EngineAdapterDiagnostics, HeadlessEngineAdapter, HeadlessGenerationRequest } from '@/contracts/engine';
 
 type AdapterMode = 'demo' | 'runtime';
+type ChatGenerationTrigger = 'normal' | 'continue';
+type ChatActionKind = 'regenerate' | 'continue' | 'retry';
+type RuntimeChatCompletionType = NonNullable<ReforgedChatSendInput['runtime']>['chatCompletionType'];
+type ChatActionInput = Omit<ReforgedChatSendInput, 'content' | 'sessionId'>;
 
 interface BadgeCopy {
     label: string;
@@ -32,6 +37,12 @@ const runtimeNotice = ref<string | null>(null);
 const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
 const sendNotice = ref<string | null>(null);
 const timeline = ref<HTMLElement | null>(null);
+const editingMessageId = ref<string | null>(null);
+const editingContent = ref('');
+const confirmingDeleteMessageId = ref<string | null>(null);
+const pendingActionMessageId = ref<string | null>(null);
+const pendingActionKind = ref<ChatActionKind | null>(null);
+let demoReplyLocalId = 1;
 
 const demoAdapter: HeadlessEngineAdapter = {
     inspect: async () => ({
@@ -52,8 +63,8 @@ const demoAdapter: HeadlessEngineAdapter = {
         blockers: [],
     }),
     generateText: async (request) => {
-        await delay(260);
-        return createDemoReply(request);
+        await delay(850);
+        return createDemoReply(request, demoReplyLocalId++);
     },
     generateRawData: async () => ({ mode: 'demo' }),
     sendChatCompletion: async () => ({ mode: 'demo' }),
@@ -245,6 +256,38 @@ async function sendMessage(): Promise<void> {
         return;
     }
 
+    const generationInput = createGenerationInput({
+        trigger: 'normal',
+        contextMessages: messages.value,
+        nextMessage: content,
+        runtimeType: 'quiet',
+    });
+    if (!generationInput) {
+        return;
+    }
+
+    composer.value = '';
+    const result = await chatStore.sendUserMessage({
+        content,
+        ...generationInput,
+    });
+
+    if (!result.ok) {
+        composer.value = content;
+        sendNotice.value = result.error.message;
+    }
+}
+
+function stopGeneration(): void {
+    chatStore.cancelGeneration();
+}
+
+function createGenerationInput(options: {
+    trigger: ChatGenerationTrigger;
+    contextMessages: ReforgedChatMessage[];
+    nextMessage: string;
+    runtimeType?: RuntimeChatCompletionType;
+}): ChatActionInput | null {
     sendNotice.value = null;
     let runtimeConnectionProvider: ReforgedChatRuntimeConnectionProvider | null = null;
     const handoff = adapterMode.value === 'runtime'
@@ -257,51 +300,180 @@ async function sendMessage(): Promise<void> {
     if (adapterMode.value === 'runtime') {
         if (!handoff.canAttempt) {
             runtimeNotice.value = handoff.message;
-            return;
+            return null;
         }
 
         runtimeConnectionProvider = handoff.takeRuntimeConnection;
         if (!runtimeConnectionProvider) {
             runtimeNotice.value = 'Runtime API key is no longer available in memory. Re-enter it on the connection page.';
-            return;
+            return null;
         }
     }
 
     const lorebooks = selectedWorldbook.value
         ? [createChatLorebookContext(selectedWorldbook.value, {
-            generationTrigger: 'normal',
-            messages: messages.value,
-            nextMessage: content,
+            generationTrigger: options.trigger,
+            messages: options.contextMessages,
+            nextMessage: options.nextMessage,
         })]
         : [];
     const character = selectedCharacter.value
         ? toChatCharacter(selectedCharacter.value)
         : activeSession.value?.character ?? null;
 
-    composer.value = '';
-    const result = await chatStore.sendUserMessage({
-        content,
+    return {
         character,
         lorebooks,
         runtime: {
             mode: adapterMode.value === 'runtime' ? 'chat-completion' : 'generate-text',
-            chatCompletionType: adapterMode.value === 'runtime' ? 'quiet' : undefined,
+            chatCompletionType: adapterMode.value === 'runtime' ? options.runtimeType : undefined,
         },
         runtimeConnectionProvider,
         generation: {
             api: handoff.generation.api,
             responseLength: 220,
         },
-    });
+    };
+}
 
-    if (!result.ok) {
-        composer.value = content;
-        sendNotice.value = result.error.message;
+async function runAssistantAction(message: ReforgedChatMessage, kind: ChatActionKind): Promise<void> {
+    if (!canRunMessageAction(message)) {
+        return;
+    }
+
+    confirmingDeleteMessageId.value = null;
+    const isContinue = kind === 'continue';
+    const contextMessages = readMessagesThrough(message, isContinue);
+    const nextMessage = isContinue
+        ? message.content
+        : findPreviousUserMessage(message)?.content ?? message.content;
+    const generationInput = createGenerationInput({
+        trigger: isContinue ? 'continue' : 'normal',
+        contextMessages,
+        nextMessage,
+        runtimeType: isContinue ? 'continue' : 'quiet',
+    });
+    if (!generationInput) {
+        return;
+    }
+
+    pendingActionMessageId.value = message.id;
+    pendingActionKind.value = kind;
+
+    try {
+        const result = kind === 'continue'
+            ? await chatStore.continueAssistantMessage(message.id, generationInput)
+            : kind === 'retry'
+                ? await chatStore.retryFailedAssistantMessage(message.id, generationInput)
+                : await chatStore.regenerateAssistantMessage(message.id, generationInput);
+
+        if (!result.ok) {
+            sendNotice.value = result.error.message;
+        }
+    } finally {
+        pendingActionMessageId.value = null;
+        pendingActionKind.value = null;
     }
 }
 
-function stopGeneration(): void {
-    chatStore.cancelGeneration();
+function beginEdit(message: ReforgedChatMessage): void {
+    if (!canRunMessageAction(message)) {
+        return;
+    }
+
+    editingMessageId.value = message.id;
+    editingContent.value = message.content;
+    confirmingDeleteMessageId.value = null;
+}
+
+function saveEdit(message: ReforgedChatMessage): void {
+    if (chatStore.isGenerating) {
+        return;
+    }
+
+    if (chatStore.editMessage(message.id, editingContent.value)) {
+        editingMessageId.value = null;
+        editingContent.value = '';
+        sendNotice.value = message.role === 'user' ? 'User message updated.' : null;
+    }
+}
+
+function cancelEdit(): void {
+    editingMessageId.value = null;
+    editingContent.value = '';
+}
+
+function deleteChatMessage(message: ReforgedChatMessage): void {
+    if (!canRunMessageAction(message)) {
+        return;
+    }
+
+    if (confirmingDeleteMessageId.value !== message.id) {
+        confirmingDeleteMessageId.value = message.id;
+        sendNotice.value = 'Confirm message deletion.';
+        return;
+    }
+
+    if (chatStore.deleteMessage(message.id)) {
+        if (editingMessageId.value === message.id) {
+            cancelEdit();
+        }
+        confirmingDeleteMessageId.value = null;
+        sendNotice.value = 'Message deleted.';
+    }
+}
+
+function selectSwipe(message: ReforgedChatMessage, index: number): void {
+    if (!canRunMessageAction(message)) {
+        return;
+    }
+
+    confirmingDeleteMessageId.value = null;
+    chatStore.selectAssistantSwipe(message.id, index);
+}
+
+function shiftSwipe(message: ReforgedChatMessage, delta: number): void {
+    selectSwipe(message, message.activeAlternativeIndex + delta);
+}
+
+function canRunMessageAction(message: ReforgedChatMessage): boolean {
+    return (
+        !chatStore.isGenerating &&
+        !pendingActionMessageId.value &&
+        message.status !== 'generating'
+    );
+}
+
+function isMessageActionPending(message: ReforgedChatMessage, kind?: ChatActionKind): boolean {
+    return (
+        pendingActionMessageId.value === message.id &&
+        (!kind || pendingActionKind.value === kind)
+    );
+}
+
+function readMessagesThrough(message: ReforgedChatMessage, includeTarget: boolean): ReforgedChatMessage[] {
+    const index = messages.value.findIndex((item) => item.id === message.id);
+    if (index < 0) {
+        return messages.value;
+    }
+
+    return messages.value.slice(0, index + (includeTarget ? 1 : 0));
+}
+
+function findPreviousUserMessage(message: ReforgedChatMessage): ReforgedChatMessage | null {
+    const index = messages.value.findIndex((item) => item.id === message.id);
+    if (index < 0) {
+        return null;
+    }
+
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        const candidate = messages.value[cursor];
+        if (candidate?.role === 'user') {
+            return candidate;
+        }
+    }
+
+    return null;
 }
 
 function messageBubbleClass(message: ReforgedChatMessage): string {
@@ -360,7 +532,7 @@ function toChatCharacter(rosterItem: ReforgedCharacterRosterItem): ReforgedChatC
     };
 }
 
-function createDemoReply(request: HeadlessGenerationRequest): string {
+function createDemoReply(request: HeadlessGenerationRequest, replyNumber: number): string {
     const prompt = Array.isArray(request.prompt) ? request.prompt : [];
     const lastUser = [...prompt].reverse().find((message) => message.role === 'user');
     const userText = typeof lastUser?.content === 'string' ? lastUser.content : 'that';
@@ -369,7 +541,7 @@ function createDemoReply(request: HeadlessGenerationRequest): string {
     const characterName = systemText.match(/roleplaying as ([^.]+)\./)?.[1] ?? 'The assistant';
     const hasLore = systemText.includes('World lore context:');
 
-    return `${characterName} pauses, takes in "${userText}", and answers in a steady voice: we can build from here.${hasLore ? ' The selected worldbook notes are folded into the scene.' : ''}`;
+    return `${characterName} pauses, takes in "${userText}", and answers in a steady voice: we can build from here. (#${replyNumber})${hasLore ? ' The selected worldbook notes are folded into the scene.' : ''}`;
 }
 
 function delay(ms: number): Promise<void> {
@@ -603,7 +775,40 @@ function describeError(error: unknown): string {
                             <span>{{ formatMessageStatus(message) }}</span>
                         </div>
 
-                        <p class="whitespace-pre-wrap">
+                        <div
+                            v-if="editingMessageId === message.id"
+                            class="space-y-3"
+                        >
+                            <Textarea
+                                v-model="editingContent"
+                                label="Edit message"
+                                :rows="4"
+                                :disabled="chatStore.isGenerating"
+                            />
+                            <div class="flex flex-wrap gap-2">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    :disabled="editingContent.trim().length === 0 || chatStore.isGenerating"
+                                    @click="saveEdit(message)"
+                                >
+                                    Save
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    :disabled="chatStore.isGenerating"
+                                    @click="cancelEdit"
+                                >
+                                    Cancel
+                                </Button>
+                            </div>
+                        </div>
+                        <p
+                            v-else
+                            class="whitespace-pre-wrap"
+                        >
                             {{ message.content || 'Generating...' }}
                         </p>
 
@@ -613,6 +818,98 @@ function describeError(error: unknown): string {
                         >
                             {{ message.error.message }}
                         </p>
+
+                        <div
+                            v-if="message.role === 'assistant' && message.alternatives.length > 1"
+                            class="mt-3 flex flex-wrap items-center gap-1.5"
+                        >
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                aria-label="Previous swipe"
+                                :disabled="!canRunMessageAction(message) || message.activeAlternativeIndex <= 0"
+                                @click="shiftSwipe(message, -1)"
+                            >
+                                Prev
+                            </Button>
+                            <button
+                                v-for="(_alternative, index) in message.alternatives"
+                                :key="`${message.id}-${index}`"
+                                type="button"
+                                class="flex h-9 min-w-9 items-center justify-center rounded-xl border px-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45"
+                                :class="message.activeAlternativeIndex === index ? 'border-cyan-200/50 bg-cyan-200 text-neutral-950' : 'border-white/10 bg-white/6 text-neutral-200 hover:bg-white/10'"
+                                :disabled="!canRunMessageAction(message)"
+                                :aria-label="`Select swipe ${index + 1}`"
+                                @click="selectSwipe(message, index)"
+                            >
+                                {{ index + 1 }}
+                            </button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                aria-label="Next swipe"
+                                :disabled="!canRunMessageAction(message) || message.activeAlternativeIndex >= message.alternatives.length - 1"
+                                @click="shiftSwipe(message, 1)"
+                            >
+                                Next
+                            </Button>
+                        </div>
+
+                        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+                            <Button
+                                v-if="message.role === 'assistant'"
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                :loading="isMessageActionPending(message, 'regenerate')"
+                                :disabled="!canRunMessageAction(message)"
+                                @click="runAssistantAction(message, 'regenerate')"
+                            >
+                                Regen
+                            </Button>
+                            <Button
+                                v-if="message.role === 'assistant'"
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                :loading="isMessageActionPending(message, 'continue')"
+                                :disabled="!canRunMessageAction(message) || message.content.trim().length === 0"
+                                @click="runAssistantAction(message, 'continue')"
+                            >
+                                Continue
+                            </Button>
+                            <Button
+                                v-if="message.role === 'assistant' && message.status === 'failed'"
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                :loading="isMessageActionPending(message, 'retry')"
+                                :disabled="!canRunMessageAction(message)"
+                                @click="runAssistantAction(message, 'retry')"
+                            >
+                                Retry
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                :disabled="!canRunMessageAction(message)"
+                                @click="beginEdit(message)"
+                            >
+                                Edit
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                :variant="confirmingDeleteMessageId === message.id ? 'danger' : 'ghost'"
+                                :disabled="!canRunMessageAction(message)"
+                                @click="deleteChatMessage(message)"
+                            >
+                                {{ confirmingDeleteMessageId === message.id ? 'Confirm' : 'Delete' }}
+                            </Button>
+                        </div>
 
                         <div class="mt-3 flex flex-wrap items-center gap-2 text-xs opacity-70">
                             <span>{{ formatDateTime(message.createdAt) }}</span>
