@@ -81,3 +81,15 @@
 
 ## 4. 本阶段验收(M1 Demo 一条龙)
 打开 app → 进 `/connection` 配 API → 进 `/characters` 导入一张 V2/V3 角色卡并选中 → 进 `/chat` 发消息看到**流式回复** → swipe/regenerate 可用 → 进 `/worldbooks` 选一本世界书,回聊天发消息能看到**注入生效**。**全程响应式、移动可用、无 workbench 痕迹。**
+
+## 5. Product-QA 验收记录(2026-06-10)
+
+- 分支:`reforge/product-qa`。
+- 基线:`reforge/main` @ `83bb44c6a`(已合入 Chat-Actions)。
+- 桌面验收:`1280x900` 下 `/connection` 可填写 OpenAI-compatible draft 并到达 `ready-to-attempt`;`/chat` demo 模式可发送消息并收到本地回复;无横向溢出;控制台无 warn/error。
+- 移动验收:`375x812` 下 `/chat` 可发送 demo 消息并收到回复;composer 与 Send 按钮未被底部导航遮挡;底部导航可见且无横向溢出;控制台无 warn/error。
+- 页面入口验收:`/characters` 与 `/worldbooks` 在 `375x812` 下空态、导入入口、底部导航可见;无横向溢出;`/connection`、`/settings`、`/chat` 同宽度布局可读。
+- `/dev` 验收:主导航仍保留入口,但文案已降级为 debug-only;核心路径无需进入 `/dev`。
+- 本次小修:移动端顶部 Debug 触控区补到 40px;`/chat` 里的 `Pick a character` / `Add lore context` 链接改成 40px 高触控按钮;`/dev` 入口文案改为 debug-only。
+- 自动化限制:当前内置 Browser 自动化未暴露本地文件上传能力,未能在浏览器里实际选择角色/世界书 JSON 文件。导入解析、store 选择、worldbook 注入到生成 prompt 由现有 Vitest 覆盖(`characterImportService`/`worldbookImportService`/`worldbookLoreContextService`/`chatGenerationService`/`chatStore`)。
+- 待人工补验:用真实文件选择器导入一张 V2/V3 角色卡与一本 SillyTavern world info JSON,确认浏览器手动流程与自动化覆盖一致。

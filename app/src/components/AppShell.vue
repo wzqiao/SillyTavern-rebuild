@@ -130,13 +130,13 @@ function isCurrentPath(to: string): boolean {
             Legacy workbench stays reachable.
           </p>
           <p class="mt-2 text-sm leading-6 text-neutral-300">
-            B1 is still landing in parallel, so `/dev` keeps the original M0 workbench available until the pages are fully wired.
+            Main flows now live in the dedicated product pages. `/dev` is kept only for adapter and regression debugging.
           </p>
           <RouterLink
             to="/dev"
             class="mt-4 inline-flex items-center rounded-full border border-white/15 bg-white/[0.07] px-4 py-2 text-sm font-semibold text-white transition hover:border-white/25 hover:bg-white/[0.12]"
           >
-            Open /dev
+            Open debug /dev
           </RouterLink>
         </div>
       </aside>
@@ -157,9 +157,9 @@ function isCurrentPath(to: string): boolean {
             </div>
             <RouterLink
               to="/dev"
-              class="shrink-0 rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white"
+              class="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white"
             >
-              /dev
+              Debug
             </RouterLink>
           </div>
         </header>
@@ -180,7 +180,7 @@ function isCurrentPath(to: string): boolean {
             to="/dev"
             class="mt-1 shrink-0 rounded-full border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.1]"
           >
-            Open legacy /dev
+            Open debug /dev
           </RouterLink>
         </header>
 

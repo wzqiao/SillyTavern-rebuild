@@ -644,7 +644,7 @@ function describeError(error: unknown): string {
                         <RouterLink
                             v-if="!selectedCharacter"
                             to="/characters"
-                            class="mt-2 inline-flex text-xs font-medium text-cyan-200 hover:text-cyan-100"
+                            class="mt-3 inline-flex min-h-10 items-center rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/16"
                         >
                             Pick a character
                         </RouterLink>
@@ -669,7 +669,7 @@ function describeError(error: unknown): string {
                         <RouterLink
                             v-if="!selectedWorldbook"
                             to="/worldbooks"
-                            class="mt-2 inline-flex text-xs font-medium text-cyan-200 hover:text-cyan-100"
+                            class="mt-3 inline-flex min-h-10 items-center rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 text-xs font-medium text-cyan-100 transition hover:bg-cyan-300/16"
                         >
                             Add lore context
                         </RouterLink>
