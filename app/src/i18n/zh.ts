@@ -351,6 +351,54 @@ export const zh = {
     headerEyebrow: '偏好',
     headerTitle: '设置',
     headerDescription: '简单控制保持可见；高级生成占位项在引擎设置契约落地前默认折叠。',
+    groupListLabel: '设置分组',
+    groups: {
+      connection: {
+        title: '连接',
+        description: '服务商、Base URL 与仅内存密钥在连接页管理。',
+        value: '连接页',
+      },
+      characters: {
+        title: '角色',
+        description: '角色卡导入与当前角色选择在角色库管理。',
+        value: '角色库',
+      },
+      identity: {
+        title: '用户身份',
+        description: 'Persona 与用户展示名还没有接入设置契约。',
+        value: '待接入',
+      },
+      theme: {
+        title: '主题',
+        description: '本地预览界面密度、诊断露出与动效偏好。',
+        value: '本地',
+      },
+      model: {
+        title: '模型设置',
+        description: '采样预设与高级参数先作为折叠占位。',
+        value: '草稿',
+      },
+      worldbooks: {
+        title: '世界书',
+        description: '世界书导入、选择与注入预览在世界书页管理。',
+        value: '世界书页',
+      },
+      language: {
+        title: '语言',
+        description: '切换 ST-Reforged 前端显示语言。',
+        value: '可切换',
+      },
+      about: {
+        title: '关于',
+        description: '当前重构阶段、架构纪律和许可证信息。',
+        value: 'M1.5',
+      },
+    },
+    languageOptions: {
+      zh: '中文',
+      en: 'English',
+    },
+    aboutDescription: 'ST-Reforged 是 SillyTavern 的 Vue3 前端重构分支。当前阶段专注移动优先的聊天、连接、角色与世界书主链路。',
     localPreview: '本地预览',
     changedCount: (count: number) => `${count} 项已改变`,
     simpleTitle: '简单',
@@ -374,6 +422,8 @@ export const zh = {
       showDiagnosticsDescription: '用于预览之后展示适配器和提示词状态。',
       reduceMotion: '减少动效',
       reduceMotionDescription: '用于预览未来的全局动效偏好。',
+      language: '显示语言',
+      languageHint: '保存到本地浏览器；不会影响角色卡、世界书或 API 请求。',
       samplingPreset: '采样预设',
       draftOnly: '仅草稿占位。',
       temperature: 'Temperature',

@@ -338,6 +338,54 @@ export const en: Zh = {
     headerEyebrow: 'Preferences',
     headerTitle: 'Settings',
     headerDescription: 'Simple controls stay visible. Advanced generation placeholders stay folded until the engine settings contract lands.',
+    groupListLabel: 'Settings groups',
+    groups: {
+      connection: {
+        title: 'Connection',
+        description: 'Provider, base URL, and memory-only keys are managed on the connection page.',
+        value: 'Connection page',
+      },
+      characters: {
+        title: 'Characters',
+        description: 'Character card imports and active character selection live in the character library.',
+        value: 'Character library',
+      },
+      identity: {
+        title: 'User identity',
+        description: 'Persona and display name are not connected to the settings contract yet.',
+        value: 'Pending',
+      },
+      theme: {
+        title: 'Theme',
+        description: 'Local preview for density, diagnostics, and motion preferences.',
+        value: 'Local',
+      },
+      model: {
+        title: 'Model settings',
+        description: 'Sampling presets and advanced parameters stay as folded placeholders.',
+        value: 'Draft',
+      },
+      worldbooks: {
+        title: 'Worldbooks',
+        description: 'Worldbook import, selection, and injection preview live on the worldbooks page.',
+        value: 'Worldbooks page',
+      },
+      language: {
+        title: 'Language',
+        description: 'Switch the ST-Reforged frontend display language.',
+        value: 'Switchable',
+      },
+      about: {
+        title: 'About',
+        description: 'Current refactor phase, architecture discipline, and license context.',
+        value: 'M1.5',
+      },
+    },
+    languageOptions: {
+      zh: '中文',
+      en: 'English',
+    },
+    aboutDescription: 'ST-Reforged is a Vue 3 frontend refactor branch for SillyTavern. This phase focuses on the mobile-first chat, connection, character, and worldbook paths.',
     localPreview: 'Local preview',
     changedCount: (count: number) => `${count} changed`,
     simpleTitle: 'Simple',
@@ -361,6 +409,8 @@ export const en: Zh = {
       showDiagnosticsDescription: 'Local preview for surfacing adapter and prompt status later.',
       reduceMotion: 'Reduce motion',
       reduceMotionDescription: 'Local preview for future app-wide motion preferences.',
+      language: 'Display language',
+      languageHint: 'Saved in this browser only; it does not affect character cards, worldbooks, or API requests.',
       samplingPreset: 'Sampling preset',
       draftOnly: 'Draft-only placeholder.',
       temperature: 'Temperature',
