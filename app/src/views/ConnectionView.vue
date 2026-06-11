@@ -266,109 +266,125 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
 </script>
 
 <template>
-    <section class="mx-auto grid w-full max-w-6xl gap-5 pb-6">
-        <header class="grid gap-4 rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-5 shadow-[0_24px_120px_rgba(0,0,0,0.46)] backdrop-blur-xl sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-end">
-            <div>
-                <p class="text-xs font-semibold uppercase text-cyan-200">
-                    {{ t.connection.headerEyebrow }}
-                </p>
-                <h1 class="mt-3 text-3xl font-semibold text-white sm:text-4xl">
-                    {{ t.connection.headerTitle }}
-                </h1>
-                <p class="mt-3 max-w-3xl text-sm leading-6 text-neutral-300">
-                    {{ t.connection.headerDescription }}
-                </p>
+    <section class="mx-auto grid w-full max-w-3xl gap-4 pb-6">
+        <header class="rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-5 shadow-[0_24px_120px_rgba(0,0,0,0.46)] backdrop-blur-xl sm:p-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div class="min-w-0">
+                    <p class="text-xs font-semibold uppercase text-cyan-200">
+                        {{ t.connection.headerEyebrow }}
+                    </p>
+                    <h1 class="mt-3 font-display text-3xl font-semibold text-white sm:text-4xl">
+                        {{ t.connection.headerTitle }}
+                    </h1>
+                    <p class="mt-3 max-w-2xl text-sm leading-6 text-neutral-300">
+                        {{ t.connection.headerDescription }}
+                    </p>
+                </div>
+
+                <span
+                    class="inline-flex w-fit rounded-full border px-3 py-1 text-xs font-medium"
+                    :class="statusBadgeClass(draftStatusCopy.tone)"
+                >
+                    {{ draftStatusCopy.label }}
+                </span>
             </div>
 
-            <div class="rounded-2xl border p-4" :class="statusSurfaceClass(activeStatusCopy.tone)">
+            <div class="mt-5 rounded-2xl border p-4" :class="statusSurfaceClass(activeStatusCopy.tone)">
                 <p class="text-xs font-semibold uppercase">
                     {{ t.connection.currentStatus }}
                 </p>
                 <p class="mt-2 text-lg font-semibold">
-                    {{ activeStatusCopy.label }}
+                    {{ activeStatusCopy.title }}
                 </p>
-                <p class="mt-2 text-xs leading-5 opacity-85">
+                <p class="mt-2 text-sm leading-6 opacity-85">
                     {{ activeStatusCopy.description }}
                 </p>
             </div>
         </header>
 
-        <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
-            <form
-                class="grid gap-5 rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.42)] sm:p-5"
-                @submit.prevent="applyConfiguration"
+        <form
+            class="grid gap-5 rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.42)] sm:p-5"
+            @submit.prevent="applyConfiguration"
+        >
+            <div>
+                <p class="text-sm font-semibold text-white">
+                    {{ t.connection.draftTitle }}
+                </p>
+                <p class="mt-1 text-sm leading-6 text-neutral-400">
+                    {{ t.connection.draftDescription }}
+                </p>
+            </div>
+
+            <div class="grid gap-4">
+                <Select
+                    :model-value="connectionStore.draft.provider"
+                    :options="providerOptions"
+                    :label="t.connection.fields.provider"
+                    required
+                    @update:model-value="updateProvider"
+                />
+
+                <Input
+                    :model-value="connectionStore.draft.baseUrl"
+                    :error="fieldErrors.baseUrl"
+                    :label="t.connection.fields.baseUrl"
+                    :placeholder="t.connection.fields.baseUrlPlaceholder"
+                    inputmode="url"
+                    autocomplete="off"
+                    required
+                    data-testid="connection-base-url-input"
+                    @update:model-value="updateDraft({ baseUrl: $event })"
+                />
+
+                <Input
+                    :model-value="apiKeyInput"
+                    :error="fieldErrors.apiKey"
+                    :hint="connectionStore.maskedApiKey ? t.connection.fields.apiKeyStoredHint.replace('{key}', connectionStore.maskedApiKey) : t.connection.fields.apiKeyEmptyHint"
+                    :label="t.connection.fields.apiKey"
+                    :placeholder="t.connection.fields.apiKeyPlaceholder"
+                    type="password"
+                    autocomplete="off"
+                    required
+                    data-testid="connection-api-key-input"
+                    @update:model-value="updateApiKey"
+                />
+
+                <Input
+                    :model-value="connectionStore.draft.model"
+                    :error="fieldErrors.model"
+                    :hint="t.connection.fields.modelHint"
+                    :label="t.connection.fields.model"
+                    :placeholder="t.connection.fields.modelPlaceholder"
+                    autocomplete="off"
+                    required
+                    data-testid="connection-model-input"
+                    @update:model-value="updateDraft({ model: $event })"
+                />
+            </div>
+
+            <ul
+                v-if="activeIssues.length"
+                class="grid gap-2"
             >
-                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                        <p class="text-sm font-semibold text-white">
-                            {{ t.connection.draftTitle }}
-                        </p>
-                        <p class="mt-1 text-sm leading-6 text-neutral-400">
-                            {{ t.connection.draftDescription }}
-                        </p>
-                    </div>
-                    <span
-                        class="inline-flex w-fit rounded-full border px-3 py-1 text-xs font-medium"
-                        :class="statusBadgeClass(draftStatusCopy.tone)"
-                    >
-                        {{ draftStatusCopy.label }}
-                    </span>
-                </div>
+                <li
+                    v-for="issue in activeIssues"
+                    :key="issue.id"
+                    class="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100"
+                >
+                    {{ issue.message }}
+                </li>
+            </ul>
 
-                <div class="grid gap-4">
-                    <Select
-                        :model-value="connectionStore.draft.provider"
-                        :options="providerOptions"
-                        :label="t.connection.fields.provider"
-                        required
-                        @update:model-value="updateProvider"
-                    />
+            <div class="grid gap-3">
+                <Button
+                    type="submit"
+                    block
+                    data-testid="connection-apply-button"
+                >
+                    {{ t.connection.actions.apply }}
+                </Button>
 
-                    <Input
-                        :model-value="connectionStore.draft.baseUrl"
-                        :error="fieldErrors.baseUrl"
-                        :label="t.connection.fields.baseUrl"
-                        :placeholder="t.connection.fields.baseUrlPlaceholder"
-                        inputmode="url"
-                        autocomplete="off"
-                        required
-                        data-testid="connection-base-url-input"
-                        @update:model-value="updateDraft({ baseUrl: $event })"
-                    />
-
-                    <Input
-                        :model-value="connectionStore.draft.model"
-                        :error="fieldErrors.model"
-                        :label="t.connection.fields.model"
-                        :placeholder="t.connection.fields.modelPlaceholder"
-                        autocomplete="off"
-                        required
-                        data-testid="connection-model-input"
-                        @update:model-value="updateDraft({ model: $event })"
-                    />
-
-                    <Input
-                        :model-value="apiKeyInput"
-                        :error="fieldErrors.apiKey"
-                        :hint="connectionStore.maskedApiKey ? t.connection.fields.apiKeyStoredHint.replace('{key}', connectionStore.maskedApiKey) : t.connection.fields.apiKeyEmptyHint"
-                        :label="t.connection.fields.apiKey"
-                        :placeholder="t.connection.fields.apiKeyPlaceholder"
-                        type="password"
-                        autocomplete="off"
-                        required
-                        data-testid="connection-api-key-input"
-                        @update:model-value="updateApiKey"
-                    />
-                </div>
-
-                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <Button
-                        type="submit"
-                        block
-                        data-testid="connection-apply-button"
-                    >
-                        {{ t.connection.actions.apply }}
-                    </Button>
+                <div class="grid gap-2 sm:grid-cols-3">
                     <Button
                         variant="secondary"
                         block
@@ -391,124 +407,92 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                         {{ t.connection.actions.clearAll }}
                     </Button>
                 </div>
+            </div>
 
-                <div
-                    v-if="applyMessage || applyIssues.length"
-                    class="rounded-2xl border px-4 py-3 text-sm leading-6"
-                    :class="statusSurfaceClass(applyIssues.length ? 'danger' : 'success')"
-                    role="status"
+            <div
+                v-if="applyMessage || applyIssues.length"
+                class="rounded-2xl border px-4 py-3 text-sm leading-6"
+                :class="statusSurfaceClass(applyIssues.length ? 'danger' : 'success')"
+                role="status"
+            >
+                <p class="font-medium">
+                    {{ applyMessage }}
+                </p>
+                <ul
+                    v-if="applyIssues.length"
+                    class="mt-2 space-y-1 text-xs"
                 >
-                    <p class="font-medium">
-                        {{ applyMessage }}
-                    </p>
-                    <ul
-                        v-if="applyIssues.length"
-                        class="mt-2 space-y-1 text-xs"
+                    <li
+                        v-for="issue in applyIssues"
+                        :key="`${issue.field}-${issue.message}`"
                     >
-                        <li
-                            v-for="issue in applyIssues"
-                            :key="`${issue.field}-${issue.message}`"
-                        >
-                            {{ translateDraftIssue(issue) }}
-                        </li>
-                    </ul>
-                </div>
-            </form>
+                        {{ translateDraftIssue(issue) }}
+                    </li>
+                </ul>
+            </div>
+        </form>
 
-            <aside class="grid gap-5">
-                <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.42)] sm:p-5">
-                    <div class="flex items-start justify-between gap-3">
-                        <div>
-                            <p class="text-sm font-semibold text-white">
-                                {{ t.connection.handoffTitle }}
-                            </p>
-                            <p class="mt-1 text-sm leading-6 text-neutral-400">
-                                {{ activeStatusCopy.title }}
-                            </p>
-                        </div>
-                        <span
-                            class="inline-flex rounded-full border px-3 py-1 text-xs font-medium"
-                            :class="statusBadgeClass(runtimeStatusCopy.tone)"
-                        >
-                            {{ runtimeStatusCopy.label }}
-                        </span>
-                    </div>
+        <section
+            v-if="activeStatus === 'ready-to-attempt'"
+            class="rounded-[1.75rem] border p-4 shadow-[0_24px_120px_rgba(0,0,0,0.32)] sm:p-5"
+            :class="statusSurfaceClass('success')"
+        >
+            <p class="text-sm font-semibold">
+                {{ t.connection.nextStepTitle }}
+            </p>
+            <p class="mt-2 text-sm leading-6 opacity-85">
+                {{ t.connection.nextStepDescription }}
+            </p>
+            <RouterLink
+                to="/chat"
+                class="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-2xl border border-cyan-300/30 bg-cyan-300/15 px-4 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/25"
+            >
+                {{ t.connection.actions.continueChat }}
+            </RouterLink>
+        </section>
 
-                    <p class="mt-4 text-sm leading-6 text-neutral-300">
-                        {{ activeStatusCopy.description }}
-                    </p>
-
-                    <ul
-                        v-if="activeIssues.length"
-                        class="mt-4 space-y-2"
-                    >
-                        <li
-                            v-for="issue in activeIssues"
-                            :key="issue.id"
-                            class="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100"
-                        >
-                            {{ issue.message }}
-                        </li>
-                    </ul>
-
-                    <div class="mt-4">
-                        <Button
-                            variant="outline"
-                            block
-                            disabled
-                            :aria-label="t.connection.actions.testDisabled"
-                        >
-                            {{ t.connection.actions.testDisabled }}
-                        </Button>
-                    </div>
-                </section>
-
-                <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.42)] sm:p-5">
+        <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/82 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.32)] sm:p-5">
+            <div class="flex items-start justify-between gap-3">
+                <div>
                     <p class="text-sm font-semibold text-white">
                         {{ t.connection.appliedConfiguration }}
                     </p>
-
-                    <dl
-                        v-if="appliedSummary.length"
-                        class="mt-4 grid gap-3"
-                    >
-                        <div
-                            v-for="item in appliedSummary"
-                            :key="item.label"
-                            class="min-w-0 rounded-2xl border border-white/8 bg-neutral-950/70 px-3 py-2"
-                        >
-                            <dt class="text-xs font-medium text-neutral-500">
-                                {{ item.label }}
-                            </dt>
-                            <dd class="mt-1 break-words text-sm text-neutral-100">
-                                {{ item.value }}
-                            </dd>
-                        </div>
-                    </dl>
-
-                    <p
-                        v-else
-                        class="mt-4 rounded-2xl border border-white/8 bg-neutral-950/70 px-3 py-3 text-sm leading-6 text-neutral-400"
-                    >
-                        {{ t.connection.messages.noAppliedDraft }}
+                    <p class="mt-1 text-sm leading-6 text-neutral-400">
+                        {{ t.connection.handoffTitle }}
                     </p>
-                </section>
+                </div>
+                <span
+                    class="inline-flex rounded-full border px-3 py-1 text-xs font-medium"
+                    :class="statusBadgeClass(runtimeStatusCopy.tone)"
+                >
+                    {{ runtimeStatusCopy.label }}
+                </span>
+            </div>
 
-                <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.42)] sm:p-5">
-                    <p class="text-sm font-semibold text-white">
-                        {{ t.connection.nextStepTitle }}
-                    </p>
-                    <p class="mt-2 text-sm leading-6 text-neutral-400">
-                        {{ t.connection.nextStepDescription }}
-                    </p>
-                    <RouterLink
-                        to="/chat"
-                        class="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-2xl border border-white/12 bg-white/8 px-4 text-sm font-medium text-neutral-100 transition hover:bg-white/12"
-                    >
-                        {{ t.connection.actions.continueChat }}
-                    </RouterLink>
-                </section>
-            </aside>
-        </div>
+            <dl
+                v-if="appliedSummary.length"
+                class="mt-4 grid gap-3 sm:grid-cols-2"
+            >
+                <div
+                    v-for="item in appliedSummary"
+                    :key="item.label"
+                    class="min-w-0 rounded-2xl border border-white/8 bg-neutral-950/70 px-3 py-2"
+                >
+                    <dt class="text-xs font-medium text-neutral-500">
+                        {{ item.label }}
+                    </dt>
+                    <dd class="mt-1 break-words text-sm text-neutral-100">
+                        {{ item.value }}
+                    </dd>
+                </div>
+            </dl>
+
+            <p
+                v-else
+                class="mt-4 rounded-2xl border border-white/8 bg-neutral-950/70 px-3 py-3 text-sm leading-6 text-neutral-400"
+            >
+                {{ t.connection.messages.noAppliedDraft }}
+            </p>
+        </section>
     </section>
 </template>
