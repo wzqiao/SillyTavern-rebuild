@@ -268,14 +268,14 @@ function libraryItemClasses(item: ReforgedWorldbookLibraryItem): string {
 </script>
 
 <template>
-    <section class="mx-auto flex w-full max-w-7xl flex-col gap-5 pb-6">
+    <section class="mx-auto grid w-full max-w-6xl gap-5 pb-6">
         <header class="rounded-[1.75rem] border border-white/10 bg-neutral-900/88 p-5 shadow-[0_24px_90px_rgba(0,0,0,0.34)] sm:p-6">
             <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                 <div class="min-w-0">
                     <p class="text-xs font-black uppercase tracking-[0.22em] text-cyan-200/80">
                         {{ t.worldbooks.headerEyebrow }}
                     </p>
-                    <h1 class="mt-3 text-3xl font-black tracking-[-0.03em] text-white sm:text-4xl">
+                    <h1 class="mt-3 font-display text-3xl font-black tracking-normal text-white sm:text-4xl">
                         {{ t.worldbooks.headerTitle }}
                     </h1>
                     <p class="mt-3 max-w-3xl text-sm leading-7 text-neutral-300">
@@ -283,420 +283,328 @@ function libraryItemClasses(item: ReforgedWorldbookLibraryItem): string {
                     </p>
                 </div>
 
-                <dl class="grid grid-cols-3 gap-2 sm:min-w-[24rem]">
-                    <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
-                        <dt class="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-neutral-500">
-                            {{ t.worldbooks.stats.books }}
-                        </dt>
-                        <dd class="mt-1 text-2xl font-black text-white">
-                            {{ librarySummary.totalBooks }}
-                        </dd>
-                    </div>
-                    <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
-                        <dt class="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-neutral-500">
-                            {{ t.worldbooks.stats.entries }}
-                        </dt>
-                        <dd class="mt-1 text-2xl font-black text-white">
-                            {{ librarySummary.totalEntries }}
-                        </dd>
-                    </div>
-                    <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
-                        <dt class="text-[0.68rem] font-bold uppercase tracking-[0.16em] text-neutral-500">
-                            {{ t.worldbooks.stats.enabled }}
-                        </dt>
-                        <dd class="mt-1 text-2xl font-black text-emerald-100">
-                            {{ librarySummary.enabledEntries }}
-                        </dd>
-                    </div>
-                </dl>
-            </div>
-        </header>
-
-        <div class="grid gap-5 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
-            <aside class="flex min-w-0 flex-col gap-5">
-                <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/88 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.28)] sm:p-5">
-                    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                            <p class="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
-                                {{ t.worldbooks.importEyebrow }}
-                            </p>
-                            <h2 class="mt-2 text-xl font-black tracking-[-0.02em] text-white">
-                                {{ t.worldbooks.importTitle }}
-                            </h2>
-                        </div>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            :disabled="!worldbookStore.hasWorldbooks"
-                            @click="clearWorldbooks"
-                        >
-                            {{ t.worldbooks.clearLibrary }}
-                        </Button>
-                    </div>
-
-                    <input
-                        ref="fileInput"
-                        class="sr-only"
-                        data-testid="worldbook-file-input"
-                        type="file"
-                        accept=".json,application/json"
-                        @change="importWorldbookFromFile"
-                    >
-
-                    <button
-                        type="button"
-                        class="mt-4 flex min-h-36 w-full flex-col items-center justify-center gap-3 rounded-[1.5rem] border border-dashed border-cyan-300/30 bg-cyan-300/8 px-4 py-6 text-center text-cyan-50 transition hover:border-cyan-200/50 hover:bg-cyan-300/12 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950 disabled:cursor-wait disabled:opacity-60"
-                        :disabled="importBusy"
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-300">
+                        {{ t.worldbooks.stats.books }} {{ librarySummary.totalBooks }}
+                    </span>
+                    <span class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-neutral-300">
+                        {{ t.worldbooks.stats.entries }} {{ librarySummary.totalEntries }}
+                    </span>
+                    <Button
+                        :loading="importBusy"
                         @click="openFilePicker"
                     >
-                        <span
-                            class="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-200/30 bg-cyan-200/14 text-2xl font-black"
-                            aria-hidden="true"
-                        >
-                            +
+                        {{ t.worldbooks.chooseJson }}
+                    </Button>
+                    <Button
+                        variant="outline"
+                        :disabled="!worldbookStore.hasWorldbooks"
+                        @click="clearWorldbooks"
+                    >
+                        {{ t.worldbooks.clearLibrary }}
+                    </Button>
+                </div>
+            </div>
+
+            <input
+                ref="fileInput"
+                class="sr-only"
+                data-testid="worldbook-file-input"
+                type="file"
+                accept=".json,application/json"
+                @change="importWorldbookFromFile"
+            >
+
+            <p class="mt-4 text-xs leading-5 text-neutral-500">
+                {{ t.worldbooks.importHint }}
+            </p>
+
+            <p
+                v-if="notice"
+                :class="['mt-4', noticeClasses(notice.tone)]"
+            >
+                {{ notice.message }}
+            </p>
+        </header>
+
+        <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/88 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.28)] sm:p-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
+                        {{ t.worldbooks.libraryEyebrow }}
+                    </p>
+                    <h2 class="mt-2 text-xl font-black tracking-normal text-white">
+                        {{ t.worldbooks.activeSelection }}
+                    </h2>
+                </div>
+                <span
+                    v-if="selectedWorldbook"
+                    class="w-fit rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-100"
+                >
+                    {{ t.worldbooks.selected }}
+                </span>
+            </div>
+
+            <div
+                v-if="worldbookStore.worldbooks.length"
+                class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+            >
+                <article
+                    v-for="worldbook in worldbookStore.worldbooks"
+                    :key="worldbook.id"
+                    :class="libraryItemClasses(worldbook)"
+                >
+                    <button
+                        type="button"
+                        class="flex min-w-0 items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+                        @click="selectWorldbook(worldbook)"
+                    >
+                        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-200/25 bg-cyan-200/12 text-sm font-black text-cyan-100">
+                            {{ t.worldbooks.iconLabel }}
                         </span>
-                        <span class="text-sm font-bold">
-                            {{ importBusy ? t.worldbooks.importBusy : t.worldbooks.chooseJson }}
-                        </span>
-                        <span class="max-w-sm text-xs leading-5 text-cyan-100/72">
-                            {{ t.worldbooks.importHint }}
+                        <span class="min-w-0 flex-1">
+                            <span class="block truncate text-sm font-black text-white">
+                                {{ worldbook.worldbook.name }}
+                            </span>
+                            <span class="mt-1 line-clamp-2 text-xs leading-5 text-neutral-400">
+                                {{ describeSource(worldbook) }}
+                            </span>
                         </span>
                     </button>
 
-                    <p
-                        v-if="notice"
-                        :class="['mt-4', noticeClasses(notice.tone)]"
-                    >
-                        {{ notice.message }}
-                    </p>
-                </section>
-
-                <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/88 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.28)] sm:p-5">
-                    <div class="mb-4 flex items-center justify-between gap-3">
-                        <div>
-                            <p class="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
-                                {{ t.worldbooks.libraryEyebrow }}
+                    <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
+                        <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
+                            <p class="font-bold text-neutral-500">
+                                {{ t.worldbooks.stats.entries }}
                             </p>
-                            <h2 class="mt-2 text-xl font-black tracking-[-0.02em] text-white">
-                                {{ t.worldbooks.activeSelection }}
-                            </h2>
+                            <p class="mt-1 text-base font-black text-white">
+                                {{ worldbook.worldbook.entries.length }}
+                            </p>
                         </div>
-                        <span
-                            v-if="selectedWorldbook"
-                            class="rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-100"
+                        <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
+                            <p class="font-bold text-neutral-500">
+                                {{ t.worldbooks.stats.enabled }}
+                            </p>
+                            <p class="mt-1 text-base font-black text-emerald-100">
+                                {{ worldbook.worldbook.entries.filter((entry) => entry.enabled).length }}
+                            </p>
+                        </div>
+                        <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
+                            <p class="font-bold text-neutral-500">
+                                {{ t.worldbooks.stats.ready }}
+                            </p>
+                            <p class="mt-1 text-base font-black text-cyan-100">
+                                {{ summarizeWorldbookEntries(worldbook.worldbook.entries).injectionReadyEntries }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <Button
+                        class="mt-4"
+                        variant="ghost"
+                        size="sm"
+                        :aria-label="t.worldbooks.removeAria"
+                        @click="removeWorldbook(worldbook)"
+                    >
+                        {{ t.worldbooks.remove }}
+                    </Button>
+                </article>
+            </div>
+
+            <div
+                v-else
+                class="mt-4 rounded-[1.5rem] border border-dashed border-white/15 bg-white/[0.03] p-6 text-center"
+            >
+                <p class="text-sm font-medium text-neutral-100">
+                    {{ t.worldbooks.selectOrImportTitle }}
+                </p>
+                <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-400">
+                    {{ t.worldbooks.emptyLibrary }}
+                </p>
+                <Button
+                    class="mt-5"
+                    variant="secondary"
+                    @click="openFilePicker"
+                >
+                    {{ t.worldbooks.chooseJson }}
+                </Button>
+            </div>
+        </section>
+
+        <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/88 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.28)] sm:p-5">
+            <div
+                v-if="selectedWorldbook"
+                class="grid gap-5"
+            >
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="min-w-0">
+                        <p class="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
+                            {{ t.worldbooks.currentWorldbook }}
+                        </p>
+                        <h2 class="mt-2 break-words text-2xl font-black tracking-normal text-white">
+                            {{ selectedWorldbook.worldbook.name }}
+                        </h2>
+                        <p class="mt-2 text-sm leading-6 text-neutral-400">
+                            {{ describeSource(selectedWorldbook) }}
+                        </p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:min-w-[28rem]">
+                        <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
+                            <p class="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-500">
+                                {{ t.worldbooks.stats.total }}
+                            </p>
+                            <p class="mt-1 text-2xl font-black text-white">
+                                {{ worldbookSummary.totalEntries }}
+                            </p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
+                            <p class="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-500">
+                                {{ t.worldbooks.stats.enabled }}
+                            </p>
+                            <p class="mt-1 text-2xl font-black text-emerald-100">
+                                {{ worldbookSummary.enabledEntries }}
+                            </p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
+                            <p class="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-500">
+                                {{ t.worldbooks.stats.constant }}
+                            </p>
+                            <p class="mt-1 text-2xl font-black text-amber-100">
+                                {{ worldbookSummary.constantEntries }}
+                            </p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
+                            <p class="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-500">
+                                {{ t.worldbooks.stats.ready }}
+                            </p>
+                            <p class="mt-1 text-2xl font-black text-cyan-100">
+                                {{ worldbookSummary.injectionReadyEntries }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    v-if="selectedWarnings.length"
+                    class="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-3"
+                >
+                    <p class="text-xs font-black uppercase tracking-[0.18em] text-amber-100">
+                        {{ t.worldbooks.importWarnings }}
+                    </p>
+                    <ul class="mt-2 space-y-1 text-sm leading-6 text-amber-50/88">
+                        <li
+                            v-for="warning in selectedWarnings"
+                            :key="warning"
                         >
-                            {{ t.worldbooks.selected }}
-                        </span>
+                            {{ warning }}
+                        </li>
+                    </ul>
+                </div>
+
+                <section class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
+                    <h3 class="text-base font-black text-white">
+                        {{ t.worldbooks.injectionPreview }}
+                    </h3>
+                    <p class="mt-1 text-sm leading-6 text-neutral-400">
+                        {{ t.worldbooks.injectionPreviewDescription }}
+                    </p>
+                    <Textarea
+                        v-model="previewScanText"
+                        class="mt-4"
+                        :label="t.worldbooks.previewScanText"
+                        :placeholder="t.worldbooks.previewPlaceholder"
+                        :rows="4"
+                    />
+                    <div class="mt-3 rounded-2xl border border-cyan-300/18 bg-cyan-300/8 px-4 py-3">
+                        <p class="text-xs font-black uppercase tracking-[0.18em] text-cyan-100">
+                            {{ t.worldbooks.activePreviewEntries(activePreviewCount) }}
+                        </p>
+                        <p class="mt-2 text-xs leading-5 text-cyan-50/78">
+                            {{ routedPreviewSummary }}
+                        </p>
                     </div>
 
                     <div
-                        v-if="worldbookStore.worldbooks.length"
-                        class="max-h-[34rem] space-y-3 overflow-y-auto pr-1"
+                        v-if="activePreviewEntries.length"
+                        class="mt-4 grid gap-3 md:grid-cols-2"
                     >
                         <article
-                            v-for="worldbook in worldbookStore.worldbooks"
-                            :key="worldbook.id"
-                            :class="libraryItemClasses(worldbook)"
+                            v-for="entry in activePreviewEntries"
+                            :key="entry.id"
+                            class="rounded-2xl border border-emerald-300/18 bg-emerald-300/8 p-4"
                         >
-                            <div class="flex items-start gap-3">
-                                <button
-                                    type="button"
-                                    class="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
-                                    @click="selectWorldbook(worldbook)"
-                                >
-                                    <span class="flex items-center gap-2">
-                                        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-200 to-cyan-200 text-sm font-black text-neutral-950">
-                                            {{ t.worldbooks.iconLabel }}
-                                        </span>
-                                        <span class="min-w-0">
-                                            <span class="block truncate text-sm font-black text-white">
-                                                {{ worldbook.worldbook.name }}
-                                            </span>
-                                            <span class="mt-0.5 block truncate text-xs text-neutral-400">
-                                                {{ describeSource(worldbook) }}
-                                            </span>
-                                        </span>
-                                    </span>
-                                </button>
-
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    :aria-label="t.worldbooks.removeAria"
-                                    @click="removeWorldbook(worldbook)"
-                                >
-                                    {{ t.worldbooks.remove }}
-                                </Button>
-                            </div>
-
-                            <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
-                                <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
-                                    <p class="font-bold text-neutral-500">
-                                        {{ t.worldbooks.stats.entries }}
-                                    </p>
-                                    <p class="mt-1 text-base font-black text-white">
-                                        {{ worldbook.worldbook.entries.length }}
-                                    </p>
-                                </div>
-                                <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
-                                    <p class="font-bold text-neutral-500">
-                                        {{ t.worldbooks.stats.enabled }}
-                                    </p>
-                                    <p class="mt-1 text-base font-black text-emerald-100">
-                                        {{ worldbook.worldbook.entries.filter((entry) => entry.enabled).length }}
-                                    </p>
-                                </div>
-                                <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
-                                    <p class="font-bold text-neutral-500">
-                                        {{ t.worldbooks.stats.added }}
-                                    </p>
-                                    <p class="mt-1 truncate text-sm font-bold text-neutral-200">
-                                        {{ formatImportedAt(worldbook.importedAt) }}
-                                    </p>
-                                </div>
-                            </div>
+                            <p class="truncate text-sm font-black text-emerald-50">
+                                {{ describePreviewTitle(entry) }}
+                            </p>
+                            <p class="mt-2 line-clamp-3 text-sm leading-6 text-emerald-50/78">
+                                {{ entry.content || t.worldbooks.noPromptContent }}
+                            </p>
                         </article>
                     </div>
 
                     <div
                         v-else
-                        class="rounded-[1.5rem] border border-dashed border-white/15 bg-white/[0.03] p-5 text-sm leading-6 text-neutral-400"
+                        class="mt-4 rounded-2xl border border-dashed border-white/12 bg-white/[0.03] p-4 text-sm leading-6 text-neutral-400"
                     >
-                        {{ t.worldbooks.emptyLibrary }}
+                        {{ t.worldbooks.noPreviewEntries }}
                     </div>
                 </section>
-            </aside>
 
-            <main class="min-w-0">
-                <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/88 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.28)] sm:p-5">
+                <Collapse
+                    :title="t.worldbooks.enabledSamplesTitle"
+                    :description="t.worldbooks.enabledSamplesDescription"
+                >
                     <div
-                        v-if="selectedWorldbook"
-                        class="flex flex-col gap-5"
+                        v-if="enabledEntrySamples.length"
+                        class="grid gap-3 md:grid-cols-2"
                     >
-                        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                            <div class="min-w-0">
-                                <p class="text-xs font-black uppercase tracking-[0.2em] text-neutral-500">
-                                    {{ t.worldbooks.currentWorldbook }}
-                                </p>
-                                <h2 class="mt-2 truncate text-2xl font-black tracking-[-0.02em] text-white">
-                                    {{ selectedWorldbook.worldbook.name }}
-                                </h2>
-                                <p class="mt-2 text-sm leading-6 text-neutral-400">
-                                    {{ describeSource(selectedWorldbook) }}
-                                </p>
-                            </div>
-                            <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:min-w-[28rem]">
-                                <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
-                                    <p class="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-500">
-                                        {{ t.worldbooks.stats.total }}
-                                    </p>
-                                    <p class="mt-1 text-2xl font-black text-white">
-                                        {{ worldbookSummary.totalEntries }}
-                                    </p>
-                                </div>
-                                <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
-                                    <p class="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-500">
-                                        {{ t.worldbooks.stats.enabled }}
-                                    </p>
-                                    <p class="mt-1 text-2xl font-black text-emerald-100">
-                                        {{ worldbookSummary.enabledEntries }}
-                                    </p>
-                                </div>
-                                <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
-                                    <p class="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-500">
-                                        {{ t.worldbooks.stats.constant }}
-                                    </p>
-                                    <p class="mt-1 text-2xl font-black text-amber-100">
-                                        {{ worldbookSummary.constantEntries }}
-                                    </p>
-                                </div>
-                                <div class="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-3">
-                                    <p class="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-neutral-500">
-                                        {{ t.worldbooks.stats.ready }}
-                                    </p>
-                                    <p class="mt-1 text-2xl font-black text-cyan-100">
-                                        {{ worldbookSummary.injectionReadyEntries }}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div
-                            v-if="selectedWarnings.length"
-                            class="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-3"
+                        <article
+                            v-for="entry in enabledEntrySamples"
+                            :key="entry.id"
+                            class="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
                         >
-                            <p class="text-xs font-black uppercase tracking-[0.18em] text-amber-100">
-                                {{ t.worldbooks.importWarnings }}
-                            </p>
-                            <ul class="mt-2 space-y-1 text-sm leading-6 text-amber-50/88">
-                                <li
-                                    v-for="warning in selectedWarnings"
-                                    :key="warning"
-                                >
-                                    {{ warning }}
-                                </li>
-                            </ul>
-                        </div>
-
-                        <div class="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-                            <section class="min-w-0 rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
-                                <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                    <div>
-                                        <h3 class="text-base font-black text-white">
-                                            {{ t.worldbooks.keyCoverage }}
-                                        </h3>
-                                        <p class="mt-1 text-sm leading-6 text-neutral-400">
-                                            {{ t.worldbooks.keyCoverageDescription }}
-                                        </p>
-                                    </div>
-                                    <span class="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-bold text-neutral-200">
-                                        {{ t.worldbooks.keyedCount(worldbookSummary.entriesWithPrimaryKeys) }}
-                                    </span>
-                                </div>
-                                <div class="mt-4 grid grid-cols-2 gap-2">
-                                    <div class="rounded-2xl border border-white/8 bg-white/[0.04] px-3 py-3">
-                                        <p class="text-xs font-bold text-neutral-500">
-                                            {{ t.worldbooks.hasPrimaryKey }}
-                                        </p>
-                                        <p class="mt-1 text-xl font-black text-white">
-                                            {{ worldbookSummary.entriesWithPrimaryKeys }}
-                                        </p>
-                                    </div>
-                                    <div class="rounded-2xl border border-white/8 bg-white/[0.04] px-3 py-3">
-                                        <p class="text-xs font-bold text-neutral-500">
-                                            {{ t.worldbooks.noPrimaryKeyStat }}
-                                        </p>
-                                        <p class="mt-1 text-xl font-black text-neutral-300">
-                                            {{ worldbookSummary.entriesWithoutPrimaryKeys }}
-                                        </p>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <section class="min-w-0 rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
-                                <h3 class="text-base font-black text-white">
-                                    {{ t.worldbooks.injectionPreview }}
-                                </h3>
-                                <p class="mt-1 text-sm leading-6 text-neutral-400">
-                                    {{ t.worldbooks.injectionPreviewDescription }}
-                                </p>
-                                <Textarea
-                                    v-model="previewScanText"
-                                    class="mt-4"
-                                    :label="t.worldbooks.previewScanText"
-                                    :placeholder="t.worldbooks.previewPlaceholder"
-                                    :rows="4"
-                                />
-                                <div class="mt-3 rounded-2xl border border-cyan-300/18 bg-cyan-300/8 px-4 py-3">
-                                    <p class="text-xs font-black uppercase tracking-[0.18em] text-cyan-100">
-                                        {{ t.worldbooks.activePreviewEntries(activePreviewCount) }}
-                                    </p>
-                                    <p class="mt-2 text-xs leading-5 text-cyan-50/78">
-                                        {{ routedPreviewSummary }}
-                                    </p>
-                                </div>
-                            </section>
-                        </div>
-
-                        <section class="rounded-[1.5rem] border border-white/10 bg-black/18 p-4">
                             <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                <div>
-                                    <h3 class="text-base font-black text-white">
-                                        {{ t.worldbooks.promptCandidates }}
-                                    </h3>
-                                    <p class="mt-1 text-sm leading-6 text-neutral-400">
-                                        {{ t.worldbooks.promptCandidatesDescription }}
+                                <div class="min-w-0">
+                                    <p class="truncate text-sm font-black text-white">
+                                        {{ describeEntryTitle(entry) }}
+                                    </p>
+                                    <p class="mt-1 truncate text-xs text-neutral-400">
+                                        {{ describeEntryKeys(entry) }} · {{ entry.position }}
                                     </p>
                                 </div>
-                                <span class="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-bold text-neutral-200">
-                                    {{ t.worldbooks.showingCount(Math.min(enabledEntrySamples.length, ENTRY_SAMPLE_LIMIT)) }}
+                                <span
+                                    v-if="entry.constant"
+                                    class="w-fit rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 text-xs font-bold text-amber-100"
+                                >
+                                    {{ t.worldbooks.constant }}
                                 </span>
                             </div>
-
-                            <div
-                                v-if="activePreviewEntries.length"
-                                class="mt-4 grid gap-3"
-                            >
-                                <article
-                                    v-for="entry in activePreviewEntries"
-                                    :key="entry.id"
-                                    class="rounded-2xl border border-emerald-300/18 bg-emerald-300/8 p-4"
-                                >
-                                    <p class="truncate text-sm font-black text-emerald-50">
-                                        {{ describePreviewTitle(entry) }}
-                                    </p>
-                                    <p class="mt-2 line-clamp-3 text-sm leading-6 text-emerald-50/78">
-                                        {{ entry.content || t.worldbooks.noPromptContent }}
-                                    </p>
-                                </article>
-                            </div>
-
-                            <div
-                                v-else
-                                class="mt-4 rounded-2xl border border-dashed border-white/12 bg-white/[0.03] p-4 text-sm leading-6 text-neutral-400"
-                            >
-                                {{ t.worldbooks.noPreviewEntries }}
-                            </div>
-
-                            <Collapse
-                                class="mt-4"
-                                :title="t.worldbooks.enabledSamplesTitle"
-                                :description="t.worldbooks.enabledSamplesDescription"
-                            >
-                                <div
-                                    v-if="enabledEntrySamples.length"
-                                    class="grid gap-3"
-                                >
-                                    <article
-                                        v-for="entry in enabledEntrySamples"
-                                        :key="entry.id"
-                                        class="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
-                                    >
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                            <div class="min-w-0">
-                                                <p class="truncate text-sm font-black text-white">
-                                                    {{ describeEntryTitle(entry) }}
-                                                </p>
-                                                <p class="mt-1 truncate text-xs text-neutral-400">
-                                                    {{ describeEntryKeys(entry) }} · {{ entry.position }}
-                                                </p>
-                                            </div>
-                                            <span
-                                                v-if="entry.constant"
-                                                class="w-fit rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 text-xs font-bold text-amber-100"
-                                            >
-                                                {{ t.worldbooks.constant }}
-                                            </span>
-                                        </div>
-                                        <p class="mt-3 line-clamp-3 text-sm leading-6 text-neutral-300">
-                                            {{ entry.content || t.worldbooks.noPromptContent }}
-                                        </p>
-                                    </article>
-                                </div>
-
-                                <p
-                                    v-else
-                                    class="rounded-2xl border border-dashed border-white/12 bg-white/[0.03] p-4 text-sm leading-6 text-neutral-400"
-                                >
-                                    {{ t.worldbooks.noEnabledEntries }}
-                                </p>
-                            </Collapse>
-                        </section>
+                            <p class="mt-3 line-clamp-3 text-sm leading-6 text-neutral-300">
+                                {{ entry.content || t.worldbooks.noPromptContent }}
+                            </p>
+                        </article>
                     </div>
 
-                    <div
+                    <p
                         v-else
-                        class="rounded-[1.5rem] border border-dashed border-white/15 bg-white/[0.03] p-6 text-center"
+                        class="rounded-2xl border border-dashed border-white/12 bg-white/[0.03] p-4 text-sm leading-6 text-neutral-400"
                     >
-                        <p class="text-lg font-black text-white">
-                            {{ t.worldbooks.selectOrImportTitle }}
-                        </p>
-                        <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-400">
-                            {{ t.worldbooks.selectOrImportDescription }}
-                        </p>
-                    </div>
-                </section>
-            </main>
-        </div>
+                        {{ t.worldbooks.noEnabledEntries }}
+                    </p>
+                </Collapse>
+            </div>
+
+            <div
+                v-else
+                class="rounded-[1.5rem] border border-dashed border-white/15 bg-white/[0.03] p-6 text-center"
+            >
+                <p class="text-lg font-black text-white">
+                    {{ t.worldbooks.selectOrImportTitle }}
+                </p>
+                <p class="mx-auto mt-2 max-w-md text-sm leading-6 text-neutral-400">
+                    {{ t.worldbooks.selectOrImportDescription }}
+                </p>
+            </div>
+        </section>
     </section>
 </template>

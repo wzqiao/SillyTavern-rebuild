@@ -1,11 +1,29 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { ReforgedSelectOption } from '@/contracts/ui';
-import { useI18n } from '@/i18n';
-import { Button, Collapse, Input, Select, Switch } from '@/ui-kit';
+import { type Locale, useI18n } from '@/i18n';
+import { Button, Collapse, Input, ListItem, Select, Switch } from '@/ui-kit';
 
-const { t } = useI18n();
+type SettingsGroupId =
+    | 'connection'
+    | 'characters'
+    | 'identity'
+    | 'theme'
+    | 'model'
+    | 'worldbooks'
+    | 'language'
+    | 'about';
 
+interface SettingsGroup {
+    id: SettingsGroupId;
+    title: string;
+    description: string;
+    value: string;
+}
+
+const { t, locale, setLocale } = useI18n();
+
+const selectedGroupId = ref<SettingsGroupId>('language');
 const density = ref('comfortable');
 const compactMode = ref(false);
 const showDiagnostics = ref(false);
@@ -21,6 +39,11 @@ const densityOptions = computed<ReforgedSelectOption[]>(() => [
     { value: 'compact', label: t.value.settings.densityOptions.compact },
 ]);
 
+const localeOptions = computed<ReforgedSelectOption[]>(() => [
+    { value: 'zh', label: t.value.settings.languageOptions.zh },
+    { value: 'en', label: t.value.settings.languageOptions.en },
+]);
+
 const samplingPresetOptions = computed<ReforgedSelectOption[]>(() => [
     { value: 'balanced', label: t.value.settings.samplingPresetOptions.balanced },
     { value: 'creative', label: t.value.settings.samplingPresetOptions.creative },
@@ -33,6 +56,84 @@ const localPreviewCount = computed(() => [
     reduceMotion.value,
     density.value !== 'comfortable',
 ].filter(Boolean).length);
+
+const currentLanguageLabel = computed(() => (
+    locale.value === 'zh'
+        ? t.value.settings.languageOptions.zh
+        : t.value.settings.languageOptions.en
+));
+
+const samplingPresetLabel = computed(() => (
+    samplingPresetOptions.value.find((option) => option.value === samplingPreset.value)?.label
+        ?? t.value.settings.samplingPresetOptions.balanced
+));
+
+const settingsGroups = computed<SettingsGroup[]>(() => [
+    {
+        id: 'connection',
+        title: t.value.settings.groups.connection.title,
+        description: t.value.settings.groups.connection.description,
+        value: t.value.settings.groups.connection.value,
+    },
+    {
+        id: 'characters',
+        title: t.value.settings.groups.characters.title,
+        description: t.value.settings.groups.characters.description,
+        value: t.value.settings.groups.characters.value,
+    },
+    {
+        id: 'identity',
+        title: t.value.settings.groups.identity.title,
+        description: t.value.settings.groups.identity.description,
+        value: t.value.settings.groups.identity.value,
+    },
+    {
+        id: 'theme',
+        title: t.value.settings.groups.theme.title,
+        description: t.value.settings.groups.theme.description,
+        value: density.value === 'comfortable'
+            ? t.value.settings.densityOptions.comfortable
+            : t.value.settings.densityOptions.compact,
+    },
+    {
+        id: 'model',
+        title: t.value.settings.groups.model.title,
+        description: t.value.settings.groups.model.description,
+        value: samplingPresetLabel.value,
+    },
+    {
+        id: 'worldbooks',
+        title: t.value.settings.groups.worldbooks.title,
+        description: t.value.settings.groups.worldbooks.description,
+        value: t.value.settings.groups.worldbooks.value,
+    },
+    {
+        id: 'language',
+        title: t.value.settings.groups.language.title,
+        description: t.value.settings.groups.language.description,
+        value: currentLanguageLabel.value,
+    },
+    {
+        id: 'about',
+        title: t.value.settings.groups.about.title,
+        description: t.value.settings.groups.about.description,
+        value: t.value.settings.groups.about.value,
+    },
+]);
+
+const selectedGroup = computed(() => (
+    settingsGroups.value.find((group) => group.id === selectedGroupId.value) ?? settingsGroups.value[0]
+));
+
+function selectGroup(groupId: SettingsGroupId): void {
+    selectedGroupId.value = groupId;
+}
+
+function updateLocale(value: string): void {
+    if (value === 'zh' || value === 'en') {
+        setLocale(value as Locale);
+    }
+}
 
 function resetLocalPreview(): void {
     density.value = 'comfortable';
@@ -74,24 +175,58 @@ function resetLocalPreview(): void {
             </div>
         </header>
 
-        <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
-            <div class="grid gap-5">
-                <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/90 p-4 shadow-[0_18px_70px_rgba(0,0,0,0.28)] sm:p-5">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                            <h2 class="text-lg font-semibold text-white">
-                                {{ t.settings.simpleTitle }}
-                            </h2>
-                            <p class="mt-1 text-sm leading-6 text-neutral-400">
-                                {{ t.settings.simpleDescription }}
-                            </p>
-                        </div>
-                        <span class="w-fit rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-100">
-                            {{ t.settings.notPersisted }}
-                        </span>
-                    </div>
+        <div class="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <nav
+                class="grid min-w-0 gap-2 self-start rounded-[1.75rem] border border-white/10 bg-neutral-900/90 p-3 shadow-[0_18px_70px_rgba(0,0,0,0.28)]"
+                :aria-label="t.settings.groupListLabel"
+            >
+                <ListItem
+                    v-for="group in settingsGroups"
+                    :key="group.id"
+                    :title="group.title"
+                    :description="group.description"
+                    :subtitle="group.value"
+                    :selected="group.id === selectedGroupId"
+                    interactive
+                    @press="selectGroup(group.id)"
+                />
+            </nav>
 
-                    <div class="mt-5 grid gap-4">
+            <section class="grid min-w-0 gap-4 rounded-[1.75rem] border border-white/10 bg-neutral-900/90 p-4 shadow-[0_18px_70px_rgba(0,0,0,0.28)] sm:p-5">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div class="min-w-0">
+                        <p class="text-xs font-semibold uppercase text-cyan-100/80">
+                            {{ selectedGroup?.value }}
+                        </p>
+                        <h2 class="mt-2 font-display text-xl font-semibold text-white">
+                            {{ selectedGroup?.title }}
+                        </h2>
+                        <p class="mt-2 text-sm leading-6 text-neutral-400">
+                            {{ selectedGroup?.description }}
+                        </p>
+                    </div>
+                    <span class="w-fit rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-100">
+                        {{ t.settings.notPersisted }}
+                    </span>
+                </div>
+
+                <div
+                    v-if="selectedGroupId === 'language'"
+                    class="grid gap-4"
+                >
+                    <Select
+                        :model-value="locale"
+                        :options="localeOptions"
+                        :label="t.settings.fields.language"
+                        :hint="t.settings.fields.languageHint"
+                        @update:model-value="updateLocale"
+                    />
+                </div>
+
+                <div
+                    v-else-if="selectedGroupId === 'theme'"
+                    class="grid gap-4"
+                >
                         <Select
                             v-model="density"
                             :options="densityOptions"
@@ -117,70 +252,91 @@ function resetLocalPreview(): void {
                             :label="t.settings.fields.reduceMotion"
                             :description="t.settings.fields.reduceMotionDescription"
                         />
-                    </div>
-                </section>
+                </div>
 
-                <Collapse
-                    v-model="advancedOpen"
-                    :title="t.settings.advancedTitle"
-                    :description="t.settings.advancedDescription"
-                    tone="warning"
+                <div
+                    v-else-if="selectedGroupId === 'model'"
+                    class="grid gap-4"
                 >
-                    <div class="grid gap-4">
-                        <div class="rounded-[1.25rem] border border-amber-300/20 bg-amber-300/10 p-4">
-                            <p class="text-sm font-semibold text-amber-100">
-                                {{ t.settings.notConnectedTitle }}
-                            </p>
-                            <p class="mt-2 text-sm leading-6 text-amber-50/80">
-                                {{ t.settings.notConnectedDescription }}
-                            </p>
+                    <Select
+                        v-model="samplingPreset"
+                        :options="samplingPresetOptions"
+                        :label="t.settings.fields.samplingPreset"
+                        :hint="t.settings.fields.draftOnly"
+                        disabled
+                        tone="warning"
+                    />
+
+                    <Collapse
+                        v-model="advancedOpen"
+                        :title="t.settings.advancedTitle"
+                        :description="t.settings.advancedDescription"
+                        tone="warning"
+                    >
+                        <div class="grid gap-4">
+                            <div class="rounded-[1.25rem] border border-amber-300/20 bg-amber-300/10 p-4">
+                                <p class="text-sm font-semibold text-amber-100">
+                                    {{ t.settings.notConnectedTitle }}
+                                </p>
+                                <p class="mt-2 text-sm leading-6 text-amber-50/80">
+                                    {{ t.settings.notConnectedDescription }}
+                                </p>
+                            </div>
+
+                            <div class="grid gap-4 sm:grid-cols-3">
+                                <Input
+                                    v-model="temperature"
+                                    :label="t.settings.fields.temperature"
+                                    :hint="t.settings.fields.placeholder"
+                                    inputmode="decimal"
+                                    disabled
+                                    tone="warning"
+                                />
+                                <Input
+                                    v-model="topP"
+                                    :label="t.settings.fields.topP"
+                                    :hint="t.settings.fields.placeholder"
+                                    inputmode="decimal"
+                                    disabled
+                                    tone="warning"
+                                />
+                                <Input
+                                    v-model="contextReserve"
+                                    :label="t.settings.fields.contextReserve"
+                                    :hint="t.settings.fields.placeholder"
+                                    inputmode="numeric"
+                                    disabled
+                                    tone="warning"
+                                />
+                            </div>
                         </div>
+                    </Collapse>
+                </div>
 
-                        <Select
-                            v-model="samplingPreset"
-                            :options="samplingPresetOptions"
-                            :label="t.settings.fields.samplingPreset"
-                            :hint="t.settings.fields.draftOnly"
-                            disabled
-                            tone="warning"
-                        />
+                <div
+                    v-else-if="selectedGroupId === 'about'"
+                    class="rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4 text-sm leading-6 text-neutral-300"
+                >
+                    {{ t.settings.aboutDescription }}
+                </div>
 
-                        <div class="grid gap-4 sm:grid-cols-3">
-                            <Input
-                                v-model="temperature"
-                                :label="t.settings.fields.temperature"
-                                :hint="t.settings.fields.placeholder"
-                                inputmode="decimal"
-                                disabled
-                                tone="warning"
-                            />
-                            <Input
-                                v-model="topP"
-                                :label="t.settings.fields.topP"
-                                :hint="t.settings.fields.placeholder"
-                                inputmode="decimal"
-                                disabled
-                                tone="warning"
-                            />
-                            <Input
-                                v-model="contextReserve"
-                                :label="t.settings.fields.contextReserve"
-                                :hint="t.settings.fields.placeholder"
-                                inputmode="numeric"
-                                disabled
-                                tone="warning"
-                            />
-                        </div>
-                    </div>
-                </Collapse>
-            </div>
+                <div
+                    v-else
+                    class="rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4"
+                >
+                    <p class="text-sm font-semibold text-neutral-100">
+                        {{ t.settings.notConnectedTitle }}
+                    </p>
+                    <p class="mt-2 text-sm leading-6 text-neutral-400">
+                        {{ t.settings.notConnectedDescription }}
+                    </p>
+                </div>
 
-            <aside class="grid gap-4 lg:content-start">
-                <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/90 p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)]">
-                    <h2 class="text-base font-semibold text-white">
+                <div class="grid gap-4 rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4">
+                    <h3 class="text-base font-semibold text-white">
                         {{ t.settings.statusTitle }}
-                    </h2>
-                    <dl class="mt-4 grid gap-3 text-sm">
+                    </h3>
+                    <dl class="grid gap-3 text-sm">
                         <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
                             <dt class="text-neutral-400">
                                 {{ t.settings.statusRows.store }}
@@ -206,7 +362,7 @@ function resetLocalPreview(): void {
                             </dd>
                         </div>
                     </dl>
-                </section>
+                </div>
 
                 <Button
                     variant="outline"
@@ -215,7 +371,7 @@ function resetLocalPreview(): void {
                 >
                     {{ t.settings.resetLocalPreview }}
                 </Button>
-            </aside>
+            </section>
         </div>
     </section>
 </template>
