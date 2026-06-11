@@ -72,12 +72,23 @@ export const zh = {
     runtimeDiagFailed: '运行时自检未通过。',
     runtimeLoadFailed: (detail: string) => `运行时适配器加载失败：${detail}`,
     runtimeKeyGone: '内存里的 API Key 已失效，请回连接页重新填写。',
+    runtimeFallback: (reason: string) => `已自动回到演示模式：${reason}`,
     configureConnection: '去配置连接',
 
     // 头部 / 状态
     untitled: '新的对话',
     openChat: '开始聊天',
     generatingReply: '正在回复…',
+    sessionsTitle: '全部聊天',
+    sessionsOpen: '打开会话列表',
+    newSession: '新建',
+    sessionCount: (count: number) => `${count} 个会话`,
+    sessionMessageCount: (count: number) => `${count} 条消息`,
+    noSessionsTitle: '还没有会话',
+    noSessionsDescription: '新建一个会话，或直接发送消息开始。',
+    noCharacterSession: '无角色',
+    deleteSession: (title: string) => `删除会话：${title}`,
+    sessionDeleted: (title: string) => `已删除会话：${title}`,
 
     // 空态
     emptyTitle: '开始聊天吧',
@@ -169,6 +180,7 @@ export const zh = {
       baseUrlPlaceholder: 'https://api.example.com/v1',
       model: '模型',
       modelPlaceholder: 'gpt-4.1-compatible',
+      modelHint: '先手动填写模型 ID；模型列表与测试连接将在后续接入。',
       apiKey: 'API Key',
       apiKeyPlaceholder: '粘贴 API Key',
       apiKeyStoredHint: '当前密钥标记：{key}',

@@ -3,15 +3,21 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { createChatLorebookContext } from '@/services';
 import { useCharacterStore, useChatStore, useConnectionStore, useWorldbookStore } from '@/stores';
-import { Button, Spinner, Textarea } from '@/ui-kit';
+import { Button, Drawer, ListItem, Spinner, Textarea } from '@/ui-kit';
 import { useI18n } from '@/i18n';
 import type { ReforgedCharacterRosterItem } from '@/contracts/character';
 import type {
     ReforgedChatCharacterContext,
     ReforgedChatMessage,
+    ReforgedChatSession,
     ReforgedChatRuntimeConnectionProvider,
     ReforgedChatSendInput,
 } from '@/contracts/chat';
+import type {
+    ReforgedConnectionRuntimeHandoffIssue,
+    ReforgedConnectionRuntimeHandoffIssueCode,
+    ReforgedConnectionRuntimeHandoffStatus,
+} from '@/contracts/connection';
 import type { EngineAdapterDiagnostics, HeadlessEngineAdapter, HeadlessGenerationRequest } from '@/contracts/engine';
 
 type AdapterMode = 'demo' | 'runtime';
@@ -19,6 +25,9 @@ type ChatGenerationTrigger = 'normal' | 'continue';
 type ChatActionKind = 'regenerate' | 'continue' | 'retry';
 type RuntimeChatCompletionType = NonNullable<ReforgedChatSendInput['runtime']>['chatCompletionType'];
 type ChatActionInput = Omit<ReforgedChatSendInput, 'content' | 'sessionId'>;
+interface RuntimeActivationOptions {
+    inspectRuntime?: boolean;
+}
 
 const characterStore = useCharacterStore();
 const chatStore = useChatStore();
@@ -30,9 +39,11 @@ const adapterMode = ref<AdapterMode>('demo');
 const composer = ref('');
 const runtimeBusy = ref(false);
 const runtimeNotice = ref<string | null>(null);
+const runtimeFallbackNotice = ref<string | null>(null);
 const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
 const sendNotice = ref<string | null>(null);
 const timeline = ref<HTMLElement | null>(null);
+const sessionDrawerOpen = ref(false);
 const editingMessageId = ref<string | null>(null);
 const editingContent = ref('');
 const confirmingDeleteMessageId = ref<string | null>(null);
@@ -70,11 +81,14 @@ const selectedCharacter = computed(() => characterStore.selectedCharacter);
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
 const activeSession = computed(() => chatStore.selectedSession);
 const messages = computed(() => chatStore.selectedMessages);
+const sortedSessions = computed(() => [...chatStore.sessions].sort((left, right) => (
+    new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+)));
 const readiness = computed(() => chatStore.readiness);
 const runtimeAdapterReady = computed(() => (
     adapterMode.value === 'runtime' &&
-    runtimeDiagnostics.value?.ok === true &&
-    readiness.value.hasAdapter
+    readiness.value.hasAdapter &&
+    runtimeDiagnostics.value?.ok !== false
 ));
 const runtimeDirectRequestReady = computed(() => (
     runtimeAdapterReady.value &&
@@ -108,13 +122,13 @@ const statusMessage = computed(() => {
     }
 
     if (adapterMode.value === 'runtime') {
-        return runtimeNotice.value ?? runtimeHandoff.value.message;
+        return runtimeNotice.value ?? translateRuntimeStatus(runtimeHandoff.value.status);
     }
 
     return readiness.value.canSend ? t.value.chat.demoReady : readiness.value.reason?.message ?? t.value.chat.demoReady;
 });
 const runtimeIssueLines = computed(() => [
-    ...runtimeHandoff.value.issues.map((issue) => issue.message),
+    ...runtimeHandoff.value.issues.map((issue) => translateRuntimeIssue(issue)),
     ...(runtimeDiagnostics.value?.blockers ?? []),
     ...(runtimeDiagnostics.value?.warnings ?? []),
 ].slice(0, 4));
@@ -128,8 +142,17 @@ const lorebookContext = computed(() => selectedWorldbook.value
     : null);
 const lorebookEntryCount = computed(() => lorebookContext.value?.entries.length ?? 0);
 
-onMounted(() => {
+onMounted(async () => {
     selectDemoAdapter();
+    if (connectionStore.hasAppliedDraft) {
+        await activateRuntimeAdapter();
+
+        if (runtimeDiagnostics.value?.ok === false || !runtimeHandoff.value.canAttempt) {
+            const reason = runtimeIssueLines.value[0] ?? runtimeNotice.value ?? t.value.chat.runtimeDiagFailed;
+            selectDemoAdapter({ preserveFallbackNotice: true });
+            runtimeFallbackNotice.value = t.value.chat.runtimeFallback(reason);
+        }
+    }
     autoStartSession();
 });
 
@@ -165,7 +188,7 @@ watch(
     ],
     () => {
         if (adapterMode.value === 'runtime') {
-            runtimeNotice.value = runtimeHandoff.value.message;
+            runtimeNotice.value = translateRuntimeStatus(runtimeHandoff.value.status);
         }
     },
     { flush: 'sync' },
@@ -179,19 +202,23 @@ function autoStartSession(): void {
     startCharacterSession();
 }
 
-function selectDemoAdapter(): void {
+function selectDemoAdapter(options: { preserveFallbackNotice?: boolean } = {}): void {
     adapterMode.value = 'demo';
     runtimeBusy.value = false;
     runtimeNotice.value = null;
     runtimeDiagnostics.value = null;
     sendNotice.value = null;
+    if (!options.preserveFallbackNotice) {
+        runtimeFallbackNotice.value = null;
+    }
     chatStore.setEngineAdapter(demoAdapter);
 }
 
-async function activateRuntimeAdapter(): Promise<void> {
+async function activateRuntimeAdapter(options: RuntimeActivationOptions = {}): Promise<void> {
     adapterMode.value = 'runtime';
     runtimeBusy.value = true;
     runtimeNotice.value = t.value.chat.runtimeChecking;
+    runtimeFallbackNotice.value = null;
     runtimeDiagnostics.value = null;
     sendNotice.value = null;
     chatStore.setEngineAdapter(null);
@@ -199,19 +226,23 @@ async function activateRuntimeAdapter(): Promise<void> {
     try {
         const { loadHeadlessEngineAdapter } = await import('@/engine-adapter/runtimeAdapterLoader');
         const runtimeAdapter = await loadHeadlessEngineAdapter();
-        const diagnostics = await runtimeAdapter.inspect({ probeContext: true });
-        runtimeDiagnostics.value = diagnostics;
 
-        if (!diagnostics.ok) {
-            runtimeNotice.value = diagnostics.blockers[0] ?? t.value.chat.runtimeDiagFailed;
-            return;
+        if (options.inspectRuntime) {
+            const diagnostics = await runtimeAdapter.inspect({ probeContext: true });
+            runtimeDiagnostics.value = diagnostics;
+
+            if (!diagnostics.ok) {
+                runtimeNotice.value = diagnostics.blockers[0] ?? t.value.chat.runtimeDiagFailed;
+                return;
+            }
         }
 
         chatStore.setEngineAdapter(runtimeAdapter);
-        runtimeNotice.value = connectionStore.runtimeHandoff({
+        const handoff = connectionStore.runtimeHandoff({
             runtimeAdapterReady: true,
             runtimeDirectRequestReady: runtimeAdapter.supportsDirectBackendChatCompletion === true && connectionStore.hasAppliedDraft,
-        }).message;
+        });
+        runtimeNotice.value = translateRuntimeStatus(handoff.status);
     } catch (error) {
         runtimeNotice.value = t.value.chat.runtimeLoadFailed(describeError(error));
         chatStore.setEngineAdapter(null);
@@ -234,6 +265,33 @@ function startCharacterSession(): void {
     chatStore.startSession({
         character: toChatCharacter(selectedCharacter.value),
     }, new Date().toISOString());
+}
+
+function startFreshSession(): void {
+    const character = selectedCharacter.value
+        ? toChatCharacter(selectedCharacter.value)
+        : activeSession.value?.character ?? null;
+
+    chatStore.startSession({ character }, new Date().toISOString());
+    sessionDrawerOpen.value = false;
+}
+
+function selectChatSession(sessionId: string): void {
+    if (chatStore.selectSession(sessionId)) {
+        sessionDrawerOpen.value = false;
+        confirmingDeleteMessageId.value = null;
+        cancelEdit();
+    }
+}
+
+function removeChatSession(session: ReforgedChatSession): void {
+    if (chatStore.isGenerating) {
+        return;
+    }
+
+    if (chatStore.removeSession(session.id)) {
+        sendNotice.value = t.value.chat.sessionDeleted(formatSessionTitle(session));
+    }
 }
 
 async function sendMessage(): Promise<void> {
@@ -504,6 +562,43 @@ function formatDateTime(value: string): string {
     }).format(date);
 }
 
+function formatSessionTitle(session: ReforgedChatSession): string {
+    const title = session.title.trim();
+
+    if (!title || title === 'New chat') {
+        return session.character?.name ?? t.value.chat.untitled;
+    }
+
+    return title;
+}
+
+function formatSessionDescription(session: ReforgedChatSession): string {
+    const character = session.character?.name ?? t.value.chat.noCharacterSession;
+    return `${character} · ${formatDateTime(session.updatedAt)}`;
+}
+
+function formatSessionMessageCount(session: ReforgedChatSession): string {
+    return t.value.chat.sessionMessageCount(session.messageIds.length);
+}
+
+function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): string {
+    const issueMap: Record<ReforgedConnectionRuntimeHandoffIssueCode, string> = {
+        'draft-empty': t.value.connection.issues.draftEmpty,
+        'draft-incomplete': t.value.connection.messages.applyIncomplete,
+        'draft-unapplied': t.value.connection.issues.draftUnapplied,
+        'runtime-unwired': t.value.connection.issues.runtimeUnwired,
+        'runtime-connection-unwired': issue.field === 'apiKey'
+            ? t.value.connection.issues.apiKeyUnavailable
+            : t.value.connection.issues.runtimeConnectionUnwired,
+    };
+
+    return issueMap[issue.code];
+}
+
+function translateRuntimeStatus(status: ReforgedConnectionRuntimeHandoffStatus): string {
+    return t.value.connection.status[status].description;
+}
+
 function toChatCharacter(rosterItem: ReforgedCharacterRosterItem): ReforgedChatCharacterContext {
     return {
         id: rosterItem.id,
@@ -541,279 +636,444 @@ function describeError(error: unknown): string {
 </script>
 
 <template>
-    <section class="mx-auto flex h-[calc(100dvh-7.5rem)] w-full max-w-3xl flex-col gap-3 pb-2 lg:h-[calc(100dvh-3rem)]">
-        <!-- 顶部条：角色名 + 极简模式切换 -->
-        <header class="flex items-center justify-between gap-3 rounded-[1.5rem] border border-white/10 bg-neutral-900/80 px-4 py-3 backdrop-blur">
-            <div class="min-w-0">
-                <h1 class="truncate font-display text-lg font-semibold text-neutral-50">
-                    {{ headerTitle }}
-                </h1>
-                <p class="mt-0.5 truncate text-xs text-neutral-400">
-                    {{ statusMessage }}
-                </p>
-            </div>
-
-            <div class="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-neutral-950/60 p-1">
-                <button
-                    type="button"
-                    class="rounded-full px-3 py-1.5 text-xs font-medium transition"
-                    :class="adapterMode === 'demo' ? 'bg-cyan-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
-                    :disabled="chatStore.isGenerating"
-                    @click="selectDemoAdapter"
-                >
-                    {{ t.chat.demo }}
-                </button>
-                <button
-                    type="button"
-                    class="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition"
-                    :class="adapterMode === 'runtime' ? 'bg-cyan-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
-                    :disabled="chatStore.isGenerating"
-                    @click="activateRuntimeAdapter"
-                >
-                    <Spinner v-if="runtimeBusy" size="sm" tone="neutral" :label="t.chat.runtimeChecking" />
-                    {{ t.chat.runtime }}
-                </button>
-            </div>
-        </header>
-
-        <!-- 运行时未就绪的细提示 -->
-        <div
-            v-if="adapterMode === 'runtime' && !runtimeHandoff.canAttempt"
-            class="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-2.5 text-xs leading-5 text-amber-100"
-        >
-            <span class="min-w-0">{{ runtimeIssueLines[0] ?? statusMessage }}</span>
-            <RouterLink
-                to="/connection"
-                class="inline-flex min-h-9 items-center rounded-xl border border-cyan-300/30 bg-cyan-300/15 px-3 font-medium text-cyan-100 transition hover:bg-cyan-300/25"
-            >
-                {{ t.chat.configureConnection }}
-            </RouterLink>
-        </div>
-
-        <!-- 时间线 -->
-        <div
-            ref="timeline"
-            class="flex-1 space-y-4 overflow-y-auto rounded-[1.5rem] border border-white/10 bg-neutral-900/55 px-3 py-5 sm:px-5"
-        >
-            <!-- 空态 -->
-            <div
-                v-if="messages.length === 0"
-                class="flex min-h-72 flex-col items-center justify-center px-4 py-10 text-center"
-            >
-                <div class="lamp-glow flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-300/12 text-lg font-semibold text-cyan-100">
-                    {{ characterName ? characterName.slice(0, 1) : t.chat.emptyAvatarFallback }}
+    <section class="mx-auto grid h-[calc(100dvh-7.5rem)] w-full max-w-6xl min-w-0 gap-3 pb-2 lg:h-[calc(100dvh-3rem)] lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <aside class="hidden min-h-0 min-w-0 flex-col rounded-[1.5rem] border border-white/10 bg-neutral-900/72 p-3 backdrop-blur lg:flex">
+            <div class="flex items-center justify-between gap-3 px-1 pb-3">
+                <div class="min-w-0">
+                    <p class="font-display text-base font-semibold text-neutral-50">
+                        {{ t.chat.sessionsTitle }}
+                    </p>
+                    <p class="mt-0.5 text-xs text-neutral-500">
+                        {{ t.chat.sessionCount(sortedSessions.length) }}
+                    </p>
                 </div>
-                <h3 class="mt-4 font-display text-lg font-semibold text-neutral-50">
-                    {{ t.chat.emptyTitle }}
-                </h3>
-                <p class="mt-2 max-w-md text-sm leading-6 text-neutral-400">
-                    {{ t.chat.emptyHint }}
-                </p>
-                <RouterLink
-                    v-if="!selectedCharacter"
-                    to="/characters"
-                    class="mt-5 inline-flex min-h-11 items-center rounded-xl border border-cyan-300/30 bg-cyan-300/15 px-4 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/25"
-                >
-                    {{ t.chat.pickCharacter }}
-                </RouterLink>
                 <Button
-                    v-else
                     type="button"
-                    class="mt-5"
+                    size="sm"
                     :disabled="chatStore.isGenerating"
-                    @click="startCharacterSession"
+                    @click="startFreshSession"
                 >
-                    {{ t.chat.openChat }}
+                    {{ t.chat.newSession }}
                 </Button>
             </div>
 
-            <!-- 消息 -->
-            <article
-                v-for="message in messages"
-                :key="message.id"
-                class="flex"
-                :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
-            >
-                <div :class="messageBubbleClass(message)">
-                    <div class="mb-1.5 flex items-center justify-between gap-3 text-[0.7rem] font-semibold opacity-70">
-                        <span class="font-display">{{ messageRoleLabel(message) }}</span>
-                        <span v-if="formatMessageStatus(message)">{{ formatMessageStatus(message) }}</span>
-                    </div>
+            <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                <div
+                    v-if="sortedSessions.length === 0"
+                    class="rounded-2xl border border-white/8 bg-neutral-950/54 px-3 py-4 text-sm leading-6 text-neutral-400"
+                >
+                    <p class="font-medium text-neutral-200">
+                        {{ t.chat.noSessionsTitle }}
+                    </p>
+                    <p class="mt-1 text-xs leading-5">
+                        {{ t.chat.noSessionsDescription }}
+                    </p>
+                </div>
 
-                    <div
-                        v-if="editingMessageId === message.id"
-                        class="space-y-3"
+                <div
+                    v-for="session in sortedSessions"
+                    :key="session.id"
+                    class="flex items-stretch gap-2"
+                >
+                    <ListItem
+                        class="min-w-0 flex-1"
+                        :title="formatSessionTitle(session)"
+                        :subtitle="formatSessionMessageCount(session)"
+                        :description="formatSessionDescription(session)"
+                        :selected="session.id === activeSession?.id"
+                        :disabled="chatStore.isGenerating"
+                        interactive
+                        @press="selectChatSession(session.id)"
+                    />
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        class="self-start"
+                        :aria-label="t.chat.deleteSession(formatSessionTitle(session))"
+                        :disabled="chatStore.isGenerating"
+                        @click="removeChatSession(session)"
                     >
-                        <Textarea
-                            v-model="editingContent"
-                            :aria-label="t.chat.editMessage"
-                            :rows="4"
-                            :disabled="chatStore.isGenerating"
-                        />
-                        <div class="flex flex-wrap gap-2">
+                        <svg
+                            viewBox="0 0 20 20"
+                            class="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M6 6L14 14M14 6L6 14"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                    </Button>
+                </div>
+            </div>
+        </aside>
+
+        <div class="mx-auto flex min-h-0 min-w-0 w-full max-w-3xl flex-col gap-3">
+            <header class="flex min-w-0 items-center justify-between gap-3 rounded-[1.5rem] border border-white/10 bg-neutral-900/80 px-3 py-3 backdrop-blur sm:px-4">
+                <div class="flex min-w-0 items-center gap-2">
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        class="lg:hidden"
+                        :aria-label="t.chat.sessionsOpen"
+                        @click="sessionDrawerOpen = true"
+                    >
+                        <svg
+                            viewBox="0 0 20 20"
+                            class="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M4 6H16M4 10H16M4 14H16"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                    </Button>
+
+                    <div class="min-w-0">
+                        <h1 class="truncate font-display text-lg font-semibold text-neutral-50">
+                            {{ headerTitle }}
+                        </h1>
+                        <p class="mt-0.5 truncate text-xs text-neutral-400">
+                            {{ statusMessage }}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-neutral-950/60 p-1">
+                    <button
+                        type="button"
+                        class="rounded-full px-3 py-1.5 text-xs font-medium transition"
+                        :class="adapterMode === 'demo' ? 'bg-cyan-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
+                        :disabled="chatStore.isGenerating"
+                        @click="selectDemoAdapter()"
+                    >
+                        {{ t.chat.demo }}
+                    </button>
+                    <button
+                        type="button"
+                        class="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition"
+                        :class="adapterMode === 'runtime' ? 'bg-cyan-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
+                        :disabled="chatStore.isGenerating"
+                        @click="() => activateRuntimeAdapter()"
+                    >
+                        <Spinner v-if="runtimeBusy" size="sm" tone="neutral" :label="t.chat.runtimeChecking" />
+                        {{ t.chat.runtime }}
+                    </button>
+                </div>
+            </header>
+
+            <div
+                v-if="runtimeFallbackNotice || (adapterMode === 'runtime' && !runtimeHandoff.canAttempt)"
+                class="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-2.5 text-xs leading-5 text-amber-100"
+            >
+                <span class="min-w-0">{{ runtimeFallbackNotice ?? runtimeIssueLines[0] ?? statusMessage }}</span>
+                <RouterLink
+                    to="/connection"
+                    class="inline-flex min-h-9 items-center rounded-xl border border-cyan-300/30 bg-cyan-300/15 px-3 font-medium text-cyan-100 transition hover:bg-cyan-300/25"
+                >
+                    {{ t.chat.configureConnection }}
+                </RouterLink>
+            </div>
+
+            <div
+                ref="timeline"
+                class="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-[1.5rem] border border-white/10 bg-neutral-900/55 px-3 py-5 sm:px-5"
+            >
+                <div
+                    v-if="messages.length === 0"
+                    class="flex min-h-72 flex-col items-center justify-center px-4 py-10 text-center"
+                >
+                    <div class="lamp-glow flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-300/12 text-lg font-semibold text-cyan-100">
+                        {{ characterName ? characterName.slice(0, 1) : t.chat.emptyAvatarFallback }}
+                    </div>
+                    <h3 class="mt-4 font-display text-lg font-semibold text-neutral-50">
+                        {{ t.chat.emptyTitle }}
+                    </h3>
+                    <p class="mt-2 max-w-md text-sm leading-6 text-neutral-400">
+                        {{ t.chat.emptyHint }}
+                    </p>
+                    <RouterLink
+                        v-if="!selectedCharacter"
+                        to="/characters"
+                        class="mt-5 inline-flex min-h-11 items-center rounded-xl border border-cyan-300/30 bg-cyan-300/15 px-4 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/25"
+                    >
+                        {{ t.chat.pickCharacter }}
+                    </RouterLink>
+                    <Button
+                        v-else
+                        type="button"
+                        class="mt-5"
+                        :disabled="chatStore.isGenerating"
+                        @click="startCharacterSession"
+                    >
+                        {{ t.chat.openChat }}
+                    </Button>
+                </div>
+
+                <article
+                    v-for="message in messages"
+                    :key="message.id"
+                    class="flex"
+                    :class="message.role === 'user' ? 'justify-end' : 'justify-start'"
+                >
+                    <div :class="messageBubbleClass(message)">
+                        <div class="mb-1.5 flex items-center justify-between gap-3 text-[0.7rem] font-semibold opacity-70">
+                            <span class="font-display">{{ messageRoleLabel(message) }}</span>
+                            <span v-if="formatMessageStatus(message)">{{ formatMessageStatus(message) }}</span>
+                        </div>
+
+                        <div
+                            v-if="editingMessageId === message.id"
+                            class="space-y-3"
+                        >
+                            <Textarea
+                                v-model="editingContent"
+                                :aria-label="t.chat.editMessage"
+                                :rows="4"
+                                :disabled="chatStore.isGenerating"
+                            />
+                            <div class="flex flex-wrap gap-2">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    :disabled="editingContent.trim().length === 0 || chatStore.isGenerating"
+                                    @click="saveEdit(message)"
+                                >
+                                    {{ t.common.save }}
+                                </Button>
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    :disabled="chatStore.isGenerating"
+                                    @click="cancelEdit"
+                                >
+                                    {{ t.common.cancel }}
+                                </Button>
+                            </div>
+                        </div>
+                        <p
+                            v-else
+                            class="whitespace-pre-wrap"
+                        >
+                            {{ message.content || t.chat.generatingReply }}
+                        </p>
+
+                        <p
+                            v-if="message.error"
+                            class="mt-3 rounded-xl border border-rose-400/20 bg-rose-400/12 px-3 py-2 text-xs leading-5 text-rose-100"
+                        >
+                            {{ message.error.message }}
+                        </p>
+
+                        <div
+                            v-if="message.role === 'assistant' && message.alternatives.length > 1"
+                            class="mt-3 flex flex-wrap items-center gap-1.5"
+                        >
                             <Button
                                 type="button"
                                 size="sm"
-                                :disabled="editingContent.trim().length === 0 || chatStore.isGenerating"
-                                @click="saveEdit(message)"
+                                variant="ghost"
+                                :aria-label="t.chat.prevSwipe"
+                                :disabled="!canRunMessageAction(message) || message.activeAlternativeIndex <= 0"
+                                @click="shiftSwipe(message, -1)"
                             >
-                                {{ t.common.save }}
+                                ‹
+                            </Button>
+                            <span class="text-xs text-neutral-400">
+                                {{ message.activeAlternativeIndex + 1 }} / {{ message.alternatives.length }}
+                            </span>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                :aria-label="t.chat.nextSwipe"
+                                :disabled="!canRunMessageAction(message) || message.activeAlternativeIndex >= message.alternatives.length - 1"
+                                @click="shiftSwipe(message, 1)"
+                            >
+                                ›
+                            </Button>
+                        </div>
+
+                        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+                            <Button
+                                v-if="message.role === 'assistant'"
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                :loading="isMessageActionPending(message, 'regenerate')"
+                                :disabled="!canRunMessageAction(message)"
+                                @click="runAssistantAction(message, 'regenerate')"
+                            >
+                                {{ t.chat.regenerate }}
+                            </Button>
+                            <Button
+                                v-if="message.role === 'assistant'"
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                :loading="isMessageActionPending(message, 'continue')"
+                                :disabled="!canRunMessageAction(message) || message.content.trim().length === 0"
+                                @click="runAssistantAction(message, 'continue')"
+                            >
+                                {{ t.chat.continue }}
+                            </Button>
+                            <Button
+                                v-if="message.role === 'assistant' && message.status === 'failed'"
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                :loading="isMessageActionPending(message, 'retry')"
+                                :disabled="!canRunMessageAction(message)"
+                                @click="runAssistantAction(message, 'retry')"
+                            >
+                                {{ t.chat.retry }}
                             </Button>
                             <Button
                                 type="button"
                                 size="sm"
                                 variant="ghost"
-                                :disabled="chatStore.isGenerating"
-                                @click="cancelEdit"
+                                :disabled="!canRunMessageAction(message)"
+                                @click="beginEdit(message)"
                             >
-                                {{ t.common.cancel }}
+                                {{ t.common.edit }}
                             </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                :variant="confirmingDeleteMessageId === message.id ? 'danger' : 'ghost'"
+                                :disabled="!canRunMessageAction(message)"
+                                @click="deleteChatMessage(message)"
+                            >
+                                {{ confirmingDeleteMessageId === message.id ? t.common.confirm : t.common.delete }}
+                            </Button>
+                            <span class="ml-auto text-[0.7rem] opacity-60">{{ formatDateTime(message.createdAt) }}</span>
                         </div>
                     </div>
-                    <p
+                </article>
+            </div>
+
+            <form
+                class="safe-bottom rounded-[1.6rem] border border-white/10 bg-neutral-900/85 p-2 backdrop-blur"
+                @submit.prevent="sendMessage"
+            >
+                <div class="flex items-end gap-2">
+                    <Textarea
+                        v-model="composer"
+                        data-testid="chat-composer"
+                        :aria-label="t.chat.messageLabel"
+                        :placeholder="t.chat.composerPlaceholder"
+                        :rows="2"
+                        :disabled="chatStore.isGenerating"
+                        class="flex-1"
+                    />
+                    <Button
+                        v-if="chatStore.isGenerating"
+                        type="button"
+                        variant="danger"
+                        @click="stopGeneration"
+                    >
+                        {{ t.common.stop }}
+                    </Button>
+                    <Button
                         v-else
-                        class="whitespace-pre-wrap"
+                        type="submit"
+                        data-testid="send-message-button"
+                        :disabled="!canSend"
                     >
-                        {{ message.content || t.chat.generatingReply }}
-                    </p>
-
-                    <p
-                        v-if="message.error"
-                        class="mt-3 rounded-xl border border-rose-400/20 bg-rose-400/12 px-3 py-2 text-xs leading-5 text-rose-100"
-                    >
-                        {{ message.error.message }}
-                    </p>
-
-                    <!-- swipe 切换 -->
-                    <div
-                        v-if="message.role === 'assistant' && message.alternatives.length > 1"
-                        class="mt-3 flex flex-wrap items-center gap-1.5"
-                    >
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            :aria-label="t.chat.prevSwipe"
-                            :disabled="!canRunMessageAction(message) || message.activeAlternativeIndex <= 0"
-                            @click="shiftSwipe(message, -1)"
-                        >
-                            ‹
-                        </Button>
-                        <span class="text-xs text-neutral-400">
-                            {{ message.activeAlternativeIndex + 1 }} / {{ message.alternatives.length }}
-                        </span>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            :aria-label="t.chat.nextSwipe"
-                            :disabled="!canRunMessageAction(message) || message.activeAlternativeIndex >= message.alternatives.length - 1"
-                            @click="shiftSwipe(message, 1)"
-                        >
-                            ›
-                        </Button>
-                    </div>
-
-                    <!-- 操作 -->
-                    <div class="mt-3 flex flex-wrap items-center gap-1.5">
-                        <Button
-                            v-if="message.role === 'assistant'"
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            :loading="isMessageActionPending(message, 'regenerate')"
-                            :disabled="!canRunMessageAction(message)"
-                            @click="runAssistantAction(message, 'regenerate')"
-                        >
-                            {{ t.chat.regenerate }}
-                        </Button>
-                        <Button
-                            v-if="message.role === 'assistant'"
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            :loading="isMessageActionPending(message, 'continue')"
-                            :disabled="!canRunMessageAction(message) || message.content.trim().length === 0"
-                            @click="runAssistantAction(message, 'continue')"
-                        >
-                            {{ t.chat.continue }}
-                        </Button>
-                        <Button
-                            v-if="message.role === 'assistant' && message.status === 'failed'"
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            :loading="isMessageActionPending(message, 'retry')"
-                            :disabled="!canRunMessageAction(message)"
-                            @click="runAssistantAction(message, 'retry')"
-                        >
-                            {{ t.chat.retry }}
-                        </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            :disabled="!canRunMessageAction(message)"
-                            @click="beginEdit(message)"
-                        >
-                            {{ t.common.edit }}
-                        </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            :variant="confirmingDeleteMessageId === message.id ? 'danger' : 'ghost'"
-                            :disabled="!canRunMessageAction(message)"
-                            @click="deleteChatMessage(message)"
-                        >
-                            {{ confirmingDeleteMessageId === message.id ? t.common.confirm : t.common.delete }}
-                        </Button>
-                        <span class="ml-auto text-[0.7rem] opacity-60">{{ formatDateTime(message.createdAt) }}</span>
-                    </div>
+                        {{ t.common.send }}
+                    </Button>
                 </div>
-            </article>
+                <p class="px-2 pt-1.5 text-xs leading-5 text-neutral-500">
+                    <template v-if="selectedCharacter">
+                        {{ t.chat.speakingWith(selectedCharacter.card.name) }}
+                        <span v-if="selectedWorldbook">{{ t.chat.worldbookSummary(selectedWorldbook.worldbook.name, lorebookEntryCount) }}</span>
+                    </template>
+                    <template v-else>
+                        {{ t.chat.noCharacterHint }}
+                    </template>
+                </p>
+            </form>
         </div>
 
-        <!-- 输入区 -->
-        <form
-            class="safe-bottom rounded-[1.6rem] border border-white/10 bg-neutral-900/85 p-2 backdrop-blur"
-            @submit.prevent="sendMessage"
+        <Drawer
+            v-model:open="sessionDrawerOpen"
+            :title="t.chat.sessionsTitle"
+            :description="t.chat.sessionCount(sortedSessions.length)"
+            placement="bottom"
+            size="lg"
         >
-            <div class="flex items-end gap-2">
-                <Textarea
-                    v-model="composer"
-                    data-testid="chat-composer"
-                    :aria-label="t.chat.messageLabel"
-                    :placeholder="t.chat.composerPlaceholder"
-                    :rows="2"
-                    :disabled="chatStore.isGenerating"
-                    class="flex-1"
-                />
+            <div class="grid gap-3">
                 <Button
-                    v-if="chatStore.isGenerating"
                     type="button"
-                    variant="danger"
-                    @click="stopGeneration"
+                    block
+                    :disabled="chatStore.isGenerating"
+                    @click="startFreshSession"
                 >
-                    {{ t.common.stop }}
+                    {{ t.chat.newSession }}
                 </Button>
-                <Button
-                    v-else
-                    type="submit"
-                    data-testid="send-message-button"
-                    :disabled="!canSend"
+
+                <div
+                    v-if="sortedSessions.length === 0"
+                    class="rounded-2xl border border-white/8 bg-neutral-950/54 px-3 py-4 text-sm leading-6 text-neutral-400"
                 >
-                    {{ t.common.send }}
-                </Button>
+                    <p class="font-medium text-neutral-200">
+                        {{ t.chat.noSessionsTitle }}
+                    </p>
+                    <p class="mt-1 text-xs leading-5">
+                        {{ t.chat.noSessionsDescription }}
+                    </p>
+                </div>
+
+                <div
+                    v-for="session in sortedSessions"
+                    :key="`drawer-${session.id}`"
+                    class="flex items-stretch gap-2"
+                >
+                    <ListItem
+                        class="min-w-0 flex-1"
+                        :title="formatSessionTitle(session)"
+                        :subtitle="formatSessionMessageCount(session)"
+                        :description="formatSessionDescription(session)"
+                        :selected="session.id === activeSession?.id"
+                        :disabled="chatStore.isGenerating"
+                        interactive
+                        @press="selectChatSession(session.id)"
+                    />
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        class="self-start"
+                        :aria-label="t.chat.deleteSession(formatSessionTitle(session))"
+                        :disabled="chatStore.isGenerating"
+                        @click="removeChatSession(session)"
+                    >
+                        <svg
+                            viewBox="0 0 20 20"
+                            class="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M6 6L14 14M14 6L6 14"
+                                stroke-linecap="round"
+                            />
+                        </svg>
+                    </Button>
+                </div>
             </div>
-            <p class="px-2 pt-1.5 text-xs leading-5 text-neutral-500">
-                <template v-if="selectedCharacter">
-                    {{ t.chat.speakingWith(selectedCharacter.card.name) }}
-                    <span v-if="selectedWorldbook">{{ t.chat.worldbookSummary(selectedWorldbook.worldbook.name, lorebookEntryCount) }}</span>
-                </template>
-                <template v-else>
-                    {{ t.chat.noCharacterHint }}
-                </template>
-            </p>
-        </form>
+        </Drawer>
     </section>
 </template>
