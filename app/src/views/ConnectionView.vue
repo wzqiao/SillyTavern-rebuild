@@ -6,9 +6,11 @@ import type {
     ReforgedConnectionDraft,
     ReforgedConnectionDraftStatus,
     ReforgedConnectionRuntimeHandoffIssue,
+    ReforgedConnectionRuntimeHandoffIssueCode,
     ReforgedConnectionRuntimeHandoffStatus,
     ReforgedConnectionValidationIssue,
 } from '@/contracts/connection';
+import { useI18n } from '@/i18n';
 import { setConnectionDraftApiKeySecret, useConnectionStore } from '@/stores/connectionStore';
 import { Button, Input, Select } from '@/ui-kit';
 
@@ -27,60 +29,40 @@ interface DisplayIssue {
     message: string;
 }
 
-const providerOptions: ReforgedSelectOption[] = [
+const { t, locale } = useI18n();
+const connectionStore = useConnectionStore();
+
+const providerOptions = computed<ReforgedSelectOption[]>(() => [
     {
         value: 'openai-compatible',
-        label: 'OpenAI-compatible',
-        description: 'Use the same-origin SillyTavern backend chat-completions seam.',
+        label: t.value.connection.providerOpenAI,
+        description: t.value.connection.providerOpenAIDescription,
     },
-];
+]);
 
-const statusCopy: Record<ConnectionStatus, StatusCopy> = {
-    empty: {
-        label: 'Empty',
-        title: 'No draft yet',
-        description: 'Add a base URL, model, and memory-only API key before applying a Runtime configuration.',
-        tone: 'neutral',
-    },
-    incomplete: {
-        label: 'Incomplete',
-        title: 'Draft needs attention',
-        description: 'Fix the highlighted fields before this connection can be applied.',
-        tone: 'danger',
-    },
-    complete: {
-        label: 'Complete draft',
-        title: 'Ready to apply',
-        description: 'The draft validates locally. Apply it to make it available to Runtime mode.',
-        tone: 'warning',
-    },
-    applied: {
-        label: 'Applied',
-        title: 'Configuration applied',
-        description: 'This draft is in memory and matches the currently edited form.',
-        tone: 'success',
-    },
-    'complete-unapplied': {
-        label: 'Complete, unapplied',
-        title: 'Apply the draft',
-        description: 'The form is valid, but Runtime mode will not use it until you apply it.',
-        tone: 'warning',
-    },
-    'applied-but-unwired': {
-        label: 'Applied, waiting',
-        title: 'Runtime path is not ready',
-        description: 'The draft is applied, but the direct request path is not available from this page state.',
-        tone: 'warning',
-    },
-    'ready-to-attempt': {
-        label: 'Ready to attempt',
-        title: 'Runtime handoff ready',
-        description: 'The applied draft can be handed to Runtime mode for a same-origin request attempt.',
-        tone: 'success',
-    },
+const statusTone: Record<ConnectionStatus, ReforgedUiTone> = {
+    empty: 'neutral',
+    incomplete: 'danger',
+    complete: 'warning',
+    applied: 'success',
+    'complete-unapplied': 'warning',
+    'applied-but-unwired': 'warning',
+    'ready-to-attempt': 'success',
 };
 
-const connectionStore = useConnectionStore();
+const statusCopy = computed<Record<ConnectionStatus, StatusCopy>>(() => {
+    const source = t.value.connection.status;
+
+    return {
+        empty: { ...source.empty, tone: statusTone.empty },
+        incomplete: { ...source.incomplete, tone: statusTone.incomplete },
+        complete: { ...source.complete, tone: statusTone.complete },
+        applied: { ...source.applied, tone: statusTone.applied },
+        'complete-unapplied': { ...source['complete-unapplied'], tone: statusTone['complete-unapplied'] },
+        'applied-but-unwired': { ...source['applied-but-unwired'], tone: statusTone['applied-but-unwired'] },
+        'ready-to-attempt': { ...source['ready-to-attempt'], tone: statusTone['ready-to-attempt'] },
+    };
+});
 
 const applyMessage = ref<string | null>(null);
 const applyIssues = ref<ReforgedConnectionValidationIssue[]>([]);
@@ -100,19 +82,19 @@ const activeStatus = computed<ConnectionStatus>(() => {
 
     return runtimeStatus.value;
 });
-const activeStatusCopy = computed(() => statusCopy[activeStatus.value]);
-const draftStatusCopy = computed(() => statusCopy[draftStatus.value]);
-const runtimeStatusCopy = computed(() => statusCopy[runtimeStatus.value]);
+const activeStatusCopy = computed(() => statusCopy.value[activeStatus.value]);
+const draftStatusCopy = computed(() => statusCopy.value[draftStatus.value]);
+const runtimeStatusCopy = computed(() => statusCopy.value[runtimeStatus.value]);
 const activeIssues = computed<DisplayIssue[]>(() => [
     ...connectionStore.draftErrors.map((issue) => ({
         id: `draft-${issue.field}`,
-        message: issue.message,
+        message: translateDraftIssue(issue),
     })),
     ...runtimeHandoff.value.issues
         .filter((issue) => !hasDraftIssue(issue))
         .map((issue) => ({
             id: `runtime-${issue.code}-${issue.field ?? 'runtime'}`,
-            message: issue.message,
+            message: translateRuntimeIssue(issue),
         })),
 ]);
 const appliedSummary = computed(() => {
@@ -122,11 +104,11 @@ const appliedSummary = computed(() => {
     }
 
     return [
-        { label: 'Provider', value: providerLabel(applied.provider) },
-        { label: 'Base URL', value: applied.baseUrl },
-        { label: 'Model', value: applied.model },
-        { label: 'Key', value: applied.apiKey.maskedValue || 'metadata unavailable' },
-        { label: 'Applied', value: new Date(applied.appliedAt).toLocaleString() },
+        { label: t.value.connection.summaryLabels.provider, value: providerLabel(applied.provider) },
+        { label: t.value.connection.summaryLabels.baseUrl, value: applied.baseUrl },
+        { label: t.value.connection.summaryLabels.model, value: applied.model },
+        { label: t.value.connection.summaryLabels.key, value: applied.apiKey.maskedValue || t.value.connection.messages.metadataUnavailable },
+        { label: t.value.connection.summaryLabels.applied, value: new Date(applied.appliedAt).toLocaleString(locale.value === 'zh' ? 'zh-CN' : 'en-US') },
     ];
 });
 
@@ -139,7 +121,7 @@ const fieldErrors = computed<Record<ConnectionField, string>>(() => {
     };
 
     for (const issue of connectionStore.draftErrors) {
-        errors[issue.field] = issue.message;
+        errors[issue.field] = translateDraftIssue(issue);
     }
 
     return errors;
@@ -177,7 +159,11 @@ function updateApiKey(value: string): void {
 
 function applyConfiguration(): void {
     const result = connectionStore.applyDraft(new Date().toISOString());
-    applyMessage.value = result.message;
+    applyMessage.value = result.ok
+        ? t.value.connection.messages.applySuccess
+        : result.issues[0]
+            ? translateDraftIssue(result.issues[0])
+            : t.value.connection.messages.applyIncomplete;
     applyIssues.value = result.ok ? [] : result.issues;
 
     if (result.ok) {
@@ -189,27 +175,27 @@ function resetDraft(): void {
     connectionStore.resetDraft();
     apiKeyInput.value = '';
     applyMessage.value = connectionStore.hasAppliedDraft
-        ? 'Draft reset to the applied in-memory configuration.'
-        : 'Draft reset. No connection configuration is applied.';
+        ? t.value.connection.messages.resetToApplied
+        : t.value.connection.messages.resetEmpty;
     applyIssues.value = [];
 }
 
 function clearKey(): void {
     connectionStore.clearApiKey();
     apiKeyInput.value = '';
-    applyMessage.value = 'API key cleared from the transient vault. Re-enter a key before applying again.';
+    applyMessage.value = t.value.connection.messages.keyCleared;
     applyIssues.value = [];
 }
 
 function clearAll(): void {
     connectionStore.clearAll();
     apiKeyInput.value = '';
-    applyMessage.value = 'Connection draft and memory-only key metadata cleared.';
+    applyMessage.value = t.value.connection.messages.allCleared;
     applyIssues.value = [];
 }
 
 function providerLabel(value: ReforgedConnectionDraft['provider']): string {
-    return providerOptions.find((option) => option.value === value)?.label ?? value;
+    return providerOptions.value.find((option) => option.value === value)?.label ?? value;
 }
 
 function statusBadgeClass(tone: ReforgedUiTone): string {
@@ -239,6 +225,44 @@ function statusSurfaceClass(tone: ReforgedUiTone): string {
 function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
     return issue.code === 'draft-empty' || issue.code === 'draft-incomplete' || issue.code === 'draft-unapplied';
 }
+
+function translateDraftIssue(issue: ReforgedConnectionValidationIssue): string {
+    if (issue.field === 'baseUrl') {
+        return connectionStore.draft.baseUrl.trim()
+            ? t.value.connection.issues.baseUrlProtocol
+            : t.value.connection.issues.baseUrlRequired;
+    }
+
+    if (issue.field === 'model') {
+        return t.value.connection.issues.modelRequired;
+    }
+
+    if (issue.field === 'apiKey') {
+        return issue.message.includes('metadata')
+            ? t.value.connection.issues.secretUnavailable
+            : t.value.connection.issues.apiKeyRequired;
+    }
+
+    return t.value.connection.issues.provider;
+}
+
+function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): string {
+    if (issue.code === 'draft-incomplete' && issue.field) {
+        return translateDraftIssue({ field: issue.field, message: issue.message });
+    }
+
+    const issueMap: Record<ReforgedConnectionRuntimeHandoffIssueCode, string> = {
+        'draft-empty': t.value.connection.issues.draftEmpty,
+        'draft-incomplete': t.value.connection.messages.applyIncomplete,
+        'draft-unapplied': t.value.connection.issues.draftUnapplied,
+        'runtime-unwired': t.value.connection.issues.runtimeUnwired,
+        'runtime-connection-unwired': issue.field === 'apiKey'
+            ? t.value.connection.issues.apiKeyUnavailable
+            : t.value.connection.issues.runtimeConnectionUnwired,
+    };
+
+    return issueMap[issue.code];
+}
 </script>
 
 <template>
@@ -246,26 +270,25 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
         <header class="grid gap-4 rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-5 shadow-[0_24px_120px_rgba(0,0,0,0.46)] backdrop-blur-xl sm:p-6 lg:grid-cols-[minmax(0,1fr)_18rem] lg:items-end">
             <div>
                 <p class="text-xs font-semibold uppercase text-cyan-200">
-                    Connection
+                    {{ t.connection.headerEyebrow }}
                 </p>
                 <h1 class="mt-3 text-3xl font-semibold text-white sm:text-4xl">
-                    Configure Runtime access
+                    {{ t.connection.headerTitle }}
                 </h1>
                 <p class="mt-3 max-w-3xl text-sm leading-6 text-neutral-300">
-                    Set up one OpenAI-compatible endpoint, keep the key in the transient vault, and apply it to the
-                    memory-only Runtime handoff.
+                    {{ t.connection.headerDescription }}
                 </p>
             </div>
 
             <div class="rounded-2xl border p-4" :class="statusSurfaceClass(activeStatusCopy.tone)">
                 <p class="text-xs font-semibold uppercase">
-                    Current status
+                    {{ t.connection.currentStatus }}
                 </p>
                 <p class="mt-2 text-lg font-semibold">
                     {{ activeStatusCopy.label }}
                 </p>
                 <p class="mt-2 text-xs leading-5 opacity-85">
-                    {{ runtimeHandoff.message }}
+                    {{ activeStatusCopy.description }}
                 </p>
             </div>
         </header>
@@ -278,10 +301,10 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <p class="text-sm font-semibold text-white">
-                            Provider draft
+                            {{ t.connection.draftTitle }}
                         </p>
                         <p class="mt-1 text-sm leading-6 text-neutral-400">
-                            First pass supports OpenAI-compatible backends through the direct backend seam.
+                            {{ t.connection.draftDescription }}
                         </p>
                     </div>
                     <span
@@ -296,7 +319,7 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                     <Select
                         :model-value="connectionStore.draft.provider"
                         :options="providerOptions"
-                        label="Provider"
+                        :label="t.connection.fields.provider"
                         required
                         @update:model-value="updateProvider"
                     />
@@ -304,8 +327,8 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                     <Input
                         :model-value="connectionStore.draft.baseUrl"
                         :error="fieldErrors.baseUrl"
-                        label="Base URL"
-                        placeholder="https://api.example.com/v1"
+                        :label="t.connection.fields.baseUrl"
+                        :placeholder="t.connection.fields.baseUrlPlaceholder"
                         inputmode="url"
                         autocomplete="off"
                         required
@@ -316,8 +339,8 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                     <Input
                         :model-value="connectionStore.draft.model"
                         :error="fieldErrors.model"
-                        label="Model"
-                        placeholder="gpt-4.1-compatible"
+                        :label="t.connection.fields.model"
+                        :placeholder="t.connection.fields.modelPlaceholder"
                         autocomplete="off"
                         required
                         data-testid="connection-model-input"
@@ -327,9 +350,9 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                     <Input
                         :model-value="apiKeyInput"
                         :error="fieldErrors.apiKey"
-                        :hint="connectionStore.maskedApiKey ? `Current key metadata: ${connectionStore.maskedApiKey}` : 'Stored only in memory; not persisted or placed in Pinia state.'"
-                        label="API key"
-                        placeholder="Paste API key"
+                        :hint="connectionStore.maskedApiKey ? t.connection.fields.apiKeyStoredHint.replace('{key}', connectionStore.maskedApiKey) : t.connection.fields.apiKeyEmptyHint"
+                        :label="t.connection.fields.apiKey"
+                        :placeholder="t.connection.fields.apiKeyPlaceholder"
                         type="password"
                         autocomplete="off"
                         required
@@ -344,28 +367,28 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                         block
                         data-testid="connection-apply-button"
                     >
-                        Apply configuration
+                        {{ t.connection.actions.apply }}
                     </Button>
                     <Button
                         variant="secondary"
                         block
                         @click="resetDraft"
                     >
-                        Reset draft
+                        {{ t.connection.actions.resetDraft }}
                     </Button>
                     <Button
                         variant="outline"
                         block
                         @click="clearKey"
                     >
-                        Clear key
+                        {{ t.connection.actions.clearKey }}
                     </Button>
                     <Button
                         variant="ghost"
                         block
                         @click="clearAll"
                     >
-                        Clear all
+                        {{ t.connection.actions.clearAll }}
                     </Button>
                 </div>
 
@@ -386,7 +409,7 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                             v-for="issue in applyIssues"
                             :key="`${issue.field}-${issue.message}`"
                         >
-                            {{ issue.message }}
+                            {{ translateDraftIssue(issue) }}
                         </li>
                     </ul>
                 </div>
@@ -397,7 +420,7 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                     <div class="flex items-start justify-between gap-3">
                         <div>
                             <p class="text-sm font-semibold text-white">
-                                Runtime handoff
+                                {{ t.connection.handoffTitle }}
                             </p>
                             <p class="mt-1 text-sm leading-6 text-neutral-400">
                                 {{ activeStatusCopy.title }}
@@ -433,16 +456,16 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                             variant="outline"
                             block
                             disabled
-                            aria-label="Test connection is not connected yet"
+                            :aria-label="t.connection.actions.testDisabled"
                         >
-                            Test connection: not connected
+                            {{ t.connection.actions.testDisabled }}
                         </Button>
                     </div>
                 </section>
 
                 <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.42)] sm:p-5">
                     <p class="text-sm font-semibold text-white">
-                        Applied configuration
+                        {{ t.connection.appliedConfiguration }}
                     </p>
 
                     <dl
@@ -467,22 +490,22 @@ function hasDraftIssue(issue: ReforgedConnectionRuntimeHandoffIssue): boolean {
                         v-else
                         class="mt-4 rounded-2xl border border-white/8 bg-neutral-950/70 px-3 py-3 text-sm leading-6 text-neutral-400"
                     >
-                        No applied draft yet. Complete the form and apply it before switching chat to Runtime mode.
+                        {{ t.connection.messages.noAppliedDraft }}
                     </p>
                 </section>
 
                 <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/92 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.42)] sm:p-5">
                     <p class="text-sm font-semibold text-white">
-                        Next step
+                        {{ t.connection.nextStepTitle }}
                     </p>
                     <p class="mt-2 text-sm leading-6 text-neutral-400">
-                        Once the handoff is ready, move to chat and use Runtime mode for the actual request attempt.
+                        {{ t.connection.nextStepDescription }}
                     </p>
                     <RouterLink
                         to="/chat"
                         class="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-2xl border border-white/12 bg-white/8 px-4 text-sm font-medium text-neutral-100 transition hover:bg-white/12"
                     >
-                        Continue to chat
+                        {{ t.connection.actions.continueChat }}
                     </RouterLink>
                 </section>
             </aside>

@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { ReforgedSelectOption } from '@/contracts/ui';
+import { useI18n } from '@/i18n';
 import { Button, Collapse, Input, Select, Switch } from '@/ui-kit';
+
+const { t } = useI18n();
 
 const density = ref('comfortable');
 const compactMode = ref(false);
@@ -13,16 +16,16 @@ const temperature = ref('0.80');
 const topP = ref('0.95');
 const contextReserve = ref('1200');
 
-const densityOptions: ReforgedSelectOption[] = [
-    { value: 'comfortable', label: 'Comfortable' },
-    { value: 'compact', label: 'Compact preview' },
-];
+const densityOptions = computed<ReforgedSelectOption[]>(() => [
+    { value: 'comfortable', label: t.value.settings.densityOptions.comfortable },
+    { value: 'compact', label: t.value.settings.densityOptions.compact },
+]);
 
-const samplingPresetOptions: ReforgedSelectOption[] = [
-    { value: 'balanced', label: 'Balanced draft' },
-    { value: 'creative', label: 'Creative draft' },
-    { value: 'precise', label: 'Precise draft' },
-];
+const samplingPresetOptions = computed<ReforgedSelectOption[]>(() => [
+    { value: 'balanced', label: t.value.settings.samplingPresetOptions.balanced },
+    { value: 'creative', label: t.value.settings.samplingPresetOptions.creative },
+    { value: 'precise', label: t.value.settings.samplingPresetOptions.precise },
+]);
 
 const localPreviewCount = computed(() => [
     compactMode.value,
@@ -50,22 +53,22 @@ function resetLocalPreview(): void {
             <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                 <div class="min-w-0">
                     <p class="text-xs font-semibold uppercase text-cyan-100/80">
-                        Preferences
+                        {{ t.settings.headerEyebrow }}
                     </p>
                     <h1 class="mt-2 text-2xl font-bold text-white sm:text-3xl">
-                        Settings
+                        {{ t.settings.headerTitle }}
                     </h1>
                     <p class="mt-3 max-w-2xl text-sm leading-6 text-neutral-300">
-                        Simple controls stay visible. Advanced generation placeholders stay folded until the engine settings contract lands.
+                        {{ t.settings.headerDescription }}
                     </p>
                 </div>
 
                 <div class="flex shrink-0 items-center gap-2">
                     <span class="rounded-full border border-amber-300/25 bg-amber-300/10 px-3 py-1.5 text-xs font-semibold text-amber-100">
-                        Local preview
+                        {{ t.settings.localPreview }}
                     </span>
                     <span class="rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-xs font-semibold text-neutral-200">
-                        {{ localPreviewCount }} changed
+                        {{ t.settings.changedCount(localPreviewCount) }}
                     </span>
                 </div>
             </div>
@@ -77,14 +80,14 @@ function resetLocalPreview(): void {
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                             <h2 class="text-lg font-semibold text-white">
-                                Simple
+                                {{ t.settings.simpleTitle }}
                             </h2>
                             <p class="mt-1 text-sm leading-6 text-neutral-400">
-                                Local UI preferences for the first settings pass.
+                                {{ t.settings.simpleDescription }}
                             </p>
                         </div>
                         <span class="w-fit rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-xs font-semibold text-cyan-100">
-                            Not persisted
+                            {{ t.settings.notPersisted }}
                         </span>
                     </div>
 
@@ -92,52 +95,52 @@ function resetLocalPreview(): void {
                         <Select
                             v-model="density"
                             :options="densityOptions"
-                            label="Interface density"
-                            hint="Applies to this page preview only."
+                            :label="t.settings.fields.density"
+                            :hint="t.settings.fields.densityHint"
                         />
 
                         <Switch
                             v-model="compactMode"
-                            label="Compact mode"
-                            description="Local preview for tighter page spacing."
+                            :label="t.settings.fields.compactMode"
+                            :description="t.settings.fields.compactModeDescription"
                         />
 
                         <Switch
                             v-model="showDiagnostics"
-                            label="Show diagnostics"
-                            description="Local preview for surfacing adapter and prompt status later."
+                            :label="t.settings.fields.showDiagnostics"
+                            :description="t.settings.fields.showDiagnosticsDescription"
                             tone="warning"
                         />
 
                         <Switch
                             v-model="reduceMotion"
-                            label="Reduce motion"
-                            description="Local preview for future app-wide motion preferences."
+                            :label="t.settings.fields.reduceMotion"
+                            :description="t.settings.fields.reduceMotionDescription"
                         />
                     </div>
                 </section>
 
                 <Collapse
                     v-model="advancedOpen"
-                    title="Advanced"
-                    description="Generation and prompt placeholders. These controls are not connected to the runtime."
+                    :title="t.settings.advancedTitle"
+                    :description="t.settings.advancedDescription"
                     tone="warning"
                 >
                     <div class="grid gap-4">
                         <div class="rounded-[1.25rem] border border-amber-300/20 bg-amber-300/10 p-4">
                             <p class="text-sm font-semibold text-amber-100">
-                                Not connected to engine
+                                {{ t.settings.notConnectedTitle }}
                             </p>
                             <p class="mt-2 text-sm leading-6 text-amber-50/80">
-                                These values are reserved for the future settings contract and do not change chat, worldbook, or connection behavior.
+                                {{ t.settings.notConnectedDescription }}
                             </p>
                         </div>
 
                         <Select
                             v-model="samplingPreset"
                             :options="samplingPresetOptions"
-                            label="Sampling preset"
-                            hint="Draft-only placeholder."
+                            :label="t.settings.fields.samplingPreset"
+                            :hint="t.settings.fields.draftOnly"
                             disabled
                             tone="warning"
                         />
@@ -145,24 +148,24 @@ function resetLocalPreview(): void {
                         <div class="grid gap-4 sm:grid-cols-3">
                             <Input
                                 v-model="temperature"
-                                label="Temperature"
-                                hint="Placeholder"
+                                :label="t.settings.fields.temperature"
+                                :hint="t.settings.fields.placeholder"
                                 inputmode="decimal"
                                 disabled
                                 tone="warning"
                             />
                             <Input
                                 v-model="topP"
-                                label="Top P"
-                                hint="Placeholder"
+                                :label="t.settings.fields.topP"
+                                :hint="t.settings.fields.placeholder"
                                 inputmode="decimal"
                                 disabled
                                 tone="warning"
                             />
                             <Input
                                 v-model="contextReserve"
-                                label="Context reserve"
-                                hint="Placeholder"
+                                :label="t.settings.fields.contextReserve"
+                                :hint="t.settings.fields.placeholder"
                                 inputmode="numeric"
                                 disabled
                                 tone="warning"
@@ -175,31 +178,31 @@ function resetLocalPreview(): void {
             <aside class="grid gap-4 lg:content-start">
                 <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/90 p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)]">
                     <h2 class="text-base font-semibold text-white">
-                        Status
+                        {{ t.settings.statusTitle }}
                     </h2>
                     <dl class="mt-4 grid gap-3 text-sm">
                         <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
                             <dt class="text-neutral-400">
-                                Store
+                                {{ t.settings.statusRows.store }}
                             </dt>
                             <dd class="font-semibold text-amber-100">
-                                Not added
+                                {{ t.settings.statusRows.notAdded }}
                             </dd>
                         </div>
                         <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
                             <dt class="text-neutral-400">
-                                Advanced
+                                {{ t.settings.statusRows.advanced }}
                             </dt>
                             <dd class="font-semibold text-neutral-100">
-                                {{ advancedOpen ? 'Open' : 'Closed' }}
+                                {{ advancedOpen ? t.settings.statusRows.open : t.settings.statusRows.closed }}
                             </dd>
                         </div>
                         <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
                             <dt class="text-neutral-400">
-                                Runtime
+                                {{ t.settings.statusRows.runtime }}
                             </dt>
                             <dd class="font-semibold text-amber-100">
-                                Unchanged
+                                {{ t.settings.statusRows.unchanged }}
                             </dd>
                         </div>
                     </dl>
@@ -210,7 +213,7 @@ function resetLocalPreview(): void {
                     block
                     @click="resetLocalPreview"
                 >
-                    Reset local preview
+                    {{ t.settings.resetLocalPreview }}
                 </Button>
             </aside>
         </div>

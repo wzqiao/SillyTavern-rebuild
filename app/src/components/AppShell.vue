@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { RouterLink, RouterView, useRoute } from 'vue-router';
+import { useI18n } from '@/i18n';
 
 type PrimaryNavigationItem = {
   to: string;
@@ -10,56 +11,56 @@ type PrimaryNavigationItem = {
   description: string;
 };
 
+const { t } = useI18n();
 const route = useRoute();
 
-const primaryNavigation: PrimaryNavigationItem[] = [
+const primaryNavigation = computed<PrimaryNavigationItem[]>(() => [
   {
     to: '/chat',
-    label: 'Chat',
-    shortLabel: 'Chat',
-    eyebrow: 'Play',
-    description: 'Streaming conversation, composer controls, and swipe actions live here.',
+    label: t.value.nav.chat,
+    shortLabel: t.value.nav.chat,
+    eyebrow: t.value.shell.navEyebrows.chat,
+    description: t.value.shell.navDescriptions.chat,
   },
   {
     to: '/characters',
-    label: 'Characters',
-    shortLabel: 'Chars',
-    eyebrow: 'Cast',
-    description: 'Import, browse, and select character cards without crowding the chat surface.',
+    label: t.value.nav.characters,
+    shortLabel: t.value.nav.characters,
+    eyebrow: t.value.shell.navEyebrows.characters,
+    description: t.value.shell.navDescriptions.characters,
   },
   {
     to: '/worldbooks',
-    label: 'Worldbooks',
-    shortLabel: 'Worlds',
-    eyebrow: 'Lore',
-    description: 'Worldbook activation and preview get their own focused workspace.',
+    label: t.value.nav.worldbooks,
+    shortLabel: t.value.nav.worldbooks,
+    eyebrow: t.value.shell.navEyebrows.worldbooks,
+    description: t.value.shell.navDescriptions.worldbooks,
   },
   {
     to: '/connection',
-    label: 'Connection',
-    shortLabel: 'API',
-    eyebrow: 'Link',
-    description: 'Provider setup and runtime readiness checks move out of the old all-in-one panel.',
+    label: t.value.nav.connection,
+    shortLabel: t.value.nav.connection,
+    eyebrow: t.value.shell.navEyebrows.connection,
+    description: t.value.shell.navDescriptions.connection,
   },
   {
     to: '/settings',
-    label: 'Settings',
-    shortLabel: 'Prefs',
-    eyebrow: 'Tune',
-    description: 'Simple defaults first, advanced controls later through progressive disclosure.',
+    label: t.value.nav.settings,
+    shortLabel: t.value.nav.settings,
+    eyebrow: t.value.shell.navEyebrows.settings,
+    description: t.value.shell.navDescriptions.settings,
   },
-];
-
-const currentNavigationItem = computed(() => primaryNavigation.find((item) => isCurrentPath(item.to)) ?? null);
+]);
+const currentNavigationItem = computed(() => primaryNavigation.value.find((item) => isCurrentPath(item.to)) ?? null);
 const currentTitle = computed(() => (
-  typeof route.meta.title === 'string'
-    ? route.meta.title
-    : currentNavigationItem.value?.label ?? 'Workspace'
+  currentNavigationItem.value?.label ??
+  (route.name === 'dev-home' ? t.value.nav.dev : null) ??
+  (typeof route.meta.title === 'string' ? route.meta.title : t.value.app.name)
 ));
 const currentDescription = computed(() => (
-  typeof route.meta.description === 'string'
-    ? route.meta.description
-    : currentNavigationItem.value?.description ?? 'Responsive app shell for ST-Reforged.'
+  currentNavigationItem.value?.description ??
+  (route.name === 'dev-home' ? t.value.shell.debugDescription : null) ??
+  (typeof route.meta.description === 'string' ? route.meta.description : t.value.app.tagline)
 ));
 
 function isCurrentPath(to: string): boolean {
@@ -78,17 +79,17 @@ function isCurrentPath(to: string): boolean {
           class="rounded-[2rem] border border-amber-300/20 bg-amber-200/10 px-5 py-5 transition hover:border-amber-200/40 hover:bg-amber-200/14"
         >
           <p class="text-[0.68rem] font-black uppercase tracking-[0.28em] text-amber-100/75">
-            ST-Reforged
+            {{ t.shell.brandEyebrow }}
           </p>
-          <h1 class="mt-3 text-2xl font-black tracking-[-0.05em] text-white">
-            Mobile-first shell
+          <h1 class="mt-3 font-display text-2xl font-black text-white">
+            {{ t.shell.brandTitle }}
           </h1>
           <p class="mt-3 text-sm leading-7 text-neutral-300">
-            A dedicated entry frame for chat, connection, characters, and lore instead of one oversized workbench.
+            {{ t.shell.brandDescription }}
           </p>
         </RouterLink>
 
-        <nav class="mt-8 space-y-3" aria-label="Primary">
+        <nav class="mt-8 space-y-3" :aria-label="t.nav.primary">
           <RouterLink
             v-for="item in primaryNavigation"
             :key="item.to"
@@ -124,19 +125,19 @@ function isCurrentPath(to: string): boolean {
 
         <div class="mt-auto rounded-[1.8rem] border border-white/10 bg-white/[0.05] p-5">
           <p class="text-[0.66rem] font-black uppercase tracking-[0.24em] text-teal-200/80">
-            Debug
+            {{ t.shell.debugEyebrow }}
           </p>
           <p class="mt-3 text-lg font-bold text-white">
-            Legacy workbench stays reachable.
+            {{ t.shell.debugTitle }}
           </p>
           <p class="mt-2 text-sm leading-6 text-neutral-300">
-            Main flows now live in the dedicated product pages. `/dev` is kept only for adapter and regression debugging.
+            {{ t.shell.debugDescription }}
           </p>
           <RouterLink
             to="/dev"
             class="mt-4 inline-flex items-center rounded-full border border-white/15 bg-white/[0.07] px-4 py-2 text-sm font-semibold text-white transition hover:border-white/25 hover:bg-white/[0.12]"
           >
-            Open debug /dev
+            {{ t.shell.debugOpen }}
           </RouterLink>
         </div>
       </aside>
@@ -146,9 +147,9 @@ function isCurrentPath(to: string): boolean {
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0">
               <p class="text-[0.66rem] font-black uppercase tracking-[0.24em] text-amber-100/70">
-                ST-Reforged
+                {{ t.app.name }}
               </p>
-              <h1 class="mt-2 truncate text-2xl font-black tracking-[-0.05em] text-white">
+              <h1 class="mt-2 truncate font-display text-2xl font-black text-white">
                 {{ currentTitle }}
               </h1>
               <p class="mt-2 text-sm leading-6 text-neutral-300">
@@ -159,7 +160,7 @@ function isCurrentPath(to: string): boolean {
               to="/dev"
               class="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white"
             >
-              Debug
+              {{ t.shell.debugShort }}
             </RouterLink>
           </div>
         </header>
@@ -167,9 +168,9 @@ function isCurrentPath(to: string): boolean {
         <header class="safe-top hidden items-start justify-between gap-6 px-8 pb-2 pt-7 md:flex">
           <div class="min-w-0">
             <p class="text-[0.68rem] font-black uppercase tracking-[0.26em] text-amber-100/70">
-              App shell
+              {{ t.shell.desktopEyebrow }}
             </p>
-            <h2 class="mt-3 text-4xl font-black tracking-[-0.06em] text-white">
+            <h2 class="mt-3 font-display text-4xl font-black text-white">
               {{ currentTitle }}
             </h2>
             <p class="mt-3 max-w-3xl text-sm leading-7 text-neutral-300">
@@ -180,7 +181,7 @@ function isCurrentPath(to: string): boolean {
             to="/dev"
             class="mt-1 shrink-0 rounded-full border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.1]"
           >
-            Open debug /dev
+            {{ t.shell.debugOpen }}
           </RouterLink>
         </header>
 
@@ -190,7 +191,7 @@ function isCurrentPath(to: string): boolean {
 
         <nav
           class="shell-bottom-nav safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-white/8 bg-neutral-950/90 px-3 pt-3 backdrop-blur-xl md:hidden"
-          aria-label="Bottom navigation"
+          :aria-label="t.nav.bottom"
         >
           <div class="grid grid-cols-5 gap-2">
             <RouterLink
