@@ -1,4 +1,5 @@
 import type { HeadlessGenerationRequest } from '@/contracts/engine';
+import type { ReforgedPresetPrompt } from '@/contracts/preset';
 import type {
     ReforgedChatEngineMessage,
     ReforgedChatGenerationOptions,
@@ -38,6 +39,12 @@ export function createChatEngineMessages(
     options: ReforgedChatGenerationOptions = {},
     lorebooks: ReforgedChatLorebookContext[] = [],
 ): ReforgedChatEngineMessage[] {
+    const presetPrompts = options.presetPrompts?.filter((prompt) => prompt.enabled) ?? [];
+
+    if (presetPrompts.length > 0) {
+        return createPresetEngineMessages(session, allMessages, lorebooks, presetPrompts);
+    }
+
     const engineMessages: ReforgedChatEngineMessage[] = [];
     const systemPrompt = createSystemPrompt(session, options, lorebooks);
 
@@ -48,6 +55,68 @@ export function createChatEngineMessages(
         });
     }
 
+    appendSessionHistory(engineMessages, session, allMessages);
+
+    return engineMessages;
+}
+
+/**
+ * 预设接管拼装(M2 阶段二):按 prompt_order 逐项产出消息。
+ * marker 槽位映射当前上下文已有的数据;dialogueExamples / personaDescription
+ * 等暂无数据来源的槽位跳过。绝对注入(injection_position=1)按顺序近似处理。
+ */
+function createPresetEngineMessages(
+    session: ReforgedChatSession,
+    allMessages: ReforgedChatMessage[],
+    lorebooks: ReforgedChatLorebookContext[],
+    prompts: ReforgedPresetPrompt[],
+): ReforgedChatEngineMessage[] {
+    const substituteMacros = createMacroSubstituter(session);
+    const engineMessages: ReforgedChatEngineMessage[] = [];
+
+    const push = (role: ReforgedChatEngineMessage['role'], content: string): void => {
+        const trimmed = content.trim();
+        if (trimmed) {
+            engineMessages.push({ role, content: trimmed });
+        }
+    };
+
+    for (const prompt of prompts) {
+        switch (prompt.identifier) {
+            case 'chatHistory':
+                appendSessionHistory(engineMessages, session, allMessages);
+                break;
+            case 'charDescription':
+                push('system', substituteMacros(session.character?.description ?? ''));
+                break;
+            case 'charPersonality':
+                push('system', substituteMacros(session.character?.personality ?? ''));
+                break;
+            case 'scenario':
+                push('system', substituteMacros(session.character?.scenario ?? ''));
+                break;
+            case 'worldInfoBefore':
+                push('system', formatPresetLorebookBucket(lorebooks, 'before'));
+                break;
+            case 'worldInfoAfter':
+                push('system', formatPresetLorebookBucket(lorebooks, 'after'));
+                break;
+            default:
+                if (!prompt.marker) {
+                    push(prompt.role, substituteMacros(prompt.content));
+                }
+                break;
+        }
+    }
+
+    return engineMessages;
+}
+
+function appendSessionHistory(
+    engineMessages: ReforgedChatEngineMessage[],
+    session: ReforgedChatSession,
+    allMessages: ReforgedChatMessage[],
+): void {
     for (const message of readReforgedSessionMessages(session, allMessages)) {
         if (message.status === 'failed' || !message.content.trim()) {
             continue;
@@ -58,8 +127,49 @@ export function createChatEngineMessages(
             content: message.content,
         });
     }
+}
 
-    return engineMessages;
+function createMacroSubstituter(session: ReforgedChatSession): (text: string) => string {
+    const characterName = session.character?.name?.trim() || 'Assistant';
+
+    return (text: string) => text
+        .replace(/\{\{char\}\}/gi, characterName)
+        .replace(/\{\{user\}\}/gi, 'User');
+}
+
+function formatPresetLorebookBucket(
+    lorebooks: ReforgedChatLorebookContext[],
+    bucket: 'before' | 'after',
+): string {
+    const sections: string[] = [];
+
+    for (const lorebook of lorebooks) {
+        const routed = hasRoutedLorebookEntries(lorebook);
+        const entries: ReforgedChatLorebookEntryContext[] = [];
+
+        if (bucket === 'before') {
+            entries.push(...(lorebook.beforeEntries ?? (routed ? [] : lorebook.entries)));
+        } else {
+            entries.push(...(lorebook.afterEntries ?? []));
+            // 预设槽位只有 before/after 两个世界书入口——
+            // 其余路由桶并入 after,保证内容不因换拼装方式而丢失。
+            entries.push(...(lorebook.authorNoteBeforeEntries ?? []));
+            entries.push(...(lorebook.authorNoteAfterEntries ?? []));
+            for (const depthEntry of lorebook.depthEntries ?? []) {
+                entries.push(...depthEntry.entries);
+            }
+            for (const outletEntries of Object.values(lorebook.outletEntries ?? {})) {
+                entries.push(...outletEntries);
+            }
+        }
+
+        const content = formatEntryContents(entries);
+        if (content) {
+            sections.push(content);
+        }
+    }
+
+    return sections.join('\n\n');
 }
 
 export function readReforgedSessionMessages(

@@ -13,6 +13,7 @@ import type {
 } from '@/contracts/connection';
 import { useI18n } from '@/i18n';
 import { setConnectionDraftApiKeySecret, useConnectionStore } from '@/stores/connectionStore';
+import { usePresetStore } from '@/stores/presetStore';
 import { Button, Input, Select } from '@/ui-kit';
 
 type ConnectionField = keyof ReforgedConnectionDraft;
@@ -32,6 +33,76 @@ interface DisplayIssue {
 
 const { t, locale } = useI18n();
 const connectionStore = useConnectionStore();
+const presetStore = usePresetStore();
+
+const presetFileInput = ref<HTMLInputElement | null>(null);
+const presetNotice = ref<string | null>(null);
+
+const presetOptions = computed<ReforgedSelectOption[]>(() => [
+    { value: '', label: t.value.connection.preset.none },
+    ...presetStore.presets.map((item) => ({
+        value: item.id,
+        label: item.preset.name,
+        description: item.source.fileName,
+    })),
+]);
+
+const selectedPresetSummary = computed(() => {
+    const item = presetStore.selectedPreset;
+    if (!item) {
+        return null;
+    }
+
+    const sampling = item.preset.sampling;
+    const samplingParts = [
+        sampling.temperature != null ? `temp ${sampling.temperature}` : null,
+        sampling.topP != null ? `top_p ${sampling.topP}` : null,
+        sampling.maxTokens != null ? `max ${sampling.maxTokens}` : null,
+    ].filter(Boolean);
+
+    return {
+        prompts: t.value.connection.preset.summary(
+            item.preset.prompts.filter((prompt) => prompt.enabled).length,
+            item.preset.prompts.length,
+        ),
+        sampling: samplingParts.join(' · '),
+        warnings: item.warnings,
+    };
+});
+
+function triggerPresetImport(): void {
+    presetFileInput.value?.click();
+}
+
+async function handlePresetFileChange(event: Event): Promise<void> {
+    const inputElement = event.target as HTMLInputElement;
+    const file = inputElement.files?.[0];
+    inputElement.value = '';
+
+    if (!file) {
+        return;
+    }
+
+    const text = await file.text();
+    const result = presetStore.importPreset({ fileName: file.name, mimeType: file.type, text });
+    presetNotice.value = result.ok
+        ? (result.warnings.length > 0
+            ? t.value.connection.preset.importedWithWarnings(result.preset.name, result.warnings.length)
+            : t.value.connection.preset.imported(result.preset.name))
+        : result.message;
+}
+
+function updateSelectedPreset(value: string): void {
+    presetStore.selectPreset(value || null);
+    presetNotice.value = null;
+}
+
+function removeSelectedPreset(): void {
+    if (presetStore.selectedPresetId) {
+        presetStore.removePreset(presetStore.selectedPresetId);
+        presetNotice.value = null;
+    }
+}
 
 const providerOptions = computed<ReforgedSelectOption[]>(() => [
     {
@@ -361,6 +432,10 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                     @update:model-value="updateDraft({ baseUrl: $event })"
                 />
 
+                <p class="-mt-2 text-xs leading-5 text-neutral-500">
+                    {{ t.connection.fields.baseUrlHint }}
+                </p>
+
                 <Input
                     :model-value="apiKeyInput"
                     :error="fieldErrors.apiKey"
@@ -473,6 +548,94 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                 :label="t.connection.transport.title"
                 @update:model-value="connectionStore.setTransportMode($event as ReforgedConnectionTransportMode)"
             />
+        </section>
+
+        <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/82 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.32)] sm:p-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div class="min-w-0">
+                    <p class="text-sm font-semibold text-white">
+                        {{ t.connection.preset.title }}
+                    </p>
+                    <p class="mt-1 text-sm leading-6 text-neutral-400">
+                        {{ t.connection.preset.description }}
+                    </p>
+                </div>
+                <Button
+                    type="button"
+                    variant="secondary"
+                    class="shrink-0"
+                    @click="triggerPresetImport"
+                >
+                    {{ t.connection.preset.importAction }}
+                </Button>
+            </div>
+
+            <input
+                ref="presetFileInput"
+                type="file"
+                accept=".json,application/json"
+                class="hidden"
+                @change="handlePresetFileChange"
+            >
+
+            <div
+                v-if="presetStore.hasPresets"
+                class="mt-4 grid gap-3"
+            >
+                <Select
+                    :model-value="presetStore.selectedPresetId ?? ''"
+                    :options="presetOptions"
+                    :label="t.connection.preset.selectLabel"
+                    :placeholder="t.connection.preset.selectPlaceholder"
+                    @update:model-value="updateSelectedPreset"
+                />
+
+                <div
+                    v-if="selectedPresetSummary"
+                    class="rounded-2xl border border-white/8 bg-white/5 px-3 py-3 text-sm leading-6 text-neutral-300"
+                >
+                    <p>{{ selectedPresetSummary.prompts }}</p>
+                    <p
+                        v-if="selectedPresetSummary.sampling"
+                        class="mt-1 text-xs text-neutral-400"
+                    >
+                        {{ t.connection.preset.samplingLabel }}: {{ selectedPresetSummary.sampling }}
+                    </p>
+                    <div
+                        v-if="selectedPresetSummary.warnings.length"
+                        class="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100"
+                    >
+                        <p class="font-medium">
+                            {{ t.connection.preset.warningsTitle }}
+                        </p>
+                        <ul class="mt-1 space-y-0.5">
+                            <li
+                                v-for="(warning, warningIndex) in selectedPresetSummary.warnings.slice(0, 4)"
+                                :key="warningIndex"
+                            >
+                                {{ warning }}
+                            </li>
+                        </ul>
+                    </div>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        class="mt-2"
+                        @click="removeSelectedPreset"
+                    >
+                        {{ t.connection.preset.removeAction }}
+                    </Button>
+                </div>
+            </div>
+
+            <p
+                v-if="presetNotice"
+                class="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs leading-5 text-neutral-300"
+                role="status"
+            >
+                {{ presetNotice }}
+            </p>
         </section>
 
         <section

@@ -21,6 +21,15 @@ interface DirectBackendChatCompletionRequestBody {
   stream: boolean;
   max_tokens?: number;
   json_schema?: DirectBackendJsonSchema;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  top_a?: number;
+  min_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  repetition_penalty?: number;
+  seed?: number;
 }
 
 interface DirectBackendJsonSchema {
@@ -97,11 +106,33 @@ export function createDirectBackendRequestBody(
     body.max_tokens = request.responseLength;
   }
 
+  applySamplingParams(body, request.sampling);
+
   if (jsonSchema) {
     body.json_schema = jsonSchema;
   }
 
   return body;
+}
+
+function applySamplingParams(
+  body: DirectBackendChatCompletionRequestBody,
+  sampling: HeadlessChatCompletionRequest['sampling'],
+): void {
+  if (!sampling) {
+    return;
+  }
+
+  if (sampling.temperature != null) body.temperature = sampling.temperature;
+  if (sampling.topP != null) body.top_p = sampling.topP;
+  if (sampling.topK != null) body.top_k = sampling.topK;
+  if (sampling.topA != null) body.top_a = sampling.topA;
+  if (sampling.minP != null) body.min_p = sampling.minP;
+  if (sampling.frequencyPenalty != null) body.frequency_penalty = sampling.frequencyPenalty;
+  if (sampling.presencePenalty != null) body.presence_penalty = sampling.presencePenalty;
+  if (sampling.repetitionPenalty != null) body.repetition_penalty = sampling.repetitionPenalty;
+  if (sampling.seed != null) body.seed = sampling.seed;
+  if (sampling.maxTokens != null && body.max_tokens == null) body.max_tokens = sampling.maxTokens;
 }
 
 export class DirectBackendChatCompletionError extends Error {
