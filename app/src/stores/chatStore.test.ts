@@ -254,6 +254,7 @@ describe('useChatStore', () => {
             jsonSchema: null,
             responseLength: null,
             runtimeConnection: null,
+            sampling: null,
         });
         expect(result.assistantMessage).toMatchObject({
             content: 'Runtime primary reply.',

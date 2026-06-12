@@ -199,6 +199,20 @@ export function resetConnectionSecretVaultForTest(): void {
     clearAllVaultSecrets();
 }
 
+// 持久化接线(M2):金库刻意不进 reactive state,导出/恢复只供仓储层快照使用。
+export function exportConnectionSecretsForPersistence(): Record<string, string> {
+    return Object.fromEntries(connectionSecretVault);
+}
+
+export function restoreConnectionSecretsFromPersistence(secrets: Record<string, string>): void {
+    clearAllVaultSecrets();
+    for (const [slot, secret] of Object.entries(secrets)) {
+        if (typeof secret === 'string' && secret.length > 0) {
+            connectionSecretVault.set(slot, secret);
+        }
+    }
+}
+
 function normalizeDraft(draft: DraftNormalizeInput): ReforgedConnectionDraft {
     return {
         provider: 'openai-compatible',

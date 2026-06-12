@@ -131,6 +131,7 @@ export const useChatStore = defineStore('chat', {
                 createdAt,
                 updatedAt: createdAt,
                 messageIds: [],
+                participants: ['local-user'],
             };
 
             this.nextSessionLocalId += 1;
@@ -778,6 +779,8 @@ export const useChatStore = defineStore('chat', {
                 status,
                 alternatives: [],
                 activeAlternativeIndex: -1,
+                authorId: role === 'user' ? 'local-user' : 'local-character',
+                seq: this.nextMessageLocalId,
             };
             this.nextMessageLocalId += 1;
             return message;

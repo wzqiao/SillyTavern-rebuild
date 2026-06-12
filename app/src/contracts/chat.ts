@@ -9,6 +9,7 @@ import type {
     ReforgedChatRole,
     ReforgedGenerationApi,
 } from './engine';
+import type { ReforgedPresetPrompt, ReforgedPresetSampling } from './preset';
 
 // DRAFT: 待主干评审
 export type ReforgedChatMessageRole = Extract<ReforgedChatRole, 'system' | 'user' | 'assistant'>;
@@ -118,6 +119,8 @@ export interface ReforgedChatSession {
     createdAt: string;
     updatedAt: string;
     messageIds: string[];
+    /** 联机预留:会话参与者。单机恒为 ['local-user']。 */
+    participants?: string[];
 }
 
 // DRAFT: 待主干评审
@@ -130,6 +133,10 @@ export interface ReforgedChatGenerationOptions {
     prefill?: string;
     jsonSchema?: HeadlessGenerationRequest['jsonSchema'];
     systemPrompt?: string;
+    /** 预设采样参数(M2 阶段二),直连后端时透传请求体。 */
+    sampling?: ReforgedPresetSampling | null;
+    /** 预设 prompt 结构(已按 prompt_order 排序),存在时接管消息拼装。 */
+    presetPrompts?: ReforgedPresetPrompt[] | null;
 }
 
 // DRAFT: 待主干评审

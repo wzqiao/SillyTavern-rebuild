@@ -3,7 +3,7 @@ import type { Zh } from './zh';
 export const en: Zh = {
   app: {
     name: 'ST-Reforged',
-    tagline: 'Warm late-night chats with your characters',
+    tagline: 'A frosted scene console for character roleplay',
   },
 
   nav: {
@@ -33,14 +33,14 @@ export const en: Zh = {
       settings: 'Simple defaults first, advanced controls only when you need them.',
     },
     brandEyebrow: 'ST-Reforged',
-    brandTitle: 'Lamplit chat shell',
-    brandDescription: 'A warm, mobile-first frame for chat, connection, characters, and lore.',
+    brandTitle: 'Frosted tavern console',
+    brandDescription: 'An immersive mobile-first frame for chat, connection, characters, and lore.',
     debugEyebrow: 'Debug',
     debugTitle: 'Legacy workbench stays reachable.',
     debugDescription: 'Main flows live in product pages. /dev remains only for adapter and regression debugging.',
     debugOpen: 'Open debug /dev',
     debugShort: 'Debug',
-    desktopEyebrow: 'App shell',
+    desktopEyebrow: 'Scene console',
   },
 
   common: {
@@ -179,6 +179,7 @@ export const en: Zh = {
       providerPlaceholder: 'Choose a provider',
       baseUrl: 'Base URL',
       baseUrlPlaceholder: 'https://api.example.com/v1',
+      baseUrlHint: 'OpenAI-compatible endpoints usually need the /v1 base, for example https://vip.yyyyai.org/v1.',
       model: 'Model',
       modelPlaceholder: 'gpt-4.1-compatible',
       modelHint: 'Enter a model id for now. Model listing and connection testing will come later.',
@@ -228,6 +229,20 @@ export const en: Zh = {
       runtimeUnwired: 'Runtime adapter is not ready; this applied draft has not been handed to a live request path.',
       runtimeConnectionUnwired: 'Runtime adapter is ready, but the Reforged/backend request path is not available.',
       apiKeyUnavailable: 'Runtime adapter is ready, but the applied API key is no longer available in memory.',
+    },
+    preset: {
+      title: 'Preset (optional)',
+      description: 'Import a legacy SillyTavern OpenAI preset JSON. Sampling parameters and prompt ordering apply to Runtime generation.',
+      importAction: 'Import preset JSON',
+      selectLabel: 'Active preset',
+      selectPlaceholder: 'Select',
+      none: 'No preset',
+      summary: (prompts: number, total: number) => `${prompts}/${total} prompt sections enabled`,
+      samplingLabel: 'Sampling',
+      removeAction: 'Remove current preset',
+      imported: (name: string) => `Imported "${name}".`,
+      importedWithWarnings: (name: string, warnings: number) => `Imported "${name}" with ${warnings} warning(s).`,
+      warningsTitle: 'Import warnings',
     },
   },
 
@@ -458,6 +473,17 @@ export const en: Zh = {
       open: 'Open',
       closed: 'Closed',
       unchanged: 'Unchanged',
+    },
+    storageKinds: {
+      indexedDb: 'IndexedDB on this device',
+      memory: 'In-memory (lost on refresh)',
+      unknown: 'Initializing…',
+    },
+    secrets: {
+      label: 'Local secrets',
+      description: 'API keys are saved in this browser\'s local storage and never leave this device.',
+      clear: 'Clear local secrets',
+      cleared: 'Cleared',
     },
     resetLocalPreview: 'Reset local preview',
   },

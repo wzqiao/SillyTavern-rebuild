@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue';
 import type { ReforgedSelectOption } from '@/contracts/ui';
 import { type Locale, useI18n } from '@/i18n';
+import { getAppPersistenceKind } from '@/repositories';
+import { useConnectionStore } from '@/stores';
 import { Button, Collapse, Input, ListItem, Select, Switch } from '@/ui-kit';
 
 type SettingsGroupId =
@@ -22,6 +24,27 @@ interface SettingsGroup {
 }
 
 const { t, locale, setLocale } = useI18n();
+
+const connectionStore = useConnectionStore();
+const secretsCleared = ref(false);
+const storageKindLabel = computed(() => {
+    const kind = getAppPersistenceKind();
+
+    if (kind === 'indexed-db') {
+        return t.value.settings.storageKinds.indexedDb;
+    }
+
+    if (kind === 'memory') {
+        return t.value.settings.storageKinds.memory;
+    }
+
+    return t.value.settings.storageKinds.unknown;
+});
+
+function clearLocalSecrets(): void {
+    connectionStore.clearApiKey();
+    secretsCleared.value = true;
+}
 
 const selectedGroupId = ref<SettingsGroupId>('language');
 const density = ref('comfortable');
@@ -344,8 +367,27 @@ function resetLocalPreview(): void {
                             <dt class="text-neutral-400">
                                 {{ t.settings.statusRows.store }}
                             </dt>
-                            <dd class="font-semibold text-amber-100">
-                                {{ t.settings.statusRows.notAdded }}
+                            <dd class="font-semibold text-neutral-100">
+                                {{ storageKindLabel }}
+                            </dd>
+                        </div>
+                        <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
+                            <dt class="min-w-0 text-neutral-400">
+                                {{ t.settings.secrets.label }}
+                                <span class="mt-1 block text-xs leading-5 text-neutral-500">
+                                    {{ t.settings.secrets.description }}
+                                </span>
+                            </dt>
+                            <dd class="shrink-0">
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    :disabled="secretsCleared"
+                                    @click="clearLocalSecrets"
+                                >
+                                    {{ secretsCleared ? t.settings.secrets.cleared : t.settings.secrets.clear }}
+                                </Button>
                             </dd>
                         </div>
                         <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">

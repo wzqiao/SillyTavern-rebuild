@@ -8,7 +8,7 @@
 export const zh = {
   app: {
     name: 'ST-Reforged',
-    tagline: '暖夜灯下，和角色好好聊天',
+    tagline: '冷光舞台里，和角色进入同一场景',
   },
 
   nav: {
@@ -38,14 +38,14 @@ export const zh = {
       settings: '默认极简，高级项按需展开（渐进式披露）。',
     },
     brandEyebrow: 'ST-Reforged',
-    brandTitle: '暖夜灯下的聊天外壳',
-    brandDescription: '为聊天、连接、角色与世界书重做的移动优先入口。',
+    brandTitle: '冷光酒馆控制台',
+    brandDescription: '为聊天、连接、角色与世界书重做的沉浸式移动入口。',
     debugEyebrow: '调试',
     debugTitle: '旧工作台仍可访问',
     debugDescription: '主流程已经进入正式页面，/dev 只保留给适配器和回归调试。',
     debugOpen: '打开调试 /dev',
     debugShort: '调试',
-    desktopEyebrow: '应用外壳',
+    desktopEyebrow: '场景控制台',
   },
 
   common: {
@@ -192,6 +192,7 @@ export const zh = {
       providerPlaceholder: '选择服务商',
       baseUrl: 'Base URL',
       baseUrlPlaceholder: 'https://api.example.com/v1',
+      baseUrlHint: 'OpenAI 兼容端点通常要填到 /v1；例如 https://vip.yyyyai.org/v1。',
       model: '模型',
       modelPlaceholder: 'gpt-4.1-compatible',
       modelHint: '先手动填写模型 ID；模型列表与测试连接将在后续接入。',
@@ -241,6 +242,20 @@ export const zh = {
       runtimeUnwired: '运行时适配器尚未就绪；这份草稿还没有交给真实请求路径。',
       runtimeConnectionUnwired: '运行时适配器已就绪，但 Reforged/backend 请求路径还不可用。',
       apiKeyUnavailable: '运行时适配器已就绪，但已应用的 API Key 已不在内存中。',
+    },
+    preset: {
+      title: '预设（可选）',
+      description: '导入旧版 SillyTavern OpenAI 预设 JSON。采样参数与 prompt 编排会在运行时生成中生效。',
+      importAction: '导入预设 JSON',
+      selectLabel: '使用预设',
+      selectPlaceholder: '请选择',
+      none: '不使用预设',
+      summary: (prompts: number, total: number) => `${prompts}/${total} 个 prompt 段启用`,
+      samplingLabel: '采样',
+      removeAction: '删除当前预设',
+      imported: (name: string) => `已导入「${name}」。`,
+      importedWithWarnings: (name: string, warnings: number) => `已导入「${name}」（${warnings} 条警告）。`,
+      warningsTitle: '导入警告',
     },
   },
 
@@ -471,6 +486,17 @@ export const zh = {
       open: '已展开',
       closed: '已收起',
       unchanged: '未改变',
+    },
+    storageKinds: {
+      indexedDb: 'IndexedDB 本机存储',
+      memory: '内存（刷新即丢）',
+      unknown: '初始化中…',
+    },
+    secrets: {
+      label: '本机密钥',
+      description: 'API key 默认保存在本机浏览器存储，仅本设备可见。',
+      clear: '清除本机密钥',
+      cleared: '已清除',
     },
     resetLocalPreview: '重置本地预览',
   },
