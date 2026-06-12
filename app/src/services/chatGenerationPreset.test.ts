@@ -156,3 +156,37 @@ describe('createDirectBackendRequestBody sampling passthrough', () => {
         expect(body.max_tokens).toBe(220);
     });
 });
+
+describe('dialogueExamples marker (mes_example)', () => {
+    const promptsWithExamples: ReforgedPresetPrompt[] = [
+        { identifier: 'dialogueExamples', name: 'Examples', role: 'system', content: '', marker: true, enabled: true },
+        { identifier: 'chatHistory', name: 'History', role: 'system', content: '', marker: true, enabled: true },
+    ];
+
+    function sessionWithExamples(): ReforgedChatSession {
+        return {
+            ...createSession(),
+            character: {
+                ...createSession().character!,
+                exampleMessages: '<START>\n{{user}}: 你是谁?\n{{char}}: 我是星澜。\n<START>\n{{user}}: 再见\n{{char}}: 后会有期。',
+            },
+        };
+    }
+
+    it('emits one system message per <START> block with macros applied', () => {
+        const messages = createChatEngineMessages(sessionWithExamples(), createMessages(), { presetPrompts: promptsWithExamples }, []);
+
+        expect(messages).toHaveLength(4);
+        expect(messages[0].role).toBe('system');
+        expect(messages[0].content).toBe('User: 你是谁?\n星澜: 我是星澜。');
+        expect(messages[1].content).toBe('User: 再见\n星澜: 后会有期。');
+        expect(messages[2].content).toBe('你好');
+    });
+
+    it('appends examples to the legacy system prompt when no preset is active', () => {
+        const messages = createChatEngineMessages(sessionWithExamples(), createMessages(), {}, []);
+
+        expect(String(messages[0].content)).toContain('Example dialogue:');
+        expect(String(messages[0].content)).toContain('星澜: 我是星澜。');
+    });
+});

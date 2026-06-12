@@ -95,6 +95,11 @@ function createPresetEngineMessages(
             case 'scenario':
                 push('system', substituteMacros(session.character?.scenario ?? ''));
                 break;
+            case 'dialogueExamples':
+                for (const block of parseExampleBlocks(session.character?.exampleMessages, substituteMacros)) {
+                    engineMessages.push({ role: 'system', content: block });
+                }
+                break;
             case 'worldInfoBefore':
                 push('system', formatPresetLorebookBucket(lorebooks, 'before'));
                 break;
@@ -135,6 +140,23 @@ function createMacroSubstituter(session: ReforgedChatSession): (text: string) =>
     return (text: string) => text
         .replace(/\{\{char\}\}/gi, characterName)
         .replace(/\{\{user\}\}/gi, 'User');
+}
+
+// 旧版 mes_example 以 <START> 分块,每块是一段示例对话。
+function parseExampleBlocks(
+    raw: string | undefined,
+    substituteMacros: (text: string) => string,
+): string[] {
+    const text = raw?.trim();
+
+    if (!text) {
+        return [];
+    }
+
+    return text
+        .split(/<START>/gi)
+        .map((block) => substituteMacros(block.trim()))
+        .filter((block) => block.length > 0);
 }
 
 function formatPresetLorebookBucket(
@@ -198,11 +220,14 @@ function createCharacterSystemPrompt(session: ReforgedChatSession): string {
         return '';
     }
 
+    const substituteMacros = createMacroSubstituter(session);
+    const exampleBlocks = parseExampleBlocks(character.exampleMessages, substituteMacros);
     const sections = [
         `You are roleplaying as ${character.name}. Stay in character and continue the scene naturally.`,
         formatCharacterSection('Description', character.description),
         formatCharacterSection('Personality', character.personality),
         formatCharacterSection('Scenario', character.scenario),
+        exampleBlocks.length > 0 ? `Example dialogue:\n${exampleBlocks.join('\n\n')}` : '',
     ].filter(Boolean);
 
     return sections.join('\n\n');

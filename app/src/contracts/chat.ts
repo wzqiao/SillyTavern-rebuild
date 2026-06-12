@@ -45,6 +45,8 @@ export interface ReforgedChatCharacterContext {
     personality?: string;
     scenario?: string;
     firstMessage?: string;
+    /** 旧版 mes_example 原文,生成时按 <START> 分块注入(M2.5-A2)。 */
+    exampleMessages?: string;
 }
 
 // DRAFT: 待主干评审

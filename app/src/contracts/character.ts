@@ -33,6 +33,8 @@ export interface ReforgedCharacterCard {
     personality: string;
     scenario: string;
     firstMessage: string;
+    /** 旧版 mes_example 原文(<START> 分块),M2.5-A2。 */
+    exampleMessages: string;
     alternateGreetings: string[];
     tags: string[];
     extensions: Record<string, unknown>;

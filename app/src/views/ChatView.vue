@@ -664,6 +664,7 @@ function toChatCharacter(rosterItem: ReforgedCharacterRosterItem): ReforgedChatC
         personality: rosterItem.card.personality,
         scenario: rosterItem.card.scenario,
         firstMessage: rosterItem.card.firstMessage,
+        exampleMessages: rosterItem.card.exampleMessages,
     };
 }
 
