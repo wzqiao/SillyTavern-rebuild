@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { createChatLorebookContext } from '@/services';
 import MultiplayerRoomPanel from '@/components/MultiplayerRoomPanel.vue';
@@ -110,11 +110,10 @@ const isGenerationBusy = computed(() => (
 ));
 const canSend = computed(() => (
     composer.value.trim().length > 0 &&
-    !isGenerationBusy.value &&
     (
         isRoomMode.value
             ? multiplayerStore.socketConnected
-            : readiness.value.canSend && canAttemptRuntime.value
+            : readiness.value.canSend && canAttemptRuntime.value && !chatStore.isGenerating
     )
 ));
 const characterName = computed(() => selectedCharacter.value?.card.name ?? '');
@@ -165,6 +164,7 @@ const lorebookContext = computed(() => selectedWorldbook.value
 const lorebookEntryCount = computed(() => lorebookContext.value?.entries.length ?? 0);
 
 onMounted(async () => {
+    window.addEventListener('reforged-transport-fallback', handleTransportFallback);
     selectDemoAdapter();
     if (connectionStore.hasAppliedDraft) {
         await activateRuntimeAdapter();
@@ -176,6 +176,10 @@ onMounted(async () => {
         }
     }
     autoStartSession();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('reforged-transport-fallback', handleTransportFallback);
 });
 
 watch(
@@ -222,6 +226,12 @@ function autoStartSession(): void {
     }
 
     startCharacterSession();
+}
+
+function handleTransportFallback(event: Event): void {
+    const detail = event instanceof CustomEvent && isRecord(event.detail) ? event.detail : {};
+    const reason = typeof detail.reason === 'string' ? detail.reason : t.value.chat.runtimeDiagFailed;
+    runtimeFallbackNotice.value = t.value.chat.transportFallback(reason);
 }
 
 function selectDemoAdapter(options: { preserveFallbackNotice?: boolean } = {}): void {
@@ -674,6 +684,10 @@ function delay(ms: number): Promise<void> {
 
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 </script>
 

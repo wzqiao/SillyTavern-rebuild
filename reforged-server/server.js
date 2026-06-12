@@ -12,6 +12,12 @@ const JSON_HEADERS = {
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type,Authorization',
 };
+const SSE_HEADERS = {
+    ...JSON_HEADERS,
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+};
 
 export function createReforgedServer(options = {}) {
     const rooms = new Map();
@@ -53,6 +59,12 @@ export function createReforgedServer(options = {}) {
                 return;
             }
 
+            if (request.method === 'POST' && url.pathname === '/api/reforged/chat/completions') {
+                const body = await readJsonBody(request);
+                await handleChatCompletionsRequest(request, response, body);
+                return;
+            }
+
             if (request.method === 'GET' && url.pathname === '/api/reforged/health') {
                 writeJson(response, 200, {
                     ok: true,
@@ -65,6 +77,10 @@ export function createReforgedServer(options = {}) {
                 error: 'Not found.',
             });
         } catch (error) {
+            if (response.headersSent) {
+                response.end();
+                return;
+            }
             const status = error instanceof PublicHttpError ? error.status : 500;
             writeJson(response, status, {
                 error: error instanceof Error ? error.message : String(error),
@@ -459,6 +475,148 @@ export function createReforgedServer(options = {}) {
         return body?.choices?.[0]?.message?.content ?? body?.choices?.[0]?.text ?? '';
     }
 
+    async function handleChatCompletionsRequest(request, response, body) {
+        const providerRequest = normalizeChatCompletionRequest(request, body);
+
+        if (generationMode === 'stub') {
+            if (providerRequest.stream) {
+                writeSseHeaders(response);
+                writeOpenAiSseStub(response, providerRequest);
+                return;
+            }
+
+            writeJson(response, 200, buildStubChatCompletion(providerRequest));
+            return;
+        }
+
+        if (providerRequest.stream) {
+            writeSseHeaders(response);
+            try {
+                const providerResponse = await requestProviderChatCompletion(providerRequest);
+                await pipeProviderSseAsOpenAi(response, providerResponse, providerRequest);
+            } catch (error) {
+                writeSseError(response, publicGenerationError(error));
+            }
+            return;
+        }
+
+        const providerResponse = await requestProviderChatCompletion(providerRequest);
+        const completion = await normalizeChatCompletionResponse(providerResponse, providerRequest);
+        writeJson(response, 200, completion);
+    }
+
+    function normalizeChatCompletionRequest(request, body) {
+        const baseUrl = readRequiredString(body, 'baseUrl').replace(/\/+$/g, '');
+        const model = readRequiredString(body, 'model');
+        const messages = readMessageArray(body?.messages);
+        const stream = body?.stream === true;
+        const apiKey = readBearerToken(request.headers.authorization);
+
+        return {
+            baseUrl,
+            model,
+            messages,
+            stream,
+            apiKey,
+            requestOptions: readChatCompletionOptions(body),
+        };
+    }
+
+    async function requestProviderChatCompletion(providerRequest) {
+        if (!fetchImpl) {
+            throw new PublicHttpError(500, 'Fetch is not available for generation proxying.');
+        }
+        if (!providerRequest.apiKey) {
+            throw new PublicHttpError(400, 'Authorization bearer token is required.');
+        }
+
+        let response;
+        try {
+            response = await fetchImpl(`${providerRequest.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: providerRequest.stream ? 'text/event-stream' : 'application/json',
+                    Authorization: `Bearer ${providerRequest.apiKey}`,
+                },
+                body: JSON.stringify({
+                    model: providerRequest.model,
+                    messages: providerRequest.messages,
+                    stream: providerRequest.stream,
+                    ...providerRequest.requestOptions,
+                }),
+            });
+        } catch (_error) {
+            throw new PublicHttpError(502, 'Provider request failed.');
+        }
+
+        if (!response.ok) {
+            throw await toSanitizedProviderError(response);
+        }
+
+        return response;
+    }
+
+    async function normalizeChatCompletionResponse(providerResponse, providerRequest) {
+        let payload;
+        try {
+            payload = await providerResponse.json();
+        } catch (_error) {
+            throw new PublicHttpError(502, 'Provider returned an invalid JSON response.');
+        }
+
+        if (!Array.isArray(payload?.choices)) {
+            throw new PublicHttpError(502, 'Provider response did not include completion choices.');
+        }
+
+        return {
+            id: typeof payload.id === 'string' ? payload.id : `chatcmpl-${id()}`,
+            object: 'chat.completion',
+            created: Number.isFinite(payload.created) ? payload.created : unixTimestamp(),
+            model: typeof payload.model === 'string' && payload.model ? payload.model : providerRequest.model,
+            choices: payload.choices.map((choice, index) => ({
+                index: Number.isInteger(choice?.index) ? choice.index : index,
+                message: {
+                    role: typeof choice?.message?.role === 'string' && choice.message.role ? choice.message.role : 'assistant',
+                    content: normalizeTextContent(choice?.message?.content ?? choice?.text ?? ''),
+                },
+                finish_reason: choice?.finish_reason ?? null,
+            })),
+        };
+    }
+
+    async function pipeProviderSseAsOpenAi(response, providerResponse, providerRequest) {
+        if (!providerResponse.body) {
+            throw new PublicHttpError(502, 'Provider did not return a streaming body.');
+        }
+
+        let sawDone = false;
+        for await (const data of readSseData(providerResponse.body)) {
+            if (data === '[DONE]') {
+                writeSseDone(response);
+                sawDone = true;
+                break;
+            }
+
+            let payload;
+            try {
+                payload = JSON.parse(data);
+            } catch (_error) {
+                throw new PublicHttpError(502, 'Provider returned an invalid streaming payload.');
+            }
+
+            if (payload?.error) {
+                throw new PublicHttpError(providerResponse.status || 502, 'Provider rejected the completion request.');
+            }
+
+            writeSseData(response, normalizeProviderStreamChunk(payload, providerRequest));
+        }
+
+        if (!sawDone) {
+            writeSseDone(response);
+        }
+    }
+
     function appendEvent(room, eventPatch) {
         const createdAt = now();
         room.latestSeq += 1;
@@ -660,6 +818,88 @@ function readOptionalString(value, field) {
     return typeof candidate === 'string' ? candidate.trim() : '';
 }
 
+function readMessageArray(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+        throw new PublicHttpError(400, 'messages must be a non-empty array.');
+    }
+
+    return messages.map((message, index) => {
+        if (!message || typeof message !== 'object') {
+            throw new PublicHttpError(400, `messages[${index}] must be an object.`);
+        }
+
+        const role = readRequiredString(message, 'role');
+        const content = message.content;
+        if (typeof content !== 'string' && !Array.isArray(content)) {
+            throw new PublicHttpError(400, `messages[${index}].content must be a string or content-part array.`);
+        }
+
+        return {
+            role,
+            content,
+        };
+    });
+}
+
+function readChatCompletionOptions(body) {
+    const options = {};
+
+    Object.assign(options, readScalarOptions(body?.sampling, [
+        'temperature',
+        'top_p',
+        'top_k',
+        'top_a',
+        'min_p',
+        'frequency_penalty',
+        'presence_penalty',
+        'repetition_penalty',
+        'seed',
+        'max_tokens',
+    ]));
+    Object.assign(options, readScalarOptions(body, [
+        'temperature',
+        'top_p',
+        'top_k',
+        'top_a',
+        'min_p',
+        'frequency_penalty',
+        'presence_penalty',
+        'repetition_penalty',
+        'seed',
+        'max_tokens',
+    ]));
+
+    if (isRecord(body?.response_format)) {
+        options.response_format = clonePublicValue(body.response_format);
+    }
+
+    return options;
+}
+
+function readScalarOptions(value, allowedKeys) {
+    if (!isRecord(value)) {
+        return {};
+    }
+
+    const sanitized = {};
+    for (const key of allowedKeys) {
+        const item = value[key];
+        if (typeof item === 'number' || typeof item === 'boolean' || typeof item === 'string' || item === null) {
+            sanitized[key] = item;
+        }
+    }
+    return sanitized;
+}
+
+function readBearerToken(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    const match = value.match(/^Bearer\s+(.+)$/i);
+    return match?.[1]?.trim() ?? '';
+}
+
 async function readJsonBody(request) {
     const chunks = [];
     for await (const chunk of request) {
@@ -672,6 +912,26 @@ async function readJsonBody(request) {
 function writeJson(response, status, body) {
     response.writeHead(status, JSON_HEADERS);
     response.end(JSON.stringify(body));
+}
+
+function writeSseHeaders(response) {
+    response.writeHead(200, SSE_HEADERS);
+}
+
+function writeSseData(response, payload) {
+    response.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+function writeSseDone(response) {
+    response.write('data: [DONE]\n\n');
+    response.end();
+}
+
+function writeSseError(response, error) {
+    writeSseData(response, {
+        error,
+    });
+    writeSseDone(response);
 }
 
 function send(ws, payload) {
@@ -730,6 +990,202 @@ function publicGenerationError(error) {
 
 function clonePublicValue(value) {
     return JSON.parse(JSON.stringify(value));
+}
+
+function isRecord(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+async function toSanitizedProviderError(response) {
+    try {
+        await response.text();
+    } catch (_error) {
+        // Ignore provider body read failures so secret-bearing payloads never surface.
+    }
+
+    return new PublicHttpError(response.status || 502, `Provider returned HTTP ${response.status || 502}.`);
+}
+
+function normalizeProviderStreamChunk(payload, providerRequest) {
+    const choices = Array.isArray(payload?.choices) ? payload.choices : [];
+    return {
+        id: typeof payload?.id === 'string' ? payload.id : `chatcmpl-${randomUUID()}`,
+        object: 'chat.completion.chunk',
+        created: Number.isFinite(payload?.created) ? payload.created : unixTimestamp(),
+        model: typeof payload?.model === 'string' && payload.model ? payload.model : providerRequest.model,
+        choices: choices.map((choice, index) => ({
+            index: Number.isInteger(choice?.index) ? choice.index : index,
+            delta: normalizeChoiceDelta(choice),
+            finish_reason: choice?.finish_reason ?? null,
+        })),
+    };
+}
+
+function normalizeChoiceDelta(choice) {
+    const source = choice?.delta ?? choice?.message ?? {};
+    const delta = {};
+
+    if (typeof source?.role === 'string' && source.role) {
+        delta.role = source.role;
+    }
+
+    if (source?.content !== undefined) {
+        delta.content = normalizeTextContent(source.content);
+    }
+
+    return delta;
+}
+
+function normalizeTextContent(content) {
+    if (typeof content === 'string') {
+        return content;
+    }
+    if (Array.isArray(content)) {
+        return content
+            .map((part) => typeof part?.text === 'string' ? part.text : '')
+            .join('');
+    }
+    return '';
+}
+
+async function* readSseData(stream) {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    try {
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+                break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            let boundary = findSseBoundary(buffer);
+            while (boundary) {
+                const chunk = buffer.slice(0, boundary.index);
+                buffer = buffer.slice(boundary.index + boundary.length);
+                const data = parseSseEventData(chunk);
+                if (data !== null) {
+                    yield data;
+                }
+                boundary = findSseBoundary(buffer);
+            }
+        }
+
+        buffer += decoder.decode();
+        if (buffer) {
+            const data = parseSseEventData(buffer);
+            if (data !== null) {
+                yield data;
+            }
+        }
+    } finally {
+        reader.releaseLock();
+    }
+}
+
+function parseSseEventData(chunk) {
+    const dataLines = [];
+    for (const line of chunk.split(/\r?\n/u)) {
+        if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trimStart());
+        }
+    }
+
+    if (dataLines.length === 0) {
+        return null;
+    }
+
+    return dataLines.join('\n');
+}
+
+function findSseBoundary(buffer) {
+    const match = /\r?\n\r?\n/u.exec(buffer);
+    if (!match) {
+        return null;
+    }
+
+    return {
+        index: match.index,
+        length: match[0].length,
+    };
+}
+
+function buildStubChatCompletion(providerRequest) {
+    const created = unixTimestamp();
+    const content = buildStubContent(providerRequest.messages);
+    return {
+        id: `chatcmpl-${randomUUID()}`,
+        object: 'chat.completion',
+        created,
+        model: providerRequest.model,
+        choices: [{
+            index: 0,
+            message: {
+                role: 'assistant',
+                content,
+            },
+            finish_reason: 'stop',
+        }],
+    };
+}
+
+function writeOpenAiSseStub(response, providerRequest) {
+    const created = unixTimestamp();
+    const content = buildStubContent(providerRequest.messages);
+    const chunkId = `chatcmpl-${randomUUID()}`;
+
+    writeSseData(response, {
+        id: chunkId,
+        object: 'chat.completion.chunk',
+        created,
+        model: providerRequest.model,
+        choices: [{
+            index: 0,
+            delta: {
+                role: 'assistant',
+            },
+            finish_reason: null,
+        }],
+    });
+    writeSseData(response, {
+        id: chunkId,
+        object: 'chat.completion.chunk',
+        created,
+        model: providerRequest.model,
+        choices: [{
+            index: 0,
+            delta: {
+                content,
+            },
+            finish_reason: null,
+        }],
+    });
+    writeSseData(response, {
+        id: chunkId,
+        object: 'chat.completion.chunk',
+        created,
+        model: providerRequest.model,
+        choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: 'stop',
+        }],
+    });
+    writeSseDone(response);
+}
+
+function buildStubContent(messages) {
+    const lastUserMessage = [...messages]
+        .reverse()
+        .find((message) => message.role === 'user');
+    const prompt = normalizeTextContent(lastUserMessage?.content);
+    return prompt ? `Stub reply: ${prompt}` : 'Stub reply.';
+}
+
+function unixTimestamp() {
+    return Math.floor(Date.now() / 1000);
 }
 
 class PublicHttpError extends Error {

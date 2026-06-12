@@ -12,6 +12,7 @@ import type {
     RoomJoinResult,
     RoomServerPayload,
 } from '@/contracts/multiplayer';
+import { normalizeReforgedHttpBaseUrl } from './reforgedRuntimeClient';
 
 export interface ReforgedMultiplayerClientOptions {
     baseUrl?: string;
@@ -48,8 +49,6 @@ export interface ReforgedMultiplayerClient {
         handlers: ReforgedRoomSocketHandlers;
     }): ReforgedRoomSocketConnection;
 }
-
-const DEFAULT_REFORGED_SERVER_URL = 'http://127.0.0.1:8787';
 
 export function createMultiplayerClient(options: ReforgedMultiplayerClientOptions = {}): ReforgedMultiplayerClient {
     const baseUrl = normalizeHttpBaseUrl(options.baseUrl);
@@ -202,8 +201,7 @@ function parseRoomPayload(data: unknown): RoomServerPayload {
 }
 
 export function normalizeHttpBaseUrl(value: string | undefined): string {
-    const trimmed = value?.trim().replace(/\/+$/g, '') ?? '';
-    return trimmed || DEFAULT_REFORGED_SERVER_URL;
+    return normalizeReforgedHttpBaseUrl(value);
 }
 
 function createRoomSocketUrl(

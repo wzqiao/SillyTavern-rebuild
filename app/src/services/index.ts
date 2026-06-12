@@ -30,3 +30,8 @@ export type {
     ReforgedRoomSocketConnection,
     ReforgedRoomSocketHandlers,
 } from './multiplayerClient';
+export {
+    DEFAULT_REFORGED_SERVER_URL,
+    normalizeReforgedHttpBaseUrl,
+} from './reforgedRuntimeClient';
+export type { ReforgedRuntimeClientOptions } from './reforgedRuntimeClient';

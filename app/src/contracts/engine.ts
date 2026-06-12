@@ -1,5 +1,7 @@
 // DRAFT: 待主干评审
 
+import type { ReforgedPresetSampling } from './preset';
+
 type ExtensibleString<TValue extends string> = TValue | (string & Record<never, never>);
 
 export type ReforgedGenerationApi = ExtensibleString<
@@ -52,6 +54,8 @@ export interface HeadlessChatCompletionRequest {
   responseLength?: number | null;
   stream?: boolean;
   runtimeConnection?: HeadlessChatCompletionRuntimeConnection | null;
+  /** 预设采样参数(M2 阶段二),由适配器映射进后端请求体。 */
+  sampling?: ReforgedPresetSampling | null;
 }
 
 export interface HeadlessChatCompletionRuntimeConnection {
@@ -60,6 +64,8 @@ export interface HeadlessChatCompletionRuntimeConnection {
   model: string;
   apiKey: string;
   api?: ReforgedGenerationApi;
+  /** 请求走线方式(M4.1)。缺省按 auto 处理,优先 Reforged backend。 */
+  transport?: ExtensibleString<'auto' | 'reforged-backend' | 'browser-direct' | 'legacy-proxy'>;
 }
 
 export type EngineCapabilityId = 'generateRaw' | 'generateRawData' | 'sendOpenAIRequest';

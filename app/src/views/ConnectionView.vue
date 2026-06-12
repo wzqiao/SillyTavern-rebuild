@@ -8,6 +8,7 @@ import type {
     ReforgedConnectionRuntimeHandoffIssue,
     ReforgedConnectionRuntimeHandoffIssueCode,
     ReforgedConnectionRuntimeHandoffStatus,
+    ReforgedConnectionTransportMode,
     ReforgedConnectionValidationIssue,
 } from '@/contracts/connection';
 import { useI18n } from '@/i18n';
@@ -37,6 +38,29 @@ const providerOptions = computed<ReforgedSelectOption[]>(() => [
         value: 'openai-compatible',
         label: t.value.connection.providerOpenAI,
         description: t.value.connection.providerOpenAIDescription,
+    },
+]);
+
+const transportOptions = computed<ReforgedSelectOption[]>(() => [
+    {
+        value: 'auto',
+        label: t.value.connection.transport.auto,
+        description: t.value.connection.transport.autoDescription,
+    },
+    {
+        value: 'reforged-backend',
+        label: t.value.connection.transport.reforged,
+        description: t.value.connection.transport.reforgedDescription,
+    },
+    {
+        value: 'browser-direct',
+        label: t.value.connection.transport.direct,
+        description: t.value.connection.transport.directDescription,
+    },
+    {
+        value: 'legacy-proxy',
+        label: t.value.connection.transport.proxy,
+        description: t.value.connection.transport.proxyDescription,
     },
 ]);
 
@@ -432,6 +456,24 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                 </ul>
             </div>
         </form>
+
+        <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/82 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.32)] sm:p-5">
+            <div class="mb-4">
+                <p class="text-sm font-semibold text-white">
+                    {{ t.connection.transport.title }}
+                </p>
+                <p class="mt-1 text-sm leading-6 text-neutral-400">
+                    {{ t.connection.transport.description }}
+                </p>
+            </div>
+
+            <Select
+                :model-value="connectionStore.transportMode"
+                :options="transportOptions"
+                :label="t.connection.transport.title"
+                @update:model-value="connectionStore.setTransportMode($event as ReforgedConnectionTransportMode)"
+            />
+        </section>
 
         <section
             v-if="activeStatus === 'ready-to-attempt'"

@@ -6,6 +6,9 @@ import type { ReforgedGenerationApi } from './engine';
 export type ReforgedConnectionProvider = 'openai-compatible';
 
 // DRAFT: 待主干评审
+export type ReforgedConnectionTransportMode = 'auto' | 'reforged-backend' | 'browser-direct' | 'legacy-proxy';
+
+// DRAFT: 待主干评审
 export type ReforgedConnectionDraftStatus = 'empty' | 'incomplete' | 'complete' | 'applied';
 
 // DRAFT: 待主干评审
@@ -92,6 +95,7 @@ export interface ReforgedConnectionResolvedRuntimeConfig extends ReforgedApplied
 export type ReforgedConnectionRuntimeRequestConfig =
     Omit<ReforgedConnectionResolvedRuntimeConfig, 'apiKey'> & {
         apiKey: string;
+        transport: ReforgedConnectionTransportMode;
     };
 
 // DRAFT: 待主干评审

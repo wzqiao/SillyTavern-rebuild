@@ -62,11 +62,12 @@ export const en: Zh = {
     runtime: 'Runtime',
     demoReady: 'Demo mode is ready. Send a message to start.',
     runtimeReady: 'Runtime ready',
-    runtimeChecking: 'Checking the same-origin SillyTavern runtime...',
+    runtimeChecking: 'Checking the Reforged runtime adapter...',
     runtimeDiagFailed: 'Runtime diagnostics did not pass.',
     runtimeLoadFailed: (detail: string) => `Runtime adapter failed to load: ${detail}`,
     runtimeKeyGone: 'The in-memory API key is no longer available. Re-enter it on the connection page.',
     runtimeFallback: (reason: string) => `Returned to Demo mode automatically: ${reason}`,
+    transportFallback: (reason: string) => `Runtime transport fell back: ${reason}`,
     configureConnection: 'Configure connection',
 
     untitled: 'New chat',
@@ -117,7 +118,7 @@ export const en: Zh = {
 
   connection: {
     providerOpenAI: 'OpenAI-compatible',
-    providerOpenAIDescription: 'Use the same-origin SillyTavern backend chat-completions seam.',
+    providerOpenAIDescription: 'Use an OpenAI-compatible provider through Reforged runtime transports.',
     status: {
       empty: {
         label: 'Empty',
@@ -147,7 +148,7 @@ export const en: Zh = {
       'applied-but-unwired': {
         label: 'Applied, waiting',
         title: 'Runtime path is not ready',
-        description: 'The draft is applied, but the direct request path is not available from this page state.',
+        description: 'The draft is applied, but the runtime request path is not available from this page state.',
       },
       'ready-to-attempt': {
         label: 'Ready to attempt',
@@ -160,7 +161,19 @@ export const en: Zh = {
     headerDescription: 'Set up one OpenAI-compatible endpoint, keep the key in the transient vault, and apply it to the memory-only Runtime handoff.',
     currentStatus: 'Current status',
     draftTitle: 'Provider draft',
-    draftDescription: 'First pass supports OpenAI-compatible backends through the direct backend seam.',
+    draftDescription: 'OpenAI-compatible providers can run through the Reforged backend, browser direct, or the legacy proxy bridge.',
+    transport: {
+      title: 'Connection method',
+      description: 'Reforged backend is the normal server runtime. Browser direct and legacy proxy remain compatibility routes.',
+      auto: 'Auto (recommended)',
+      autoDescription: 'Try the Reforged backend first, then browser direct, then the legacy proxy when needed.',
+      reforged: 'Reforged backend',
+      reforgedDescription: 'Send through the new Reforged server at 127.0.0.1:8787 or the deployed same runtime.',
+      direct: 'Browser direct',
+      directDescription: 'Request the base URL directly from the browser. Failures do not fall back.',
+      proxy: 'Legacy proxy',
+      proxyDescription: 'Always forward through the local legacy ST backend on port 8000 as a compatibility bridge.',
+    },
     fields: {
       provider: 'Provider',
       providerPlaceholder: 'Choose a provider',
@@ -213,7 +226,7 @@ export const en: Zh = {
       draftEmpty: 'Add an OpenAI-compatible draft before attempting Runtime mode.',
       draftUnapplied: 'Apply this complete draft before attempting Runtime mode.',
       runtimeUnwired: 'Runtime adapter is not ready; this applied draft has not been handed to a live request path.',
-      runtimeConnectionUnwired: 'Runtime adapter is ready, but the direct backend request path is not available.',
+      runtimeConnectionUnwired: 'Runtime adapter is ready, but the Reforged/backend request path is not available.',
       apiKeyUnavailable: 'Runtime adapter is ready, but the applied API key is no longer available in memory.',
     },
   },

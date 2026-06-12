@@ -25,6 +25,7 @@ describe('useConnectionStore', () => {
         expect(store.isDraftComplete).toBe(false);
         expect(store.hasAppliedDraft).toBe(false);
         expect(store.generationApi).toEqual({ api: 'openai' });
+        expect(store.transportMode).toBe('auto');
     });
 
     it('patches and normalizes the draft without applying it', () => {
@@ -117,6 +118,7 @@ describe('useConnectionStore', () => {
 
     it('describes runtime handoff readiness without treating applied drafts as connected', () => {
         const store = useConnectionStore();
+        store.setTransportMode('reforged-backend');
 
         expect(store.runtimeHandoff()).toMatchObject({
             status: 'empty',
@@ -222,12 +224,26 @@ describe('useConnectionStore', () => {
             model: 'gpt-example',
             api: 'openai',
             apiKey: 'sk-test-123456',
+            transport: 'reforged-backend',
         });
         expect(readyHandoff.takeRuntimeConnection?.()).toBeNull();
         expect(JSON.stringify(store.runtimeHandoff({
             runtimeAdapterReady: true,
             runtimeDirectRequestReady: true,
         }).connection)).not.toContain('sk-test-123456');
+    });
+
+    it('updates transport mode and resets it with all connection state', () => {
+        const store = useConnectionStore();
+
+        store.setTransportMode('legacy-proxy');
+        expect(store.transportMode).toBe('legacy-proxy');
+
+        store.setTransportMode('reforged-backend');
+        expect(store.transportMode).toBe('reforged-backend');
+
+        store.clearAll();
+        expect(store.transportMode).toBe('auto');
     });
 
     it('requires re-applying edited drafts before runtime handoff can be attempted again', () => {

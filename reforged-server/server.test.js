@@ -29,7 +29,7 @@ test('rooms require password, broadcast chat, and keep raw keys out of public st
     });
 
     await server.listen(0);
-    const baseUrl = `http://127.0.0.1:${server.httpServer.address().port}`;
+    const baseUrl = httpBaseUrl(server);
 
     try {
         const alice = await postJson(`${baseUrl}/api/reforged/rooms`, {
@@ -123,13 +123,246 @@ test('rooms require password, broadcast chat, and keep raw keys out of public st
     }
 });
 
+test('stub chat completions work without a key for smoke tests', async () => {
+    let fetchCalls = 0;
+    const server = createReforgedServer({
+        generationMode: 'stub',
+        fetch: async () => {
+            fetchCalls += 1;
+            throw new Error('stub mode should not call provider');
+        },
+    });
+
+    await server.listen(0);
+    const baseUrl = httpBaseUrl(server);
+
+    try {
+        const response = await fetch(`${baseUrl}/api/reforged/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                baseUrl: 'https://unused-provider.test/v1',
+                model: 'gpt-stub',
+                messages: [
+                    { role: 'system', content: 'You are a stub.' },
+                    { role: 'user', content: 'Hello from smoke.' },
+                ],
+                stream: false,
+                sampling: {
+                    temperature: 0.7,
+                },
+            }),
+        });
+
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get('content-type') ?? '', /application\/json/i);
+        const payload = await response.json();
+        assert.equal(payload.object, 'chat.completion');
+        assert.equal(payload.model, 'gpt-stub');
+        assert.equal(payload.choices[0].message.role, 'assistant');
+        assert.equal(payload.choices[0].message.content, 'Stub reply: Hello from smoke.');
+        assert.equal(fetchCalls, 0);
+    } finally {
+        await server.close();
+    }
+});
+
+test('stub chat completions stream OpenAI-compatible SSE chunks without a key', async () => {
+    const server = createReforgedServer({
+        generationMode: 'stub',
+    });
+
+    await server.listen(0);
+    const baseUrl = httpBaseUrl(server);
+
+    try {
+        const response = await fetch(`${baseUrl}/api/reforged/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                baseUrl: 'https://unused-provider.test/v1',
+                model: 'gpt-stub-stream',
+                messages: [
+                    { role: 'user', content: 'Stream this.' },
+                ],
+                stream: true,
+            }),
+        });
+
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/i);
+        const events = await readSseResponse(response);
+        assert.equal(events.at(-1), '[DONE]');
+        const chunks = events.filter((event) => event !== '[DONE]').map((event) => JSON.parse(event));
+        assert.equal(chunks[0].object, 'chat.completion.chunk');
+        assert.equal(chunks[0].choices[0].delta.role, 'assistant');
+        assert.equal(chunks[1].choices[0].delta.content, 'Stub reply: Stream this.');
+        assert.equal(chunks[2].choices[0].finish_reason, 'stop');
+    } finally {
+        await server.close();
+    }
+});
+
+test('proxy chat completions forward provider SSE as OpenAI-compatible chunks', async () => {
+    const requests = [];
+    const server = createReforgedServer({
+        generationMode: 'proxy',
+        fetch: async (url, init) => {
+            requests.push({
+                url,
+                authorization: init.headers.Authorization,
+                accept: init.headers.Accept,
+                body: JSON.parse(init.body),
+            });
+            return sseResponse([
+                'data: {"id":"provider-1","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}\n\n',
+                'data: {"id":"provider-1","choices":[{"index":0,"delta":{"content":"Hello SSE"},"finish_reason":null}]}\n\n',
+                'data: {"id":"provider-1","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n',
+                'data: [DONE]\n\n',
+            ]);
+        },
+    });
+
+    await server.listen(0);
+    const baseUrl = httpBaseUrl(server);
+
+    try {
+        const response = await fetch(`${baseUrl}/api/reforged/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: 'Bearer sk-route-secret',
+            },
+            body: JSON.stringify({
+                baseUrl: 'https://provider-stream.test/v1',
+                model: 'stream-model',
+                messages: [
+                    { role: 'user', content: 'Say hello.' },
+                ],
+                stream: true,
+                max_tokens: 128,
+                sampling: {
+                    temperature: 0.25,
+                    top_p: 0.9,
+                },
+            }),
+        });
+
+        assert.equal(response.status, 200);
+        assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/i);
+        const events = await readSseResponse(response);
+        assert.equal(events.at(-1), '[DONE]');
+        const chunks = events.filter((event) => event !== '[DONE]').map((event) => JSON.parse(event));
+        assert.equal(chunks[0].object, 'chat.completion.chunk');
+        assert.equal(chunks[0].choices[0].delta.role, 'assistant');
+        assert.equal(chunks[1].choices[0].delta.content, 'Hello SSE');
+        assert.equal(chunks[2].choices[0].finish_reason, 'stop');
+
+        assert.equal(requests[0].authorization, 'Bearer sk-route-secret');
+        assert.equal(requests[0].accept, 'text/event-stream');
+        assert.equal(requests[0].url, 'https://provider-stream.test/v1/chat/completions');
+        assert.equal(requests[0].body.model, 'stream-model');
+        assert.equal(requests[0].body.stream, true);
+        assert.equal(requests[0].body.max_tokens, 128);
+        assert.equal(requests[0].body.temperature, 0.25);
+        assert.equal(requests[0].body.top_p, 0.9);
+
+        const serialized = JSON.stringify({ events });
+        assert.equal(serialized.includes('sk-route-secret'), false);
+    } finally {
+        await server.close();
+    }
+});
+
+test('provider errors are sanitized for JSON and SSE responses', async () => {
+    const server = createReforgedServer({
+        generationMode: 'proxy',
+        fetch: async (_url, init) => {
+            const auth = init.headers.Authorization;
+            return new Response(JSON.stringify({
+                error: {
+                    message: `bad auth ${auth} sk-very-secret provider-body`,
+                },
+            }), {
+                status: 401,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+        },
+    });
+
+    await server.listen(0);
+    const baseUrl = httpBaseUrl(server);
+
+    try {
+        const jsonResponse = await fetch(`${baseUrl}/api/reforged/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: 'Bearer sk-very-secret',
+            },
+            body: JSON.stringify({
+                baseUrl: 'https://provider-error.test/v1',
+                model: 'error-model',
+                messages: [
+                    { role: 'user', content: 'Trigger error.' },
+                ],
+                stream: false,
+            }),
+        });
+
+        assert.equal(jsonResponse.status, 401);
+        const jsonPayload = await jsonResponse.json();
+        assert.equal(jsonPayload.error, 'Provider returned HTTP 401.');
+        const jsonSerialized = JSON.stringify(jsonPayload);
+        assert.equal(jsonSerialized.includes('sk-very-secret'), false);
+        assert.equal(jsonSerialized.includes('Authorization'), false);
+        assert.equal(jsonSerialized.includes('provider-body'), false);
+
+        const sseResponse = await fetch(`${baseUrl}/api/reforged/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: 'Bearer sk-very-secret',
+            },
+            body: JSON.stringify({
+                baseUrl: 'https://provider-error.test/v1',
+                model: 'error-model',
+                messages: [
+                    { role: 'user', content: 'Trigger SSE error.' },
+                ],
+                stream: true,
+            }),
+        });
+
+        assert.equal(sseResponse.status, 200);
+        assert.match(sseResponse.headers.get('content-type') ?? '', /text\/event-stream/i);
+        const sseEvents = await readSseResponse(sseResponse);
+        assert.equal(sseEvents.at(-1), '[DONE]');
+        const errorEvent = JSON.parse(sseEvents.find((event) => event !== '[DONE]'));
+        assert.equal(errorEvent.error.code, 'http-401');
+        assert.equal(errorEvent.error.message, 'Provider returned HTTP 401.');
+        const sseSerialized = JSON.stringify(errorEvent);
+        assert.equal(sseSerialized.includes('sk-very-secret'), false);
+        assert.equal(sseSerialized.includes('Authorization'), false);
+        assert.equal(sseSerialized.includes('provider-body'), false);
+    } finally {
+        await server.close();
+    }
+});
+
 test('two websocket clients can share a room and receive generated replies', async () => {
     const server = createReforgedServer({
         generationMode: 'stub',
     });
 
     await server.listen(0);
-    const baseUrl = `http://127.0.0.1:${server.httpServer.address().port}`;
+    const baseUrl = httpBaseUrl(server);
 
     try {
         const alice = await postJson(`${baseUrl}/api/reforged/rooms`, {
@@ -222,6 +455,10 @@ test('two websocket clients can share a room and receive generated replies', asy
     }
 });
 
+function httpBaseUrl(server) {
+    return `http://127.0.0.1:${server.httpServer.address().port}`;
+}
+
 async function postJson(url, body) {
     const response = await fetch(url, {
         method: 'POST',
@@ -296,4 +533,29 @@ function flushWaiters(queue, waiters) {
             waiter.resolve(payload);
         }
     }
+}
+
+function sseResponse(chunks) {
+    return new Response(new ReadableStream({
+        start(controller) {
+            for (const chunk of chunks) {
+                controller.enqueue(new TextEncoder().encode(chunk));
+            }
+            controller.close();
+        },
+    }), {
+        status: 200,
+        headers: {
+            'Content-Type': 'text/event-stream',
+        },
+    });
+}
+
+async function readSseResponse(response) {
+    const text = await response.text();
+    return text
+        .split(/\r?\n\r?\n/u)
+        .map((chunk) => chunk.trim())
+        .filter(Boolean)
+        .map((chunk) => chunk.replace(/^data:\s?/u, ''));
 }

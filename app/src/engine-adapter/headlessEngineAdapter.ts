@@ -14,6 +14,16 @@ import {
   sendDirectBackendChatCompletion,
   type DirectBackendChatCompletionDependencies,
 } from './directBackendChatCompletionAdapter';
+import {
+  BrowserDirectChatCompletionError,
+  sendBrowserDirectChatCompletion,
+  type BrowserDirectDependencies,
+} from './browserDirectChatCompletionAdapter';
+import {
+  ReforgedBackendChatCompletionError,
+  sendReforgedBackendChatCompletion,
+  type ReforgedBackendChatCompletionDependencies,
+} from './reforgedBackendChatCompletionAdapter';
 
 export interface SillyTavernScriptModule {
   generateRaw?: (params: HeadlessGenerationRequest) => Promise<string>;
@@ -36,6 +46,8 @@ export interface HeadlessEngineAdapterDependencies {
   loadScriptModule?: () => Promise<SillyTavernScriptModule>;
   loadOpenAIModule?: () => Promise<SillyTavernOpenAIModule>;
   directBackendChatCompletion?: DirectBackendChatCompletionDependencies;
+  browserDirectChatCompletion?: BrowserDirectDependencies;
+  reforgedBackendChatCompletion?: ReforgedBackendChatCompletionDependencies;
   getRuntimeGlobal?: () => EngineAdapterRuntimeGlobal;
   now?: () => Date;
 }
@@ -214,6 +226,41 @@ export function createHeadlessEngineAdapter(
 
     async sendChatCompletion(request: HeadlessChatCompletionRequest): Promise<unknown> {
       if (request.runtimeConnection) {
+        const transport = request.runtimeConnection.transport ?? 'auto';
+
+        if (transport === 'reforged-backend') {
+          return sendReforgedBackendChatCompletion(request, dependencies.reforgedBackendChatCompletion);
+        }
+
+        if (transport === 'auto') {
+          try {
+            return await sendReforgedBackendChatCompletion(request, dependencies.reforgedBackendChatCompletion);
+          } catch (error) {
+            if (!isReforgedFallbackEligible(error)) {
+              throw error;
+            }
+
+            emitTransportFallback(`Reforged backend unavailable: ${describeError(error)}`);
+          }
+        }
+
+        if (transport !== 'legacy-proxy') {
+          try {
+            return await sendBrowserDirectChatCompletion(request, dependencies.browserDirectChatCompletion);
+          } catch (error) {
+            const fallbackEligible =
+              transport === 'auto' &&
+              error instanceof BrowserDirectChatCompletionError &&
+              error.kind === 'cors-or-network';
+
+            if (!fallbackEligible) {
+              throw error;
+            }
+
+            emitTransportFallback(error.message);
+          }
+        }
+
         return sendDirectBackendChatCompletion(request, dependencies.directBackendChatCompletion);
       }
 
@@ -227,6 +274,30 @@ export function createHeadlessEngineAdapter(
 }
 
 export const headlessEngineAdapter = createHeadlessEngineAdapter();
+
+function emitTransportFallback(reason: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.dispatchEvent(new CustomEvent('reforged-transport-fallback', {
+    detail: {
+      reason,
+    },
+  }));
+}
+
+function isReforgedFallbackEligible(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return true;
+  }
+
+  if (!(error instanceof ReforgedBackendChatCompletionError)) {
+    return false;
+  }
+
+  return error.status === undefined || error.status === 404 || error.status === 502 || error.status === 503 || error.status === 504;
+}
 
 function defaultGetRuntimeGlobal(): EngineAdapterRuntimeGlobal {
   return globalThis as EngineAdapterRuntimeGlobal;

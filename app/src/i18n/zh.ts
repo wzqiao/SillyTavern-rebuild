@@ -68,11 +68,12 @@ export const zh = {
     runtime: '实时',
     demoReady: '演示模式就绪，直接发消息即可。',
     runtimeReady: '实时就绪',
-    runtimeChecking: '正在检查同源的 SillyTavern 运行时…',
+    runtimeChecking: '正在检查 Reforged 运行时适配器…',
     runtimeDiagFailed: '运行时自检未通过。',
     runtimeLoadFailed: (detail: string) => `运行时适配器加载失败：${detail}`,
     runtimeKeyGone: '内存里的 API Key 已失效，请回连接页重新填写。',
     runtimeFallback: (reason: string) => `已自动回到演示模式：${reason}`,
+    transportFallback: (reason: string) => `运行时连接方式已回落：${reason}`,
     configureConnection: '去配置连接',
 
     // 头部 / 状态
@@ -130,7 +131,7 @@ export const zh = {
 
   connection: {
     providerOpenAI: 'OpenAI 兼容',
-    providerOpenAIDescription: '通过同源 SillyTavern 后端 chat-completions 通道发送请求。',
+    providerOpenAIDescription: '通过 Reforged 运行时通道使用 OpenAI 兼容服务商。',
     status: {
       empty: {
         label: '空白',
@@ -160,7 +161,7 @@ export const zh = {
       'applied-but-unwired': {
         label: '已应用，等待运行时',
         title: '运行时路径未就绪',
-        description: '草稿已应用，但当前页面状态还不能发起直接请求。',
+        description: '草稿已应用，但当前页面状态还不能发起运行时请求。',
       },
       'ready-to-attempt': {
         label: '可尝试',
@@ -173,7 +174,19 @@ export const zh = {
     headerDescription: '设置一个 OpenAI 兼容端点，把密钥留在瞬态保险箱里，再应用到仅内存的运行时交接。',
     currentStatus: '当前状态',
     draftTitle: '服务商草稿',
-    draftDescription: '第一阶段通过 direct backend seam 支持 OpenAI 兼容后端。',
+    draftDescription: 'OpenAI 兼容服务商可走 Reforged 新后端、浏览器直连或旧版代理兼容桥。',
+    transport: {
+      title: '连接方式',
+      description: 'Reforged 新后端是常规服务器运行时；浏览器直连和旧版代理保留作兼容路径。',
+      auto: '自动（推荐）',
+      autoDescription: '优先尝试 Reforged 新后端，再尝试浏览器直连，必要时回落旧版代理。',
+      reforged: 'Reforged 新后端',
+      reforgedDescription: '通过 127.0.0.1:8787 或部署环境中的 Reforged server 转发。',
+      direct: '浏览器直连',
+      directDescription: '只用浏览器直接请求 baseURL，失败不回落。',
+      proxy: '旧版代理',
+      proxyDescription: '始终经由本机旧版 ST 后端（8000）兼容桥转发。',
+    },
     fields: {
       provider: '服务商',
       providerPlaceholder: '选择服务商',
@@ -226,7 +239,7 @@ export const zh = {
       draftEmpty: '请先添加 OpenAI 兼容草稿，再尝试运行时模式。',
       draftUnapplied: '请先应用这份完整草稿，再尝试运行时模式。',
       runtimeUnwired: '运行时适配器尚未就绪；这份草稿还没有交给真实请求路径。',
-      runtimeConnectionUnwired: '运行时适配器已就绪，但 direct backend 请求路径还不可用。',
+      runtimeConnectionUnwired: '运行时适配器已就绪，但 Reforged/backend 请求路径还不可用。',
       apiKeyUnavailable: '运行时适配器已就绪，但已应用的 API Key 已不在内存中。',
     },
   },

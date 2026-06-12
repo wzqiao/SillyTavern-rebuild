@@ -9,6 +9,7 @@ import type {
     ReforgedConnectionResolvedRuntimeConfig,
     ReforgedConnectionRuntimeRequestConfig,
     ReforgedConnectionSecretMetadata,
+    ReforgedConnectionTransportMode,
     ReforgedConnectionRuntimeHandoff,
     ReforgedConnectionRuntimeHandoffInput,
     ReforgedConnectionValidationIssue,
@@ -17,6 +18,7 @@ import type {
 interface ConnectionStoreState {
     draft: ReforgedConnectionDraft;
     appliedDraft: ReforgedAppliedConnectionDraft | null;
+    transportMode: ReforgedConnectionTransportMode;
     nextLocalId: number;
 }
 
@@ -38,6 +40,7 @@ export const useConnectionStore = defineStore('connection', {
     state: (): ConnectionStoreState => ({
         draft: emptyDraft(),
         appliedDraft: null,
+        transportMode: 'auto',
         nextLocalId: 1,
     }),
 
@@ -78,6 +81,7 @@ export const useConnectionStore = defineStore('connection', {
             return (input = {}) => createRuntimeHandoff({
                 appliedDraft: state.appliedDraft,
                 draft: normalizeDraft(state.draft),
+                transportMode: state.transportMode,
                 runtimeDirectRequestReady: input.runtimeDirectRequestReady === true,
                 runtimeAdapterReady: input.runtimeAdapterReady === true,
             });
@@ -91,6 +95,10 @@ export const useConnectionStore = defineStore('connection', {
                 ...input,
                 provider: 'openai-compatible',
             });
+        },
+
+        setTransportMode(mode: ReforgedConnectionTransportMode): void {
+            this.transportMode = mode;
         },
 
         applyDraft(appliedAt = new Date().toISOString()): ReforgedConnectionApplyResult {
@@ -172,6 +180,7 @@ export const useConnectionStore = defineStore('connection', {
             clearAllVaultSecrets();
             this.draft = emptyDraft();
             this.appliedDraft = null;
+            this.transportMode = 'auto';
         },
     },
 });
@@ -202,6 +211,7 @@ function normalizeDraft(draft: DraftNormalizeInput): ReforgedConnectionDraft {
 function createRuntimeHandoff(input: {
     appliedDraft: ReforgedAppliedConnectionDraft | null;
     draft: ReforgedConnectionDraft;
+    transportMode: ReforgedConnectionTransportMode;
     runtimeAdapterReady: boolean;
     runtimeDirectRequestReady: boolean;
 }): ReforgedConnectionRuntimeHandoff {
@@ -286,7 +296,7 @@ function createRuntimeHandoff(input: {
         };
     }
 
-    const takeRuntimeConnection = createRuntimeConnectionTaker(connection);
+    const takeRuntimeConnection = createRuntimeConnectionTaker(connection, input.transportMode);
     if (!takeRuntimeConnection) {
         return {
             status: 'applied-but-unwired',
@@ -398,6 +408,7 @@ function toResolvedRuntimeConfig(appliedDraft: ReforgedAppliedConnectionDraft): 
 
 function createRuntimeConnectionTaker(
     connection: ReforgedConnectionResolvedRuntimeConfig,
+    transportMode: ReforgedConnectionTransportMode,
 ): (() => ReforgedConnectionRuntimeRequestConfig | null) | null {
     const slot = appliedSecretSlot(connection.id);
     if (!readVaultSecret(slot)) {
@@ -420,6 +431,7 @@ function createRuntimeConnectionTaker(
         return {
             ...connection,
             apiKey,
+            transport: transportMode,
         };
     };
 }
