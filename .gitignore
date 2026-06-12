@@ -62,3 +62,4 @@ test-results/
 # 本地 agent 工具资产(Codex/Claude 技能),不属于 repo
 .agents/
 skills-lock.json
+reforged-server/data/

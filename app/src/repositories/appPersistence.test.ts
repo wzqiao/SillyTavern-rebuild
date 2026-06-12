@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createPinia } from 'pinia';
 import { createAppPersistenceController } from './appPersistence';
 import { createMemoryPersistenceGateway } from './memoryRepository';
@@ -13,7 +13,23 @@ import {
 } from '@/stores';
 import { resetConnectionSecretVaultForTest } from '@/stores/connectionStore';
 
+// node 环境无 localStorage:装一个 Map shim,同时让密钥分离断言可观测。
+const localStorageShim = (() => {
+    const entries = new Map<string, string>();
+    return {
+        getItem: (key: string) => (entries.has(key) ? entries.get(key)! : null),
+        setItem: (key: string, value: string) => { entries.set(key, String(value)); },
+        removeItem: (key: string) => { entries.delete(key); },
+        clear: () => entries.clear(),
+    };
+})();
+(globalThis as Record<string, unknown>).localStorage = localStorageShim;
+
 describe('app persistence round trip', () => {
+    beforeEach(() => {
+        localStorageShim.clear();
+    });
+
     it('restores all domain stores in a fresh pinia from the same gateway', async () => {
         const gateway = createMemoryPersistenceGateway();
 
@@ -110,6 +126,12 @@ describe('app persistence round trip', () => {
             apiKey: 'sk-test-secret',
             transport: 'reforged-backend',
         });
+
+        // ADR-006 边界:密钥只在本机通道,主网关的 connection.state 不含 secrets。
+        const persistedConnection = await gateway.keyValue.get<Record<string, unknown>>('connection.state');
+        expect(persistedConnection).not.toBeNull();
+        expect(persistedConnection).not.toHaveProperty('secrets');
+        expect(localStorageShim.getItem('st-reforged-connection-secrets')).toContain('sk-test-secret');
 
         const presetB = usePresetStore(piniaB);
         expect(presetB.presets).toHaveLength(1);

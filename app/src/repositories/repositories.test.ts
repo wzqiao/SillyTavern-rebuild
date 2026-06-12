@@ -2,7 +2,61 @@ import { describe, expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { createIndexedDbPersistenceGateway } from './indexedDbRepository';
 import { createMemoryPersistenceGateway } from './memoryRepository';
+import { createReforgedBackendPersistenceGateway } from './reforgedBackendRepository';
 import type { ReforgedPersistenceGateway } from './types';
+
+// 内存版后端路由,与 reforged-server 的存储语义一致,用于跑同一套契约测试。
+function createMockBackendFetch(): typeof fetch {
+    const stores = new Map<string, Map<string, unknown>>();
+    const kv = new Map<string, unknown>();
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+
+    return (async (url: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(url).replace(/^https?:\/\/[^/]+/, '');
+        const method = init?.method ?? 'GET';
+
+        const kvMatch = path.match(/^\/api\/reforged\/storage\/kv\/(.+)$/);
+        if (kvMatch) {
+            const key = decodeURIComponent(kvMatch[1]);
+            if (method === 'GET') return json({ value: kv.has(key) ? kv.get(key) : null });
+            if (method === 'PUT') {
+                kv.set(key, JSON.parse(String(init?.body)).value);
+                return json({ ok: true });
+            }
+            if (method === 'DELETE') {
+                kv.delete(key);
+                return json({ ok: true });
+            }
+        }
+
+        const storeMatch = path.match(/^\/api\/reforged\/storage\/([a-z-]+)(\/(put|delete|clear))?$/);
+        if (storeMatch) {
+            const name = storeMatch[1];
+            const action = storeMatch[3] ?? null;
+            if (!['characters', 'worldbooks', 'chat-sessions', 'chat-messages', 'presets'].includes(name)) {
+                return json({ error: 'Unknown store' }, 404);
+            }
+            const store = stores.get(name) ?? new Map<string, unknown>();
+            stores.set(name, store);
+            if (!action) return json({ envelopes: [...store.values()] });
+            const body = init?.body ? JSON.parse(String(init.body)) : {};
+            if (action === 'put') {
+                for (const envelope of body.envelopes ?? []) store.set(envelope.id, envelope);
+                return json({ ok: true });
+            }
+            if (action === 'delete') {
+                for (const id of body.ids ?? []) store.delete(id);
+                return json({ ok: true });
+            }
+            if (action === 'clear') {
+                store.clear();
+                return json({ ok: true });
+            }
+        }
+
+        return json({ error: 'Not found' }, 404);
+    }) as typeof fetch;
+}
 
 interface SampleEntity {
     id: string;
@@ -12,6 +66,10 @@ interface SampleEntity {
 const gatewayFactories: Array<[string, () => Promise<ReforgedPersistenceGateway>]> = [
     ['memory', async () => createMemoryPersistenceGateway()],
     ['indexed-db', () => createIndexedDbPersistenceGateway(new IDBFactory())],
+    ['reforged-backend', async () => createReforgedBackendPersistenceGateway({
+        baseUrl: 'http://test.local',
+        fetch: createMockBackendFetch(),
+    })],
 ];
 
 describe.each(gatewayFactories)('persistence gateway contract (%s)', (kind, createGateway) => {

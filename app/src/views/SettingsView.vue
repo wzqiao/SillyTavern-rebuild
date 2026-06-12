@@ -31,6 +31,10 @@ const secretsCleared = ref(false);
 const storageKindLabel = computed(() => {
     const kind = getAppPersistenceKind();
 
+    if (kind === 'reforged-backend') {
+        return t.value.settings.storageKinds.reforgedBackend;
+    }
+
     if (kind === 'indexed-db') {
         return t.value.settings.storageKinds.indexedDb;
     }

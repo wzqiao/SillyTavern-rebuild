@@ -9,6 +9,8 @@ import type {
 } from './types';
 import { createIndexedDbPersistenceGateway } from './indexedDbRepository';
 import { createMemoryPersistenceGateway } from './memoryRepository';
+import { createReforgedBackendPersistenceGateway, probeReforgedBackend } from './reforgedBackendRepository';
+import { loadLocalSecrets, saveLocalSecrets } from './localSecretsVault';
 import {
     exportConnectionSecretsForPersistence,
     restoreConnectionSecretsFromPersistence,
@@ -63,7 +65,8 @@ interface ConnectionPersistedState {
     appliedDraft: unknown;
     transportMode?: string;
     nextLocalId: number;
-    secrets: Record<string, string>;
+    /** 历史遗留字段:新版密钥走 localSecretsVault,不再写入主网关(ADR-006)。 */
+    secrets?: Record<string, string>;
 }
 
 export interface AppPersistenceOptions {
@@ -92,11 +95,15 @@ export async function startAppPersistence(
 ): Promise<AppPersistenceController> {
     let gateway: ReforgedPersistenceGateway;
 
-    try {
-        gateway = await createIndexedDbPersistenceGateway();
-    } catch (error) {
-        console.warn('[st-reforged] IndexedDB unavailable, falling back to in-memory persistence.', error);
-        gateway = createMemoryPersistenceGateway();
+    if (await probeReforgedBackend()) {
+        gateway = createReforgedBackendPersistenceGateway();
+    } else {
+        try {
+            gateway = await createIndexedDbPersistenceGateway();
+        } catch (error) {
+            console.warn('[st-reforged] IndexedDB unavailable, falling back to in-memory persistence.', error);
+            gateway = createMemoryPersistenceGateway();
+        }
     }
 
     const controller = await createAppPersistenceController(pinia, gateway, options);
@@ -183,7 +190,12 @@ export async function createAppPersistenceController(
             transportMode: (connectionState.transportMode as never) ?? 'auto',
             nextLocalId: connectionState.nextLocalId,
         });
-        restoreConnectionSecretsFromPersistence(connectionState.secrets ?? {});
+    }
+
+    // 密钥只走本机通道;主网关里的 secrets 字段是 B2 之前的旧数据,迁移一次后不再写回。
+    const localSecrets = loadLocalSecrets() ?? connectionState?.secrets ?? null;
+    if (localSecrets) {
+        restoreConnectionSecretsFromPersistence(localSecrets);
     }
 
     if (presetEnvelopes.length > 0 || presetsMeta) {
@@ -276,6 +288,8 @@ export async function createAppPersistenceController(
     };
 
     const writeConnection = async (): Promise<void> => {
+        // 密钥永远只落本机(ADR-006):无论主网关是 IndexedDB 还是 Reforged 后端。
+        saveLocalSecrets(exportConnectionSecretsForPersistence());
         await gateway.keyValue.set<ConnectionPersistedState>(KV_CONNECTION_STATE, {
             draft: JSON.parse(JSON.stringify(connectionStore.draft)),
             appliedDraft: connectionStore.appliedDraft
@@ -283,7 +297,6 @@ export async function createAppPersistenceController(
                 : null,
             transportMode: connectionStore.transportMode,
             nextLocalId: connectionStore.nextLocalId,
-            secrets: exportConnectionSecretsForPersistence(),
         });
     };
 

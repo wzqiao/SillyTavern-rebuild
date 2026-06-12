@@ -1,15 +1,17 @@
 // DRAFT: M4 backend spike, pending mainline review.
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
-import { URL } from 'node:url';
+import { join, dirname } from 'node:path';
+import { URL, fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 
 const DEFAULT_PORT = 8787;
 const JSON_HEADERS = {
     'Content-Type': 'application/json; charset=utf-8',
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type,Authorization',
 };
 const SSE_HEADERS = {
@@ -26,6 +28,7 @@ export function createReforgedServer(options = {}) {
     const now = options.now ?? (() => new Date().toISOString());
     const id = options.id ?? (() => randomUUID());
     const generationMode = options.generationMode ?? 'proxy';
+    const storage = createFileStorage(options.dataDir ?? join(dirname(fileURLToPath(import.meta.url)), 'data'));
 
     const httpServer = createHttpServer(async (request, response) => {
         try {
@@ -63,6 +66,55 @@ export function createReforgedServer(options = {}) {
                 const body = await readJsonBody(request);
                 await handleChatCompletionsRequest(request, response, body);
                 return;
+            }
+
+            const kvMatch = url.pathname.match(/^\/api\/reforged\/storage\/kv\/(.+)$/);
+            if (kvMatch) {
+                const key = decodeURIComponent(kvMatch[1]);
+                if (request.method === 'GET') {
+                    writeJson(response, 200, { value: storage.kvGet(key) });
+                    return;
+                }
+                if (request.method === 'PUT') {
+                    const body = await readJsonBody(request);
+                    storage.kvSet(key, body?.value ?? null);
+                    writeJson(response, 200, { ok: true });
+                    return;
+                }
+                if (request.method === 'DELETE') {
+                    storage.kvDelete(key);
+                    writeJson(response, 200, { ok: true });
+                    return;
+                }
+            }
+
+            const storageMatch = url.pathname.match(/^\/api\/reforged\/storage\/([a-z-]+)(\/(put|delete|clear))?$/);
+            if (storageMatch) {
+                const storeName = storageMatch[1];
+                const action = storageMatch[3] ?? null;
+                storage.assertEntityStore(storeName);
+
+                if (request.method === 'GET' && !action) {
+                    writeJson(response, 200, { envelopes: storage.listEnvelopes(storeName) });
+                    return;
+                }
+                if (request.method === 'POST' && action === 'put') {
+                    const body = await readJsonBody(request);
+                    storage.putEnvelopes(storeName, Array.isArray(body?.envelopes) ? body.envelopes : []);
+                    writeJson(response, 200, { ok: true });
+                    return;
+                }
+                if (request.method === 'POST' && action === 'delete') {
+                    const body = await readJsonBody(request);
+                    storage.deleteIds(storeName, Array.isArray(body?.ids) ? body.ids : []);
+                    writeJson(response, 200, { ok: true });
+                    return;
+                }
+                if (request.method === 'POST' && action === 'clear') {
+                    storage.clearStore(storeName);
+                    writeJson(response, 200, { ok: true });
+                    return;
+                }
             }
 
             if (request.method === 'GET' && url.pathname === '/api/reforged/health') {
@@ -899,6 +951,91 @@ function readBearerToken(value) {
 
     const match = value.match(/^Bearer\s+(.+)$/i);
     return match?.[1]?.trim() ?? '';
+}
+
+// B2 存储(M2.5):JSON 文件落盘,实体以信封 {id, revision, persistedAt, data} 存储。
+// 单用户规模下全文件原子写(tmp+rename)足够;多用户/大数据量再换 SQLite。
+const STORAGE_ENTITY_STORES = new Set(['characters', 'worldbooks', 'chat-sessions', 'chat-messages', 'presets']);
+
+function createFileStorage(dataDir) {
+    const storageDir = join(dataDir, 'storage');
+    mkdirSync(storageDir, { recursive: true });
+
+    function fileFor(name) {
+        return join(storageDir, `${name}.json`);
+    }
+
+    function readStore(name, fallback) {
+        try {
+            return JSON.parse(readFileSync(fileFor(name), 'utf8'));
+        } catch (_error) {
+            return fallback;
+        }
+    }
+
+    function writeStore(name, value) {
+        const target = fileFor(name);
+        const tmp = `${target}.tmp`;
+        writeFileSync(tmp, JSON.stringify(value));
+        renameSync(tmp, target);
+    }
+
+    return {
+        assertEntityStore(name) {
+            if (!STORAGE_ENTITY_STORES.has(name)) {
+                throw new PublicHttpError(404, `Unknown storage store "${name}".`);
+            }
+        },
+
+        listEnvelopes(name) {
+            return Object.values(readStore(name, {}));
+        },
+
+        putEnvelopes(name, envelopes) {
+            const records = readStore(name, {});
+            for (const envelope of envelopes) {
+                if (envelope && typeof envelope === 'object' && typeof envelope.id === 'string' && envelope.id) {
+                    records[envelope.id] = envelope;
+                }
+            }
+            writeStore(name, records);
+        },
+
+        deleteIds(name, ids) {
+            const records = readStore(name, {});
+            for (const idValue of ids) {
+                if (typeof idValue === 'string') {
+                    delete records[idValue];
+                }
+            }
+            writeStore(name, records);
+        },
+
+        clearStore(name) {
+            try {
+                rmSync(fileFor(name));
+            } catch (_error) {
+                // 不存在视为已清空
+            }
+        },
+
+        kvGet(key) {
+            const records = readStore('key-value', {});
+            return Object.prototype.hasOwnProperty.call(records, key) ? records[key] : null;
+        },
+
+        kvSet(key, value) {
+            const records = readStore('key-value', {});
+            records[key] = value;
+            writeStore('key-value', records);
+        },
+
+        kvDelete(key) {
+            const records = readStore('key-value', {});
+            delete records[key];
+            writeStore('key-value', records);
+        },
+    };
 }
 
 // 安全审查(2026-06-13):请求体无上限会被单请求耗尽内存,统一封顶。

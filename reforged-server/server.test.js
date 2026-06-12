@@ -607,3 +607,53 @@ test('rejects non-http provider urls and oversized request bodies', async () => 
         await server.close();
     }
 });
+
+test('storage routes persist envelopes and kv across server restarts', async (t) => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dataDir = mkdtempSync(join(tmpdir(), 'reforged-storage-'));
+    t.after(() => rmSync(dataDir, { recursive: true, force: true }));
+
+    const first = createReforgedServer({ generationMode: 'stub', dataDir });
+    await first.listen(0);
+    const baseA = httpBaseUrl(first);
+
+    try {
+        await postJson(`${baseA}/api/reforged/storage/characters/put`, {
+            envelopes: [
+                { id: 'a', revision: 1, persistedAt: 'x', data: { id: 'a', name: 'Alice' } },
+                { id: 'b', revision: 1, persistedAt: 'x', data: { id: 'b', name: 'Bob' } },
+            ],
+        });
+        await postJson(`${baseA}/api/reforged/storage/characters/delete`, { ids: ['b'] });
+        await fetch(`${baseA}/api/reforged/storage/kv/chat.meta`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: { selected: 'a' } }),
+        });
+
+        const listed = await (await fetch(`${baseA}/api/reforged/storage/characters`)).json();
+        assert.equal(listed.envelopes.length, 1);
+        assert.equal(listed.envelopes[0].data.name, 'Alice');
+
+        const unknown = await fetch(`${baseA}/api/reforged/storage/not-a-store`);
+        assert.equal(unknown.status, 404);
+    } finally {
+        await first.close();
+    }
+
+    // 重启:同 dataDir 数据仍在
+    const second = createReforgedServer({ generationMode: 'stub', dataDir });
+    await second.listen(0);
+    const baseB = httpBaseUrl(second);
+
+    try {
+        const listed = await (await fetch(`${baseB}/api/reforged/storage/characters`)).json();
+        assert.equal(listed.envelopes.length, 1);
+        const kv = await (await fetch(`${baseB}/api/reforged/storage/kv/chat.meta`)).json();
+        assert.deepEqual(kv.value, { selected: 'a' });
+    } finally {
+        await second.close();
+    }
+});

@@ -510,6 +510,7 @@ export const zh = {
       unchanged: '未改变',
     },
     storageKinds: {
+      reforgedBackend: 'Reforged 后端（跨设备）',
       indexedDb: 'IndexedDB 本机存储',
       memory: '内存（刷新即丢）',
       unknown: '初始化中…',

@@ -497,6 +497,7 @@ export const en: Zh = {
       unchanged: 'Unchanged',
     },
     storageKinds: {
+      reforgedBackend: 'Reforged backend (cross-device)',
       indexedDb: 'IndexedDB on this device',
       memory: 'In-memory (lost on refresh)',
       unknown: 'Initializing…',

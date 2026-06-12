@@ -28,7 +28,7 @@ export interface ReforgedKeyValueRepository {
     delete(key: string): Promise<void>;
 }
 
-export type ReforgedPersistenceKind = 'indexed-db' | 'memory';
+export type ReforgedPersistenceKind = 'indexed-db' | 'memory' | 'reforged-backend';
 
 export interface ReforgedPersistenceGateway {
     kind: ReforgedPersistenceKind;
