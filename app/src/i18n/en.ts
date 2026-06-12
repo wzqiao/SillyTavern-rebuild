@@ -163,6 +163,7 @@ export const en: Zh = {
     draftDescription: 'First pass supports OpenAI-compatible backends through the direct backend seam.',
     fields: {
       provider: 'Provider',
+      providerPlaceholder: 'Choose a provider',
       baseUrl: 'Base URL',
       baseUrlPlaceholder: 'https://api.example.com/v1',
       model: 'Model',
@@ -413,6 +414,7 @@ export const en: Zh = {
       precise: 'Precise draft',
     },
     fields: {
+      selectPlaceholder: 'Choose an option',
       density: 'Interface density',
       densityHint: 'Applies to this page preview only.',
       compactMode: 'Compact mode',

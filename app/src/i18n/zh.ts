@@ -176,6 +176,7 @@ export const zh = {
     draftDescription: '第一阶段通过 direct backend seam 支持 OpenAI 兼容后端。',
     fields: {
       provider: '服务商',
+      providerPlaceholder: '选择服务商',
       baseUrl: 'Base URL',
       baseUrlPlaceholder: 'https://api.example.com/v1',
       model: '模型',
@@ -426,6 +427,7 @@ export const zh = {
       precise: '精确草稿',
     },
     fields: {
+      selectPlaceholder: '请选择',
       density: '界面密度',
       densityHint: '只影响当前页面预览。',
       compactMode: '紧凑模式',

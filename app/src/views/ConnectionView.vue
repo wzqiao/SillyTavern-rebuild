@@ -320,6 +320,7 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                     :model-value="connectionStore.draft.provider"
                     :options="providerOptions"
                     :label="t.connection.fields.provider"
+                    :placeholder="t.connection.fields.providerPlaceholder"
                     required
                     @update:model-value="updateProvider"
                 />

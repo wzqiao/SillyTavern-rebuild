@@ -219,6 +219,7 @@ function resetLocalPreview(): void {
                         :options="localeOptions"
                         :label="t.settings.fields.language"
                         :hint="t.settings.fields.languageHint"
+                        :placeholder="t.settings.fields.selectPlaceholder"
                         @update:model-value="updateLocale"
                     />
                 </div>
@@ -232,6 +233,7 @@ function resetLocalPreview(): void {
                             :options="densityOptions"
                             :label="t.settings.fields.density"
                             :hint="t.settings.fields.densityHint"
+                            :placeholder="t.settings.fields.selectPlaceholder"
                         />
 
                         <Switch
@@ -263,6 +265,7 @@ function resetLocalPreview(): void {
                         :options="samplingPresetOptions"
                         :label="t.settings.fields.samplingPreset"
                         :hint="t.settings.fields.draftOnly"
+                        :placeholder="t.settings.fields.selectPlaceholder"
                         disabled
                         tone="warning"
                     />
