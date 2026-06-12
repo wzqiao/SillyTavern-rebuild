@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router';
 import { createChatLorebookContext } from '@/services';
 import MultiplayerRoomPanel from '@/components/MultiplayerRoomPanel.vue';
+import { parseChatJsonl } from '@/parsers/chatJsonl';
 import { useCharacterStore, useChatStore, useConnectionStore, useMultiplayerStore, usePersonaStore, usePresetStore, useWorldbookStore } from '@/stores';
 import { Button, Drawer, ListItem, Spinner, Textarea } from '@/ui-kit';
 import { useI18n } from '@/i18n';
@@ -48,6 +49,37 @@ const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
 const sendNotice = ref<string | null>(null);
 const timeline = ref<HTMLElement | null>(null);
 const sessionDrawerOpen = ref(false);
+const legacyChatInput = ref<HTMLInputElement | null>(null);
+
+function triggerLegacyChatImport(): void {
+    legacyChatInput.value?.click();
+}
+
+async function handleLegacyChatFile(event: Event): Promise<void> {
+    const inputElement = event.target as HTMLInputElement;
+    const file = inputElement.files?.[0];
+    inputElement.value = '';
+
+    if (!file) {
+        return;
+    }
+
+    try {
+        const parsed = parseChatJsonl(await file.text());
+        const rosterMatch = parsed.characterName
+            ? characterStore.characters.find((item) => item.card.name === parsed.characterName)
+            : null;
+        const character = rosterMatch ? toChatCharacter(rosterMatch) : null;
+        const session = chatStore.importLegacySession(parsed, { character });
+        const missingCharacterNote = !character && parsed.characterName
+            ? ` ${t.value.chat.importLegacy.noCharacter(parsed.characterName)}`
+            : '';
+        sendNotice.value = t.value.chat.importLegacy.success(session.title, parsed.messages.length) + missingCharacterNote;
+        sessionDrawerOpen.value = false;
+    } catch (error) {
+        sendNotice.value = t.value.chat.importLegacy.failed(error instanceof Error ? error.message : String(error));
+    }
+}
 const editingMessageId = ref<string | null>(null);
 const editingContent = ref('');
 const confirmingDeleteMessageId = ref<string | null>(null);
@@ -1017,6 +1049,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                 >
                     {{ t.chat.newSession }}
                 </Button>
+
+                <Button
+                    type="button"
+                    block
+                    variant="outline"
+                    :disabled="chatStore.isGenerating"
+                    @click="triggerLegacyChatImport"
+                >
+                    {{ t.chat.importLegacy.action }}
+                </Button>
+                <input
+                    ref="legacyChatInput"
+                    type="file"
+                    accept=".jsonl,application/jsonl,application/x-ndjson"
+                    class="hidden"
+                    @change="handleLegacyChatFile"
+                >
 
                 <div
                     v-if="sortedSessions.length === 0"

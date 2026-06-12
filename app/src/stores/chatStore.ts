@@ -15,6 +15,7 @@ import type {
     ReforgedChatSession,
     ReforgedChatStartSessionInput,
 } from '@/contracts/chat';
+import type { ReforgedLegacyChat } from '@/parsers/chatJsonl';
 import {
     createChatGenerationRequest,
     readReforgedSessionMessages,
@@ -147,6 +148,48 @@ export const useChatStore = defineStore('chat', {
                 this.messages.push(greeting);
             }
 
+            return session;
+        },
+
+        /**
+         * 旧版聊天 jsonl 导入(M2.5-A4):消息按原时间戳重建,
+         * assistant swipes 还原为 alternatives。
+         */
+        importLegacySession(
+            parsed: ReforgedLegacyChat,
+            options: { character?: ReforgedChatSession['character']; title?: string } = {},
+            importedAt = createIsoTimestamp(),
+        ): ReforgedChatSession {
+            const character = options.character ?? null;
+            const session: ReforgedChatSession = {
+                id: `chat-session-${this.nextSessionLocalId}`,
+                character,
+                title: options.title?.trim() || character?.name || parsed.characterName || 'Imported chat',
+                createdAt: parsed.messages[0]?.createdAt ?? importedAt,
+                updatedAt: parsed.messages[parsed.messages.length - 1]?.createdAt ?? importedAt,
+                messageIds: [],
+                participants: ['local-user'],
+            };
+
+            this.nextSessionLocalId += 1;
+            this.sessions.push(session);
+
+            for (const legacyMessage of parsed.messages) {
+                const createdAt = legacyMessage.createdAt ?? importedAt;
+                const message = this.createMessage(session.id, legacyMessage.role, legacyMessage.content, createdAt, 'sent');
+
+                if (legacyMessage.role === 'assistant' && legacyMessage.alternatives.length > 0) {
+                    message.alternatives = legacyMessage.alternatives.map((alternative) => this.createAlternative(alternative, createdAt));
+                    message.activeAlternativeIndex = legacyMessage.activeAlternativeIndex >= 0
+                        ? Math.min(legacyMessage.activeAlternativeIndex, message.alternatives.length - 1)
+                        : 0;
+                }
+
+                session.messageIds.push(message.id);
+                this.messages.push(message);
+            }
+
+            this.selectedSessionId = session.id;
             return session;
         },
 

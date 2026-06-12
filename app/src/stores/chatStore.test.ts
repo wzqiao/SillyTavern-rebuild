@@ -947,3 +947,33 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reje
 
     return { promise, resolve, reject };
 }
+
+describe('importLegacySession', () => {
+    it('rebuilds a session with original timestamps and swipe alternatives', () => {
+        const store = useChatStore();
+
+        const session = store.importLegacySession({
+            userName: null,
+            characterName: 'Seraphina',
+            warnings: [],
+            messages: [
+                { role: 'assistant', content: '开场白', createdAt: '2026-06-11T15:50:00.000Z', alternatives: ['开场白'], activeAlternativeIndex: 0 },
+                { role: 'user', content: '你好', createdAt: '2026-06-11T15:51:00.000Z', alternatives: [], activeAlternativeIndex: -1 },
+                { role: 'assistant', content: '第二版', createdAt: '2026-06-11T15:52:00.000Z', alternatives: ['第一版', '第二版'], activeAlternativeIndex: 1 },
+            ],
+        });
+
+        expect(session.title).toBe('Seraphina');
+        expect(session.createdAt).toBe('2026-06-11T15:50:00.000Z');
+        expect(session.updatedAt).toBe('2026-06-11T15:52:00.000Z');
+        expect(store.selectedSessionId).toBe(session.id);
+
+        const messages = store.selectedMessages;
+        expect(messages).toHaveLength(3);
+        expect(messages[0].authorId).toBe('local-character');
+        expect(messages[1].authorId).toBe('local-user');
+        expect(messages[2].alternatives.map((alternative) => alternative.content)).toEqual(['第一版', '第二版']);
+        expect(messages[2].activeAlternativeIndex).toBe(1);
+        expect(messages[2].content).toBe('第二版');
+    });
+});

@@ -107,6 +107,13 @@ export const en: Zh = {
     deleted: 'Message deleted',
     userUpdated: 'User message updated',
 
+    importLegacy: {
+      action: 'Import legacy chat (.jsonl)',
+      success: (title: string, count: number) => `Imported "${title}" (${count} messages).`,
+      failed: (detail: string) => `Import failed: ${detail}`,
+      noCharacter: (name: string) => `"${name}" is not in the character library; imported without a bound character.`,
+    },
+
     roleUser: 'Me',
     roleAssistant: 'Character',
 

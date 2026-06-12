@@ -118,6 +118,13 @@ export const zh = {
     deleted: '消息已删除',
     userUpdated: '用户消息已更新',
 
+    importLegacy: {
+      action: '导入旧版聊天 (.jsonl)',
+      success: (title: string, count: number) => `已导入「${title}」（${count} 条消息）。`,
+      failed: (detail: string) => `导入失败：${detail}`,
+      noCharacter: (name: string) => `角色库中未找到「${name}」，已作为无角色会话导入。`,
+    },
+
     // 角色卡占位
     roleUser: '我',
     roleAssistant: '角色',
