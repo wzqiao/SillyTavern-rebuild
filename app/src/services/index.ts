@@ -19,3 +19,14 @@ export {
     sendChatRuntimeEvents,
     sendChatRuntimeCompletion,
 } from './chatRuntimeService';
+export {
+    ReforgedMultiplayerClientError,
+    createMultiplayerClient,
+    normalizeHttpBaseUrl,
+} from './multiplayerClient';
+export type {
+    ReforgedMultiplayerClient,
+    ReforgedMultiplayerClientOptions,
+    ReforgedRoomSocketConnection,
+    ReforgedRoomSocketHandlers,
+} from './multiplayerClient';

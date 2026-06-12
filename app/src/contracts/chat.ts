@@ -104,6 +104,10 @@ export interface ReforgedChatMessage {
     error?: ReforgedChatError;
     alternatives: ReforgedChatMessageAlternative[];
     activeAlternativeIndex: number;
+    /** 联机预留:消息作者。单机恒为 local-user / local-character。 */
+    authorId?: string;
+    /** 联机预留:单调递增序号,为将来增量同步排序用。 */
+    seq?: number;
 }
 
 // DRAFT: 待主干评审

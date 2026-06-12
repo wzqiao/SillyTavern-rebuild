@@ -9,3 +9,4 @@
 
 ## 现状
 M0 阶段,契约草案随架构验证逐步成形(见 `docs/REFACTOR-PRD.md` §7 M0 产出)。
+M4 多人联机 spike 的房间、参与者、append-only 事件日志与 WebSocket payload 草案见 `multiplayer.ts`。

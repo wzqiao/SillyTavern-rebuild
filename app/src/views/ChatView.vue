@@ -2,7 +2,8 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { createChatLorebookContext } from '@/services';
-import { useCharacterStore, useChatStore, useConnectionStore, useWorldbookStore } from '@/stores';
+import MultiplayerRoomPanel from '@/components/MultiplayerRoomPanel.vue';
+import { useCharacterStore, useChatStore, useConnectionStore, useMultiplayerStore, useWorldbookStore } from '@/stores';
 import { Button, Drawer, ListItem, Spinner, Textarea } from '@/ui-kit';
 import { useI18n } from '@/i18n';
 import type { ReforgedCharacterRosterItem } from '@/contracts/character';
@@ -32,6 +33,7 @@ interface RuntimeActivationOptions {
 const characterStore = useCharacterStore();
 const chatStore = useChatStore();
 const connectionStore = useConnectionStore();
+const multiplayerStore = useMultiplayerStore();
 const worldbookStore = useWorldbookStore();
 const { t, locale } = useI18n();
 
@@ -80,7 +82,8 @@ const demoAdapter: HeadlessEngineAdapter = {
 const selectedCharacter = computed(() => characterStore.selectedCharacter);
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
 const activeSession = computed(() => chatStore.selectedSession);
-const messages = computed(() => chatStore.selectedMessages);
+const isRoomMode = computed(() => multiplayerStore.isConnected);
+const messages = computed(() => isRoomMode.value ? multiplayerStore.chatMessages : chatStore.selectedMessages);
 const sortedSessions = computed(() => [...chatStore.sessions].sort((left, right) => (
     new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
 )));
@@ -100,19 +103,38 @@ const runtimeHandoff = computed(() => connectionStore.runtimeHandoff({
     runtimeDirectRequestReady: runtimeDirectRequestReady.value,
 }));
 const canAttemptRuntime = computed(() => adapterMode.value !== 'runtime' || runtimeHandoff.value.canAttempt);
+const isGenerationBusy = computed(() => (
+    isRoomMode.value
+        ? multiplayerStore.activeGenerations.length > 0
+        : chatStore.isGenerating
+));
 const canSend = computed(() => (
     composer.value.trim().length > 0 &&
-    readiness.value.canSend &&
-    canAttemptRuntime.value &&
-    !chatStore.isGenerating
+    !isGenerationBusy.value &&
+    (
+        isRoomMode.value
+            ? multiplayerStore.socketConnected
+            : readiness.value.canSend && canAttemptRuntime.value
+    )
 ));
 const characterName = computed(() => selectedCharacter.value?.card.name ?? '');
 const headerTitle = computed(() => (
+    multiplayerStore.room?.title ||
     activeSession.value?.title ||
     selectedCharacter.value?.card.name ||
     t.value.chat.openChat
 ));
 const statusMessage = computed(() => {
+    if (isRoomMode.value) {
+        if (multiplayerStore.activeGenerations.length > 0) {
+            return t.value.chat.generatingReply;
+        }
+
+        return multiplayerStore.keyState?.hasKey
+            ? `多人房间就绪 · ${multiplayerStore.participants.length} 人`
+            : '多人房间已连接，填入你的 API Key 后可触发生成。';
+    }
+
     if (chatStore.isGenerating) {
         return t.value.chat.generatingReply;
     }
@@ -296,7 +318,17 @@ function removeChatSession(session: ReforgedChatSession): void {
 
 async function sendMessage(): Promise<void> {
     const content = composer.value.trim();
-    if (!content || chatStore.isGenerating) {
+    if (!content || isGenerationBusy.value) {
+        return;
+    }
+
+    if (isRoomMode.value) {
+        composer.value = '';
+        multiplayerStore.sendChatMessageAndGenerate(content);
+        if (multiplayerStore.lastError) {
+            composer.value = content;
+            sendNotice.value = multiplayerStore.lastError.message;
+        }
         return;
     }
 
@@ -323,6 +355,11 @@ async function sendMessage(): Promise<void> {
 }
 
 function stopGeneration(): void {
+    if (isRoomMode.value) {
+        multiplayerStore.cancelActiveGeneration();
+        return;
+    }
+
     chatStore.cancelGeneration();
 }
 
@@ -482,6 +519,7 @@ function shiftSwipe(message: ReforgedChatMessage, delta: number): void {
 
 function canRunMessageAction(message: ReforgedChatMessage): boolean {
     return (
+        !isRoomMode.value &&
         !chatStore.isGenerating &&
         !pendingActionMessageId.value &&
         message.status !== 'generating'
@@ -521,6 +559,10 @@ function findPreviousUserMessage(message: ReforgedChatMessage): ReforgedChatMess
 }
 
 function messageRoleLabel(message: ReforgedChatMessage): string {
+    if (isRoomMode.value) {
+        return multiplayerStore.participantNameById(message.authorId ?? (message.role === 'assistant' ? 'assistant' : 'system'));
+    }
+
     if (message.role === 'user') {
         return t.value.chat.roleUser;
     }
@@ -784,6 +826,8 @@ function describeError(error: unknown): string {
                 </RouterLink>
             </div>
 
+            <MultiplayerRoomPanel />
+
             <div
                 ref="timeline"
                 class="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-[1.5rem] border border-white/10 bg-neutral-900/55 px-3 py-5 sm:px-5"
@@ -973,11 +1017,11 @@ function describeError(error: unknown): string {
                         :aria-label="t.chat.messageLabel"
                         :placeholder="t.chat.composerPlaceholder"
                         :rows="2"
-                        :disabled="chatStore.isGenerating"
+                        :disabled="isGenerationBusy"
                         class="flex-1"
                     />
                     <Button
-                        v-if="chatStore.isGenerating"
+                        v-if="isGenerationBusy"
                         type="button"
                         variant="danger"
                         @click="stopGeneration"
