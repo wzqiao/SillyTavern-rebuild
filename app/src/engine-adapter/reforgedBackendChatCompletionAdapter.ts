@@ -6,7 +6,7 @@ import type {
   ReforgedChatCompletionMessage,
   ReforgedJsonSchema,
 } from '@/contracts/engine';
-import { normalizeReforgedHttpBaseUrl, type ReforgedRuntimeClientOptions } from '@/services/reforgedRuntimeClient';
+import { normalizeReforgedHttpBaseUrl, reforgedAuthHeaders, type ReforgedRuntimeClientOptions } from '@/services/reforgedRuntimeClient';
 import { createOpenAiSseStream } from './openAiSseStream';
 
 export interface ReforgedBackendChatCompletionDependencies extends ReforgedRuntimeClientOptions {
@@ -55,6 +55,7 @@ export async function sendReforgedBackendChatCompletion(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${runtimeConnection.apiKey}`,
+        ...reforgedAuthHeaders(),
       },
       body: JSON.stringify(createReforgedBackendRequestBody(request, runtimeConnection)),
       signal: request.signal,

@@ -657,3 +657,53 @@ test('storage routes persist envelopes and kv across server restarts', async (t)
         await second.close();
     }
 });
+
+test('enforces server token on http routes and websocket upgrades', async () => {
+    const server = createReforgedServer({ generationMode: 'stub', token: 'secret-token' });
+    await server.listen(0);
+    const baseUrl = httpBaseUrl(server);
+
+    try {
+        // health 豁免(供网关探测)
+        const health = await fetch(`${baseUrl}/api/reforged/health`);
+        assert.equal(health.status, 200);
+
+        const denied = await fetch(`${baseUrl}/api/reforged/storage/characters`);
+        assert.equal(denied.status, 401);
+
+        const wrong = await fetch(`${baseUrl}/api/reforged/storage/characters`, {
+            headers: { 'X-Reforged-Token': 'nope' },
+        });
+        assert.equal(wrong.status, 401);
+
+        const allowed = await fetch(`${baseUrl}/api/reforged/storage/characters`, {
+            headers: { 'X-Reforged-Token': 'secret-token' },
+        });
+        assert.equal(allowed.status, 200);
+
+        // 房间 + WebSocket:无 token 的 upgrade 被拒,带 token 可连
+        const created = await (await fetch(`${baseUrl}/api/reforged/rooms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Reforged-Token': 'secret-token' },
+            body: JSON.stringify({ nickname: 'Alice', password: 'room-pass' }),
+        })).json();
+
+        const wsBase = baseUrl.replace('http://', 'ws://');
+        const join = created.join ?? created;
+        const wsPath = `/api/reforged/rooms/${join.roomId ?? created.room?.id}/ws?participantId=${join.participantId ?? created.participantId}&resumeToken=${join.resumeToken ?? created.resumeToken}`;
+
+        await assert.rejects(new Promise((resolve, reject) => {
+            const ws = new WebSocket(`${wsBase}${wsPath}`);
+            ws.on('open', () => resolve());
+            ws.on('error', (error) => reject(error));
+        }));
+
+        await new Promise((resolve, reject) => {
+            const ws = new WebSocket(`${wsBase}${wsPath}&token=secret-token`);
+            ws.on('open', () => { ws.close(); resolve(); });
+            ws.on('error', (error) => reject(error));
+        });
+    } finally {
+        await server.close();
+    }
+});

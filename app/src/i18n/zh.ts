@@ -515,6 +515,15 @@ export const zh = {
       memory: '内存（刷新即丢）',
       unknown: '初始化中…',
     },
+    server: {
+      label: 'Reforged 服务',
+      description: '存储与联机使用的后端地址；配置口令后所有请求都会携带。改动刷新页面后生效。',
+      urlLabel: '服务地址',
+      tokenLabel: '服务口令（可选）',
+      tokenHint: '与服务端 REFORGED_TOKEN 一致；只保存在本机。',
+      save: '保存（刷新生效）',
+      saved: '已保存，刷新页面生效',
+    },
     secrets: {
       label: '本机密钥',
       description: 'API key 默认保存在本机浏览器存储，仅本设备可见。',

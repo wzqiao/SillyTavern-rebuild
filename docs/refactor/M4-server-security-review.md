@@ -39,12 +39,12 @@
 | 低 | 无速率限制 | 本机无意义；公网部署前补 |
 | 信息 | key 提交走明文 HTTP | 仅 127.0.0.1 回环,不出网卡；远程部署必须上 TLS/反代 |
 
-## B3（最小鉴权）实施时的硬性清单
+## B3（最小鉴权）实施清单 —— ✅ 已完成（2026-06-13）
 
-1. `REFORGED_TOKEN` Bearer 校验覆盖全部 `/api/reforged/*` 与 WebSocket upgrade
-2. CORS 从 `*` 收紧为可配 allowlist，默认 `http://localhost:5173`
-3. 房间口令哈希加盐
-4. 文档明示：公网部署前置 = TLS + SSRF allowlist + 速率限制（不在 B3 范围）
+1. ✅ `REFORGED_TOKEN`（`X-Reforged-Token` 头）校验覆盖全部 `/api/reforged/*`（health 豁免供探测）与 WebSocket upgrade（query token）
+2. ✅ CORS 收紧为可配 allowlist（`REFORGED_ALLOWED_ORIGIN`），默认 `http://localhost:5173,http://127.0.0.1:5173`
+3. ✅ 房间口令哈希加盐（盐随房间生成）
+4. 公网部署前置仍未实施（刻意）：TLS + SSRF allowlist + 速率限制——见「接受的风险」表
 
 ## 验收记录（P0）
 

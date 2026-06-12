@@ -3,6 +3,12 @@ import { computed, ref } from 'vue';
 import type { ReforgedSelectOption } from '@/contracts/ui';
 import { type Locale, useI18n } from '@/i18n';
 import { getAppPersistenceKind } from '@/repositories';
+import {
+    readConfiguredReforgedServerToken,
+    readConfiguredReforgedServerUrl,
+    writeConfiguredReforgedServerToken,
+    writeConfiguredReforgedServerUrl,
+} from '@/services/reforgedRuntimeClient';
 import { useConnectionStore, usePersonaStore } from '@/stores';
 import { Button, Collapse, Input, ListItem, Select, Switch, Textarea } from '@/ui-kit';
 
@@ -45,6 +51,16 @@ const storageKindLabel = computed(() => {
 
     return t.value.settings.storageKinds.unknown;
 });
+
+const serverUrlInput = ref(readConfiguredReforgedServerUrl() ?? '');
+const serverTokenInput = ref(readConfiguredReforgedServerToken() ?? '');
+const serverConfigSaved = ref(false);
+
+function saveServerConfig(): void {
+    writeConfiguredReforgedServerUrl(serverUrlInput.value);
+    writeConfiguredReforgedServerToken(serverTokenInput.value);
+    serverConfigSaved.value = true;
+}
 
 function clearLocalSecrets(): void {
     connectionStore.clearApiKey();
@@ -394,6 +410,38 @@ function resetLocalPreview(): void {
                             </dt>
                             <dd class="font-semibold text-neutral-100">
                                 {{ storageKindLabel }}
+                            </dd>
+                        </div>
+                        <div class="grid gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
+                            <dt class="text-neutral-400">
+                                {{ t.settings.server.label }}
+                                <span class="mt-1 block text-xs leading-5 text-neutral-500">
+                                    {{ t.settings.server.description }}
+                                </span>
+                            </dt>
+                            <dd class="grid gap-2">
+                                <Input
+                                    v-model="serverUrlInput"
+                                    :label="t.settings.server.urlLabel"
+                                    :placeholder="'http://127.0.0.1:8787'"
+                                    inputmode="url"
+                                    autocomplete="off"
+                                />
+                                <Input
+                                    v-model="serverTokenInput"
+                                    :label="t.settings.server.tokenLabel"
+                                    :hint="t.settings.server.tokenHint"
+                                    type="password"
+                                    autocomplete="off"
+                                />
+                                <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    @click="saveServerConfig"
+                                >
+                                    {{ serverConfigSaved ? t.settings.server.saved : t.settings.server.save }}
+                                </Button>
                             </dd>
                         </div>
                         <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">

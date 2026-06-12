@@ -93,11 +93,21 @@ export async function startAppPersistence(
     pinia: Pinia,
     options: AppPersistenceOptions = {},
 ): Promise<AppPersistenceController> {
-    let gateway: ReforgedPersistenceGateway;
+    let gateway: ReforgedPersistenceGateway | null = null;
 
     if (await probeReforgedBackend()) {
-        gateway = createReforgedBackendPersistenceGateway();
-    } else {
+        const backendGateway = createReforgedBackendPersistenceGateway();
+
+        try {
+            // health 不要求口令,真正的授权探测打一次存储接口。
+            await backendGateway.keyValue.get('__probe');
+            gateway = backendGateway;
+        } catch (error) {
+            console.warn('[st-reforged] Reforged backend reachable but storage rejected (token?), falling back to local persistence.', error);
+        }
+    }
+
+    if (!gateway) {
         try {
             gateway = await createIndexedDbPersistenceGateway();
         } catch (error) {

@@ -502,6 +502,15 @@ export const en: Zh = {
       memory: 'In-memory (lost on refresh)',
       unknown: 'Initializing…',
     },
+    server: {
+      label: 'Reforged server',
+      description: 'Backend address for storage and multiplayer; a configured token is attached to every request. Changes apply after a page reload.',
+      urlLabel: 'Server address',
+      tokenLabel: 'Server token (optional)',
+      tokenHint: 'Must match REFORGED_TOKEN on the server; stored only on this device.',
+      save: 'Save (reload to apply)',
+      saved: 'Saved — reload to apply',
+    },
     secrets: {
       label: 'Local secrets',
       description: 'API keys are saved in this browser\'s local storage and never leave this device.',

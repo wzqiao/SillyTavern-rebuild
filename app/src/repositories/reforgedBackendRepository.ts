@@ -6,6 +6,7 @@ import type {
     ReforgedPersistedEnvelope,
     ReforgedPersistenceGateway,
 } from './types';
+import { readConfiguredReforgedServerUrl, reforgedAuthHeaders } from '@/services/reforgedRuntimeClient';
 
 /**
  * Reforged 后端存储网关(M2.5-B2):同一仓储契约的 HTTP 实现。
@@ -41,7 +42,10 @@ export async function probeReforgedBackend(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-        const response = await fetcher(`${baseUrl}/api/reforged/health`, { signal: controller.signal });
+        const response = await fetcher(`${baseUrl}/api/reforged/health`, {
+            signal: controller.signal,
+            headers: reforgedAuthHeaders(),
+        });
         return response.ok;
     } catch {
         return false;
@@ -65,8 +69,12 @@ export function createReforgedBackendPersistenceGateway(
 
         try {
             response = await fetcher(`${baseUrl}/api/reforged/storage${path}`, {
-                headers: { 'Content-Type': 'application/json' },
                 ...init,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...reforgedAuthHeaders(),
+                    ...(init?.headers ?? {}),
+                },
             });
         } catch (error) {
             throw new ReforgedBackendStorageError(
@@ -136,12 +144,6 @@ function normalizeBaseUrl(baseUrl: string | undefined): string {
     return (baseUrl ?? readConfiguredServerUrl() ?? DEFAULT_REFORGED_SERVER_URL).replace(/\/+$/g, '');
 }
 
-/** B3 接 UI 前的轻量覆盖口:localStorage('st-reforged-server-url')。 */
 export function readConfiguredServerUrl(): string | null {
-    try {
-        const value = globalThis.localStorage?.getItem('st-reforged-server-url');
-        return value && value.trim() ? value.trim() : null;
-    } catch {
-        return null;
-    }
+    return readConfiguredReforgedServerUrl();
 }

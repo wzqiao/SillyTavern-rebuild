@@ -10,10 +10,11 @@ import { WebSocketServer } from 'ws';
 const DEFAULT_PORT = 8787;
 const JSON_HEADERS = {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,X-Reforged-Token',
 };
+// B3:默认只允许本机前端来源;'*' 需显式配置(REFORGED_ALLOWED_ORIGIN)。
+const DEFAULT_ALLOWED_ORIGINS = 'http://localhost:5173,http://127.0.0.1:5173';
 const SSE_HEADERS = {
     ...JSON_HEADERS,
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -29,8 +30,32 @@ export function createReforgedServer(options = {}) {
     const id = options.id ?? (() => randomUUID());
     const generationMode = options.generationMode ?? 'proxy';
     const storage = createFileStorage(options.dataDir ?? join(dirname(fileURLToPath(import.meta.url)), 'data'));
+    const serverToken = typeof options.token === 'string' && options.token.trim() ? options.token.trim() : null;
+    const allowedOrigins = String(options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS)
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean);
+
+    function resolveCorsOrigin(requestOrigin) {
+        if (allowedOrigins.includes('*')) {
+            return '*';
+        }
+        return requestOrigin && allowedOrigins.includes(requestOrigin) ? requestOrigin : allowedOrigins[0] ?? 'null';
+    }
+
+    function assertServerToken(request) {
+        if (!serverToken) {
+            return;
+        }
+        const provided = readHeaderToken(request);
+        if (!provided || !timingSafeEqualStrings(provided, serverToken)) {
+            throw new PublicHttpError(401, 'Reforged server token is missing or invalid.');
+        }
+    }
 
     const httpServer = createHttpServer(async (request, response) => {
+        response.setHeader('Access-Control-Allow-Origin', resolveCorsOrigin(request.headers.origin));
+
         try {
             if (request.method === 'OPTIONS') {
                 response.writeHead(204, JSON_HEADERS);
@@ -39,6 +64,10 @@ export function createReforgedServer(options = {}) {
             }
 
             const url = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`);
+
+            if (url.pathname.startsWith('/api/reforged/') && url.pathname !== '/api/reforged/health') {
+                assertServerToken(request);
+            }
 
             if (request.method === 'POST' && url.pathname === '/api/reforged/rooms') {
                 const body = await readJsonBody(request);
@@ -152,6 +181,14 @@ export function createReforgedServer(options = {}) {
             return;
         }
 
+        if (serverToken) {
+            const providedToken = url.searchParams.get('token') ?? '';
+            if (!providedToken || !timingSafeEqualStrings(providedToken, serverToken)) {
+                socket.destroy();
+                return;
+            }
+        }
+
         const roomId = decodeURIComponent(match[1]);
         const participantId = url.searchParams.get('participantId') ?? '';
         const resumeToken = url.searchParams.get('resumeToken') ?? '';
@@ -217,7 +254,7 @@ export function createReforgedServer(options = {}) {
             id: roomId,
             title: readOptionalString(body, 'title') || 'Reforged room',
             inviteCode,
-            passwordHash: hashPassword(password),
+            passwordSalt: `salt-${id()}`,
             createdAt,
             updatedAt: createdAt,
             createdBy: participantId,
@@ -230,6 +267,7 @@ export function createReforgedServer(options = {}) {
             resumeTokens: new Map(),
             clients: new Map(),
         };
+        room.passwordHash = hashPassword(password, room.passwordSalt);
         rooms.set(roomId, room);
 
         room.participants.set(participantId, createParticipant({
@@ -266,7 +304,7 @@ export function createReforgedServer(options = {}) {
         }
 
         const password = readRequiredString(body, 'password');
-        if (!verifyPassword(password, room.passwordHash)) {
+        if (!verifyPassword(password, room.passwordHash, room.passwordSalt)) {
             throw new PublicHttpError(403, 'Room password is invalid.');
         }
 
@@ -1104,14 +1142,29 @@ function send(ws, payload) {
     }
 }
 
-function hashPassword(password) {
-    return createHash('sha256').update(password).digest('hex');
+// B3:房间口令加盐哈希;盐随房间生成,重启即弃(房间是内存态)。
+function hashPassword(password, salt = '') {
+    return createHash('sha256').update(`${salt}:${password}`).digest('hex');
 }
 
-function verifyPassword(password, expectedHash) {
-    const actual = Buffer.from(hashPassword(password));
+function verifyPassword(password, expectedHash, salt = '') {
+    const actual = Buffer.from(hashPassword(password, salt));
     const expected = Buffer.from(expectedHash);
     return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function readHeaderToken(request) {
+    const headerValue = request.headers['x-reforged-token'];
+    if (typeof headerValue === 'string' && headerValue.trim()) {
+        return headerValue.trim();
+    }
+    return null;
+}
+
+function timingSafeEqualStrings(left, right) {
+    const a = Buffer.from(String(left));
+    const b = Buffer.from(String(right));
+    return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function maskSecret(secret) {
@@ -1364,6 +1417,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     const port = Number(process.env.REFORGED_PORT ?? DEFAULT_PORT);
     const server = createReforgedServer({
         generationMode: process.env.REFORGED_GENERATION_MODE ?? 'proxy',
+        token: process.env.REFORGED_TOKEN,
+        allowedOrigins: process.env.REFORGED_ALLOWED_ORIGIN,
     });
     server.listen(port, '127.0.0.1').then((address) => {
         console.log(`[st-reforged] backend listening on ${JSON.stringify(address)}`);

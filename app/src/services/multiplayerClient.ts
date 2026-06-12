@@ -12,7 +12,7 @@ import type {
     RoomJoinResult,
     RoomServerPayload,
 } from '@/contracts/multiplayer';
-import { normalizeReforgedHttpBaseUrl } from './reforgedRuntimeClient';
+import { normalizeReforgedHttpBaseUrl, reforgedAuthHeaders, appendReforgedTokenQuery } from './reforgedRuntimeClient';
 
 export interface ReforgedMultiplayerClientOptions {
     baseUrl?: string;
@@ -96,7 +96,7 @@ export function createMultiplayerClient(options: ReforgedMultiplayerClientOption
             }
 
             socket?.close();
-            const url = createRoomSocketUrl(baseUrl, input);
+            const url = appendReforgedTokenQuery(createRoomSocketUrl(baseUrl, input));
             const ws = new WebSocketCtor(url);
             const connection: ReforgedRoomSocketConnection = {
                 send(payload) {
@@ -160,6 +160,7 @@ async function postJson<TResponse>(
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            ...reforgedAuthHeaders(),
         },
         body: JSON.stringify(body),
     });
