@@ -5,7 +5,7 @@ import { cx } from './utils';
 export type FieldTone = ReforgedUiTone;
 
 const fieldToneClasses: Record<FieldTone, string> = {
-    neutral: 'border-white/10 bg-neutral-950/78 text-neutral-100 placeholder:text-neutral-500 hover:border-white/16 focus:border-cyan-300/45',
+    neutral: 'border-white/10 bg-neutral-950/72 text-neutral-100 placeholder:text-neutral-500 hover:border-white/16 focus:border-cyan-300/45',
     brand: 'border-cyan-400/20 bg-cyan-400/8 text-cyan-50 placeholder:text-cyan-200/35 hover:border-cyan-300/32 focus:border-cyan-200/55',
     success: 'border-emerald-400/20 bg-emerald-400/8 text-emerald-50 placeholder:text-emerald-200/35 hover:border-emerald-300/32 focus:border-emerald-200/55',
     warning: 'border-amber-400/20 bg-amber-400/10 text-amber-50 placeholder:text-amber-200/40 hover:border-amber-300/32 focus:border-amber-200/55',
@@ -29,7 +29,7 @@ export function resolveFieldClasses(options: ResolveFieldClassOptions = {}): str
 
     return cx(
         'w-full border text-sm transition duration-200 ease-out',
-        'min-h-12 rounded-2xl px-4 py-3',
+        'min-h-12 rounded-lg px-4 py-3',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]',
         focusRingClass,
         disabledClass,
