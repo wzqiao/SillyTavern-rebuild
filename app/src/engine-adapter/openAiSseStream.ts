@@ -8,6 +8,13 @@ interface OpenAiSseStreamState {
   finishReason: string | null;
 }
 
+export class OpenAiSseStreamError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OpenAiSseStreamError';
+  }
+}
+
 export async function* createOpenAiSseStream(body: ReadableStream<Uint8Array>): AsyncGenerator<unknown> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -68,6 +75,12 @@ function readStreamEvent(event: string, state: OpenAiSseStreamState): unknown | 
   const parsed: unknown = JSON.parse(rawData);
   if (!isRecord(parsed)) {
     return null;
+  }
+
+  // 上游/Reforged 后端把错误作为 SSE 帧发出(data: {"error": ...}),
+  // 必须立刻抛出,否则流"正常"结束、消息卡在空内容的生成态。
+  if (parsed.error != null) {
+    throw new OpenAiSseStreamError(readSseErrorMessage(parsed.error));
   }
 
   mergeOpenAiSseChunk(state, parsed);
@@ -164,4 +177,16 @@ function readString(value: unknown): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readSseErrorMessage(error: unknown): string {
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim();
+  }
+
+  if (isRecord(error) && typeof error.message === 'string' && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  return 'Upstream stream reported an error.';
 }

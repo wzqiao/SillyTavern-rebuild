@@ -529,6 +529,7 @@ export function createReforgedServer(options = {}) {
         if (!providerRequest.apiKey) {
             throw new PublicHttpError(400, 'Authorization bearer token is required.');
         }
+        assertHttpProviderUrl(providerRequest.baseUrl);
 
         let response;
         try {
@@ -900,13 +901,39 @@ function readBearerToken(value) {
     return match?.[1]?.trim() ?? '';
 }
 
+// 安全审查(2026-06-13):请求体无上限会被单请求耗尽内存,统一封顶。
+const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
+
 async function readJsonBody(request) {
     const chunks = [];
+    let totalBytes = 0;
     for await (const chunk of request) {
+        totalBytes += chunk.length;
+        if (totalBytes > MAX_JSON_BODY_BYTES) {
+            // 不立刻 destroy:先让 413 响应写回客户端,socket 随响应关闭。
+            request.pause();
+            throw new PublicHttpError(413, 'Request body too large.');
+        }
         chunks.push(chunk);
     }
     const text = Buffer.concat(chunks).toString('utf8');
     return text ? JSON.parse(text) : {};
+}
+
+// 安全审查(2026-06-13):baseUrl 由客户端任意指定,至少锁死协议,
+// 防 file:/ftp:/自定义协议;内网地址(SSRF)风险在本机单用户部署下接受,
+// 公网部署前必须加目标地址allowlist——见 docs/refactor/M4-server-security-review.md。
+function assertHttpProviderUrl(value) {
+    let parsed;
+    try {
+        parsed = new URL(value);
+    } catch (_error) {
+        throw new PublicHttpError(400, 'baseUrl must be a valid URL.');
+    }
+
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new PublicHttpError(400, 'baseUrl must use http or https.');
+    }
 }
 
 function writeJson(response, status, body) {

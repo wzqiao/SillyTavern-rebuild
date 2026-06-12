@@ -559,3 +559,51 @@ async function readSseResponse(response) {
         .filter(Boolean)
         .map((chunk) => chunk.replace(/^data:\s?/u, ''));
 }
+
+test('rejects non-http provider urls and oversized request bodies', async () => {
+    const server = createReforgedServer({
+        generationMode: 'proxy',
+        fetch: async () => {
+            throw new Error('provider fetch must not be reached');
+        },
+    });
+
+    await server.listen(0);
+    const baseUrl = httpBaseUrl(server);
+
+    try {
+        const badScheme = await fetch(`${baseUrl}/api/reforged/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: 'Bearer sk-test',
+            },
+            body: JSON.stringify({
+                baseUrl: 'file:///etc/passwd',
+                model: 'demo',
+                messages: [{ role: 'user', content: 'hi' }],
+                stream: false,
+            }),
+        });
+        assert.equal(badScheme.status, 400);
+        const badSchemePayload = await badScheme.json();
+        assert.match(badSchemePayload.error, /http or https/);
+
+        const oversized = await fetch(`${baseUrl}/api/reforged/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: 'Bearer sk-test',
+            },
+            body: JSON.stringify({
+                baseUrl: 'https://api.example.com/v1',
+                model: 'demo',
+                messages: [{ role: 'user', content: 'a'.repeat(3 * 1024 * 1024) }],
+                stream: false,
+            }),
+        });
+        assert.equal(oversized.status, 413);
+    } finally {
+        await server.close();
+    }
+});
