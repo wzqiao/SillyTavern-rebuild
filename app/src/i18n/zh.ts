@@ -195,7 +195,7 @@ export const zh = {
       baseUrlHint: 'OpenAI 兼容端点通常要填到 /v1；例如 https://vip.yyyyai.org/v1。',
       model: '模型',
       modelPlaceholder: 'gpt-4.1-compatible',
-      modelHint: '先手动填写模型 ID；模型列表与测试连接将在后续接入。',
+      modelHint: '可手填模型 ID，或用下方「测试连接 / 获取模型」拉取列表。',
       apiKey: 'API Key',
       apiKeyPlaceholder: '粘贴 API Key',
       apiKeyStoredHint: '当前密钥标记：{key}',
@@ -415,8 +415,8 @@ export const zh = {
       },
       identity: {
         title: '用户身份',
-        description: 'Persona 与用户展示名还没有接入设置契约。',
-        value: '待接入',
+        description: '设置 {{user}} 的名称与设定，生成与聊天界面都会使用。',
+        value: '本机',
       },
       theme: {
         title: '主题',
@@ -481,6 +481,12 @@ export const zh = {
       topP: 'Top P',
       contextReserve: '上下文保留',
       placeholder: '占位',
+    },
+    identityFields: {
+      name: '用户名称',
+      nameHint: '替换 {{user}} 宏与聊天里的「我」标签；留空用默认。',
+      description: '用户设定',
+      descriptionHint: '预设启用 personaDescription 槽位时注入生成；旧式拼装会追加为系统说明。',
     },
     advancedTitle: '高级',
     advancedDescription: '生成与提示词占位项。这些控件尚未接入运行时。',

@@ -3,8 +3,8 @@ import { computed, ref } from 'vue';
 import type { ReforgedSelectOption } from '@/contracts/ui';
 import { type Locale, useI18n } from '@/i18n';
 import { getAppPersistenceKind } from '@/repositories';
-import { useConnectionStore } from '@/stores';
-import { Button, Collapse, Input, ListItem, Select, Switch } from '@/ui-kit';
+import { useConnectionStore, usePersonaStore } from '@/stores';
+import { Button, Collapse, Input, ListItem, Select, Switch, Textarea } from '@/ui-kit';
 
 type SettingsGroupId =
     | 'connection'
@@ -26,6 +26,7 @@ interface SettingsGroup {
 const { t, locale, setLocale } = useI18n();
 
 const connectionStore = useConnectionStore();
+const personaStore = usePersonaStore();
 const secretsCleared = ref(false);
 const storageKindLabel = computed(() => {
     const kind = getAppPersistenceKind();
@@ -337,6 +338,26 @@ function resetLocalPreview(): void {
                             </div>
                         </div>
                     </Collapse>
+                </div>
+
+                <div
+                    v-else-if="selectedGroupId === 'identity'"
+                    class="grid gap-4 rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4"
+                >
+                    <Input
+                        :model-value="personaStore.name"
+                        :label="t.settings.identityFields.name"
+                        :hint="t.settings.identityFields.nameHint"
+                        autocomplete="nickname"
+                        @update:model-value="personaStore.patchPersona({ name: $event })"
+                    />
+                    <Textarea
+                        :model-value="personaStore.description"
+                        :label="t.settings.identityFields.description"
+                        :hint="t.settings.identityFields.descriptionHint"
+                        :rows="4"
+                        @update:model-value="personaStore.patchPersona({ description: $event })"
+                    />
                 </div>
 
                 <div

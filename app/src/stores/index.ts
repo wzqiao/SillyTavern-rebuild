@@ -6,6 +6,7 @@ export {
     exportConnectionSecretsForPersistence,
     restoreConnectionSecretsFromPersistence,
 } from './connectionStore';
+export { usePersonaStore } from './personaStore';
 export { usePresetStore } from './presetStore';
 export { useWorldbookStore } from './worldbookStore';
 export {

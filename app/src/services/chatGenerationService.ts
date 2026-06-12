@@ -7,6 +7,7 @@ import type {
     ReforgedChatLorebookDepthContext,
     ReforgedChatLorebookEntryContext,
     ReforgedChatMessage,
+    ReforgedChatPersonaContext,
     ReforgedChatSession,
 } from '@/contracts/chat';
 
@@ -42,7 +43,7 @@ export function createChatEngineMessages(
     const presetPrompts = options.presetPrompts?.filter((prompt) => prompt.enabled) ?? [];
 
     if (presetPrompts.length > 0) {
-        return createPresetEngineMessages(session, allMessages, lorebooks, presetPrompts);
+        return createPresetEngineMessages(session, allMessages, lorebooks, presetPrompts, options.persona);
     }
 
     const engineMessages: ReforgedChatEngineMessage[] = [];
@@ -70,8 +71,9 @@ function createPresetEngineMessages(
     allMessages: ReforgedChatMessage[],
     lorebooks: ReforgedChatLorebookContext[],
     prompts: ReforgedPresetPrompt[],
+    persona?: ReforgedChatPersonaContext | null,
 ): ReforgedChatEngineMessage[] {
-    const substituteMacros = createMacroSubstituter(session);
+    const substituteMacros = createMacroSubstituter(session, persona);
     const engineMessages: ReforgedChatEngineMessage[] = [];
 
     const push = (role: ReforgedChatEngineMessage['role'], content: string): void => {
@@ -94,6 +96,9 @@ function createPresetEngineMessages(
                 break;
             case 'scenario':
                 push('system', substituteMacros(session.character?.scenario ?? ''));
+                break;
+            case 'personaDescription':
+                push('system', substituteMacros(persona?.description ?? ''));
                 break;
             case 'dialogueExamples':
                 for (const block of parseExampleBlocks(session.character?.exampleMessages, substituteMacros)) {
@@ -134,12 +139,16 @@ function appendSessionHistory(
     }
 }
 
-function createMacroSubstituter(session: ReforgedChatSession): (text: string) => string {
+function createMacroSubstituter(
+    session: ReforgedChatSession,
+    persona?: ReforgedChatPersonaContext | null,
+): (text: string) => string {
     const characterName = session.character?.name?.trim() || 'Assistant';
+    const userName = persona?.name?.trim() || 'User';
 
     return (text: string) => text
         .replace(/\{\{char\}\}/gi, characterName)
-        .replace(/\{\{user\}\}/gi, 'User');
+        .replace(/\{\{user\}\}/gi, userName);
 }
 
 // 旧版 mes_example 以 <START> 分块,每块是一段示例对话。
@@ -210,6 +219,7 @@ function createSystemPrompt(
 ): string {
     return [
         options.systemPrompt?.trim() || createCharacterSystemPrompt(session),
+        createPersonaSystemPrompt(session, options.persona),
         createLorebookSystemPrompt(lorebooks),
     ].filter(Boolean).join('\n\n');
 }
@@ -231,6 +241,21 @@ function createCharacterSystemPrompt(session: ReforgedChatSession): string {
     ].filter(Boolean);
 
     return sections.join('\n\n');
+}
+
+function createPersonaSystemPrompt(
+    session: ReforgedChatSession,
+    persona?: ReforgedChatPersonaContext | null,
+): string {
+    const description = persona?.description?.trim();
+
+    if (!description) {
+        return '';
+    }
+
+    const substituteMacros = createMacroSubstituter(session, persona);
+    const userName = persona?.name?.trim() || 'User';
+    return `About ${userName} (the user): ${substituteMacros(description)}`;
 }
 
 function createLorebookSystemPrompt(lorebooks: ReforgedChatLorebookContext[]): string {

@@ -190,3 +190,29 @@ describe('dialogueExamples marker (mes_example)', () => {
         expect(String(messages[0].content)).toContain('星澜: 我是星澜。');
     });
 });
+
+describe('persona context', () => {
+    it('substitutes {{user}} and fills the personaDescription marker in preset assembly', () => {
+        const prompts: ReforgedPresetPrompt[] = [
+            { identifier: 'main', name: 'Main', role: 'system', content: 'Write for {{user}}.', marker: false, enabled: true },
+            { identifier: 'personaDescription', name: 'Persona', role: 'system', content: '', marker: true, enabled: true },
+            { identifier: 'chatHistory', name: 'History', role: 'system', content: '', marker: true, enabled: true },
+        ];
+
+        const messages = createChatEngineMessages(createSession(), createMessages(), {
+            presetPrompts: prompts,
+            persona: { name: '夜行者', description: '{{user}} 是一名旅行商人。' },
+        }, []);
+
+        expect(messages[0].content).toBe('Write for 夜行者.');
+        expect(messages[1].content).toBe('夜行者 是一名旅行商人。');
+    });
+
+    it('appends a persona section in legacy assembly', () => {
+        const messages = createChatEngineMessages(createSession(), createMessages(), {
+            persona: { name: '夜行者', description: '旅行商人。' },
+        }, []);
+
+        expect(String(messages[0].content)).toContain('About 夜行者 (the user): 旅行商人。');
+    });
+});

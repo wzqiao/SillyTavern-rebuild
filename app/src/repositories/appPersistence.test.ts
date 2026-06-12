@@ -7,6 +7,7 @@ import {
     useCharacterStore,
     useChatStore,
     useConnectionStore,
+    usePersonaStore,
     usePresetStore,
     useWorldbookStore,
 } from '@/stores';
@@ -58,6 +59,8 @@ describe('app persistence round trip', () => {
         connectionA.setTransportMode('reforged-backend');
         const applyResult = connectionA.applyDraft();
         expect(applyResult.ok).toBe(true);
+
+        usePersonaStore(piniaA).patchPersona({ name: '夜行者', description: '旅行商人。' });
 
         const presetA = usePresetStore(piniaA);
         const presetImport = presetA.importPreset({
@@ -111,6 +114,10 @@ describe('app persistence round trip', () => {
         const presetB = usePresetStore(piniaB);
         expect(presetB.presets).toHaveLength(1);
         expect(presetB.selectedPreset?.preset.sampling.temperature).toBe(0.7);
+
+        const personaB = usePersonaStore(piniaB);
+        expect(personaB.name).toBe('夜行者');
+        expect(personaB.description).toBe('旅行商人。');
 
         controllerB.stop();
     });

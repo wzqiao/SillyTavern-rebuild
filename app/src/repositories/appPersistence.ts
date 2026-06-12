@@ -15,6 +15,7 @@ import {
     useCharacterStore,
     useChatStore,
     useConnectionStore,
+    usePersonaStore,
     usePresetStore,
     useWorldbookStore,
 } from '@/stores';
@@ -25,6 +26,7 @@ const KV_WORLDBOOKS_META = 'worldbooks.meta';
 const KV_CHAT_META = 'chat.meta';
 const KV_CONNECTION_STATE = 'connection.state';
 const KV_PRESETS_META = 'presets.meta';
+const KV_PERSONA_STATE = 'persona.state';
 
 const DEFAULT_DEBOUNCE_MS = 250;
 
@@ -49,6 +51,11 @@ interface ChatMeta {
 interface PresetsMeta {
     selectedPresetId: string | null;
     nextLocalId: number;
+}
+
+interface PersonaPersistedState {
+    name: string;
+    description: string;
 }
 
 interface ConnectionPersistedState {
@@ -111,6 +118,7 @@ export async function createAppPersistenceController(
     const chatStore = useChatStore(pinia);
     const connectionStore = useConnectionStore(pinia);
     const presetStore = usePresetStore(pinia);
+    const personaStore = usePersonaStore(pinia);
 
     const characterSync = new EntitySync(gateway.characters as ReforgedEntityRepository<{ id: string }>);
     const worldbookSync = new EntitySync(gateway.worldbooks as ReforgedEntityRepository<{ id: string }>);
@@ -138,6 +146,7 @@ export async function createAppPersistenceController(
         gateway.keyValue.get<ConnectionPersistedState>(KV_CONNECTION_STATE),
         gateway.keyValue.get<PresetsMeta>(KV_PRESETS_META),
     ]);
+    const personaState = await gateway.keyValue.get<PersonaPersistedState>(KV_PERSONA_STATE);
 
     if (characterEnvelopes.length > 0 || charactersMeta) {
         characterStore.$patch({
@@ -182,6 +191,13 @@ export async function createAppPersistenceController(
             presets: presetEnvelopes.map((envelope) => envelope.data) as never[],
             selectedPresetId: presetsMeta?.selectedPresetId ?? null,
             nextLocalId: presetsMeta?.nextLocalId ?? presetEnvelopes.length + 1,
+        });
+    }
+
+    if (personaState) {
+        personaStore.$patch({
+            name: personaState.name ?? '',
+            description: personaState.description ?? '',
         });
     }
 
@@ -279,6 +295,13 @@ export async function createAppPersistenceController(
         });
     };
 
+    const writePersona = async (): Promise<void> => {
+        await gateway.keyValue.set<PersonaPersistedState>(KV_PERSONA_STATE, {
+            name: personaStore.name,
+            description: personaStore.description,
+        });
+    };
+
     // flush: 'sync' 确保变更立即进入防抖队列,避免「修改后立刻刷新」窗口期丢写。
     const unsubscribes = [
         characterStore.$subscribe(() => schedule('characters', writeCharacters), { detached: true, flush: 'sync' }),
@@ -286,6 +309,7 @@ export async function createAppPersistenceController(
         chatStore.$subscribe(() => schedule('chat', writeChat), { detached: true, flush: 'sync' }),
         connectionStore.$subscribe(() => schedule('connection', writeConnection), { detached: true, flush: 'sync' }),
         presetStore.$subscribe(() => schedule('presets', writePresets), { detached: true, flush: 'sync' }),
+        personaStore.$subscribe(() => schedule('persona', writePersona), { detached: true, flush: 'sync' }),
     ];
 
     const handleVisibilityChange = (): void => {

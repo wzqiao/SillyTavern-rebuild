@@ -126,6 +126,12 @@ export interface ReforgedChatSession {
 }
 
 // DRAFT: 待主干评审
+export interface ReforgedChatPersonaContext {
+    name?: string;
+    description?: string;
+}
+
+// DRAFT: 待主干评审
 export interface ReforgedChatGenerationOptions {
     api?: ReforgedGenerationApi | null;
     instructOverride?: boolean;
@@ -139,6 +145,8 @@ export interface ReforgedChatGenerationOptions {
     sampling?: ReforgedPresetSampling | null;
     /** 预设 prompt 结构(已按 prompt_order 排序),存在时接管消息拼装。 */
     presetPrompts?: ReforgedPresetPrompt[] | null;
+    /** 用户身份(M2.5-A3):{{user}} 宏与 personaDescription 槽位的数据源。 */
+    persona?: ReforgedChatPersonaContext | null;
 }
 
 // DRAFT: 待主干评审

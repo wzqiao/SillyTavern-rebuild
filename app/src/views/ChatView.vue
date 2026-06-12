@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router';
 import { createChatLorebookContext } from '@/services';
 import MultiplayerRoomPanel from '@/components/MultiplayerRoomPanel.vue';
-import { useCharacterStore, useChatStore, useConnectionStore, useMultiplayerStore, usePresetStore, useWorldbookStore } from '@/stores';
+import { useCharacterStore, useChatStore, useConnectionStore, useMultiplayerStore, usePersonaStore, usePresetStore, useWorldbookStore } from '@/stores';
 import { Button, Drawer, ListItem, Spinner, Textarea } from '@/ui-kit';
 import { useI18n } from '@/i18n';
 import type { ReforgedCharacterRosterItem } from '@/contracts/character';
@@ -34,6 +34,7 @@ const characterStore = useCharacterStore();
 const chatStore = useChatStore();
 const connectionStore = useConnectionStore();
 const multiplayerStore = useMultiplayerStore();
+const personaStore = usePersonaStore();
 const presetStore = usePresetStore();
 const worldbookStore = useWorldbookStore();
 const { t, locale } = useI18n();
@@ -428,6 +429,7 @@ function createGenerationInput(options: {
             presetPrompts: presetStore.selectedEnabledPrompts.length > 0
                 ? presetStore.selectedEnabledPrompts
                 : null,
+            persona: personaStore.persona,
         },
     };
 }
@@ -579,7 +581,7 @@ function messageRoleLabel(message: ReforgedChatMessage): string {
     }
 
     if (message.role === 'user') {
-        return t.value.chat.roleUser;
+        return personaStore.displayName || t.value.chat.roleUser;
     }
 
     return characterName.value || t.value.chat.roleAssistant;
