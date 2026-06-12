@@ -38,6 +38,40 @@ const presetStore = usePresetStore();
 const presetFileInput = ref<HTMLInputElement | null>(null);
 const presetNotice = ref<string | null>(null);
 
+const modelOptions = computed<ReforgedSelectOption[]>(() => connectionStore.availableModels.map((model) => ({
+    value: model,
+    label: model,
+})));
+
+const probeStatus = computed(() => {
+    const probe = connectionStore.lastProbe;
+
+    if (!probe) {
+        return null;
+    }
+
+    if (probe.ok) {
+        return {
+            tone: 'success' as const,
+            text: probe.models && probe.models.length > 0
+                ? t.value.connection.probe.success(probe.models.length, probe.latencyMs ?? 0)
+                : t.value.connection.probe.successNoList(probe.latencyMs ?? 0),
+        };
+    }
+
+    const text = probe.code === 'config'
+        ? t.value.connection.probe.failConfig
+        : probe.code === 'cors-or-network'
+            ? t.value.connection.probe.failCors
+            : t.value.connection.probe.failHttp(probe.detail ?? '');
+
+    return { tone: 'danger' as const, text };
+});
+
+async function runProbe(): Promise<void> {
+    await connectionStore.probeConnection();
+}
+
 const presetOptions = computed<ReforgedSelectOption[]>(() => [
     { value: '', label: t.value.connection.preset.none },
     ...presetStore.presets.map((item) => ({
@@ -460,6 +494,38 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                     data-testid="connection-model-input"
                     @update:model-value="updateDraft({ model: $event })"
                 />
+
+                <Select
+                    v-if="modelOptions.length > 0"
+                    :model-value="connectionStore.availableModels.includes(connectionStore.draft.model) ? connectionStore.draft.model : ''"
+                    :options="modelOptions"
+                    :label="t.connection.probe.pickModel"
+                    :placeholder="t.connection.fields.modelPlaceholder"
+                    @update:model-value="updateDraft({ model: $event })"
+                />
+
+                <div class="grid gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        block
+                        :loading="connectionStore.probing"
+                        data-testid="connection-probe-button"
+                        @click="runProbe"
+                    >
+                        {{ t.connection.probe.action }}
+                    </Button>
+                    <p
+                        v-if="probeStatus"
+                        class="rounded-2xl border px-3 py-2 text-xs leading-5"
+                        :class="probeStatus.tone === 'success'
+                            ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100'
+                            : 'border-rose-400/25 bg-rose-400/10 text-rose-100'"
+                        role="status"
+                    >
+                        {{ probeStatus.text }}
+                    </p>
+                </div>
             </div>
 
             <ul

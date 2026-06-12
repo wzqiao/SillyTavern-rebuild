@@ -230,6 +230,15 @@ export const en: Zh = {
       runtimeConnectionUnwired: 'Runtime adapter is ready, but the Reforged/backend request path is not available.',
       apiKeyUnavailable: 'Runtime adapter is ready, but the applied API key is no longer available in memory.',
     },
+    probe: {
+      action: 'Test connection / fetch models',
+      success: (count: number, ms: number) => `Connected · ${count} models · ${ms}ms`,
+      successNoList: (ms: number) => `Connected · ${ms}ms (no model list returned; type one manually)`,
+      pickModel: 'Pick a model from the list',
+      failConfig: 'Fill in the base URL and API key first.',
+      failCors: 'Blocked by CORS or unreachable; you can still type a model and generate through another transport.',
+      failHttp: (detail: string) => `The server returned an error: ${detail}`,
+    },
     preset: {
       title: 'Preset (optional)',
       description: 'Import a legacy SillyTavern OpenAI preset JSON. Sampling parameters and prompt ordering apply to Runtime generation.',

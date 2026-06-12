@@ -360,3 +360,60 @@ describe('useConnectionStore', () => {
         expect(store.appliedDraft).toBeNull();
     });
 });
+
+describe('probeConnection', () => {
+    beforeEach(() => {
+        resetConnectionSecretVaultForTest();
+        setActivePinia(createPinia());
+    });
+
+    function prepareDraft() {
+        const store = useConnectionStore();
+        store.patchDraft({ baseUrl: 'https://api.example.com/v1/', model: 'demo' });
+        setConnectionDraftApiKeySecret(store, 'sk-probe-secret');
+        return store;
+    }
+
+    it('fetches and sorts model ids from an openai-style payload', async () => {
+        const store = prepareDraft();
+        const calls: Array<{ url: string; auth: string | undefined }> = [];
+        const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+            calls.push({ url: String(url), auth: (init?.headers as Record<string, string>)?.Authorization });
+            return new Response(JSON.stringify({ data: [{ id: 'b-model' }, { id: 'a-model' }, { id: 'a-model' }] }), { status: 200 });
+        }) as typeof fetch;
+
+        const result = await store.probeConnection(fetcher);
+
+        expect(result.ok).toBe(true);
+        expect(result.models).toEqual(['a-model', 'b-model']);
+        expect(store.availableModels).toEqual(['a-model', 'b-model']);
+        expect(calls[0].url).toBe('https://api.example.com/v1/models');
+        expect(calls[0].auth).toBe('Bearer sk-probe-secret');
+        expect(store.probing).toBe(false);
+    });
+
+    it('classifies http failures without clearing previous models', async () => {
+        const store = prepareDraft();
+        store.availableModels = ['keep-me'];
+        const fetcher = (async () => new Response('denied', { status: 401 })) as typeof fetch;
+
+        const result = await store.probeConnection(fetcher);
+
+        expect(result).toMatchObject({ ok: false, code: 'http', detail: 'HTTP 401' });
+        expect(store.availableModels).toEqual(['keep-me']);
+    });
+
+    it('classifies network/cors failures and missing config', async () => {
+        const store = prepareDraft();
+        const fetcher = (async () => {
+            throw new TypeError('Failed to fetch');
+        }) as typeof fetch;
+
+        const network = await store.probeConnection(fetcher);
+        expect(network).toMatchObject({ ok: false, code: 'cors-or-network' });
+
+        store.clearAll();
+        const config = await store.probeConnection(fetcher);
+        expect(config).toMatchObject({ ok: false, code: 'config' });
+    });
+});

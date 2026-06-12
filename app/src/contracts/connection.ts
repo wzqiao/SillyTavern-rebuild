@@ -114,3 +114,15 @@ export interface ReforgedConnectionRuntimeHandoff {
     issues: ReforgedConnectionRuntimeHandoffIssue[];
     message: string;
 }
+
+// DRAFT: 待主干评审
+export type ReforgedConnectionProbeFailureCode = 'config' | 'cors-or-network' | 'http';
+
+// DRAFT: 待主干评审
+export interface ReforgedConnectionProbeResult {
+    ok: boolean;
+    code?: ReforgedConnectionProbeFailureCode;
+    detail?: string;
+    models?: string[];
+    latencyMs?: number;
+}

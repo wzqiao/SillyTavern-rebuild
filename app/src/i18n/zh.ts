@@ -243,6 +243,15 @@ export const zh = {
       runtimeConnectionUnwired: '运行时适配器已就绪，但 Reforged/backend 请求路径还不可用。',
       apiKeyUnavailable: '运行时适配器已就绪，但已应用的 API Key 已不在内存中。',
     },
+    probe: {
+      action: '测试连接 / 获取模型',
+      success: (count: number, ms: number) => `连接成功 · ${count} 个模型 · ${ms}ms`,
+      successNoList: (ms: number) => `连接成功 · ${ms}ms（该服务未返回模型列表，可手填）`,
+      pickModel: '从列表选择模型',
+      failConfig: '请先填写 Base URL 和 API Key。',
+      failCors: '浏览器跨域被拒或地址不可达；模型可手填，生成仍可走其它连接方式。',
+      failHttp: (detail: string) => `服务端返回错误：${detail}`,
+    },
     preset: {
       title: '预设（可选）',
       description: '导入旧版 SillyTavern OpenAI 预设 JSON。采样参数与 prompt 编排会在运行时生成中生效。',

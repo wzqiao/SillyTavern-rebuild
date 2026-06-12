@@ -13,6 +13,7 @@ import type {
     ReforgedConnectionRuntimeHandoff,
     ReforgedConnectionRuntimeHandoffInput,
     ReforgedConnectionValidationIssue,
+    ReforgedConnectionProbeResult,
 } from '@/contracts/connection';
 
 interface ConnectionStoreState {
@@ -20,6 +21,10 @@ interface ConnectionStoreState {
     appliedDraft: ReforgedAppliedConnectionDraft | null;
     transportMode: ReforgedConnectionTransportMode;
     nextLocalId: number;
+    /** 探测结果与模型列表是会话级瞬态,不持久化。 */
+    availableModels: string[];
+    lastProbe: ReforgedConnectionProbeResult | null;
+    probing: boolean;
 }
 
 const connectionSecretVault = new Map<string, string>();
@@ -42,6 +47,9 @@ export const useConnectionStore = defineStore('connection', {
         appliedDraft: null,
         transportMode: 'auto',
         nextLocalId: 1,
+        availableModels: [],
+        lastProbe: null,
+        probing: false,
     }),
 
     getters: {
@@ -174,6 +182,60 @@ export const useConnectionStore = defineStore('connection', {
                 this.appliedDraft = null;
             }
             this.draft.apiKey = emptySecretMetadata();
+        },
+
+        /**
+         * 连接测试 + 模型列表(A1):浏览器直连 GET {baseUrl}/models。
+         * 拉不到列表不阻塞使用——模型仍可手填,生成走所选 transport。
+         */
+        async probeConnection(fetcher: typeof fetch = globalThis.fetch): Promise<ReforgedConnectionProbeResult> {
+            const draft = normalizeDraft(this.draft);
+            const apiKey = readVaultSecret(DRAFT_SECRET_SLOT);
+
+            if (!draft.baseUrl || !apiKey) {
+                return this.recordProbe({ ok: false, code: 'config' });
+            }
+
+            this.probing = true;
+            const startedAt = Date.now();
+
+            try {
+                let response: Response;
+
+                try {
+                    response = await fetcher(`${draft.baseUrl.replace(/\/+$/g, '')}/models`, {
+                        headers: { Authorization: `Bearer ${apiKey}` },
+                    });
+                } catch (error) {
+                    return this.recordProbe({
+                        ok: false,
+                        code: 'cors-or-network',
+                        detail: error instanceof Error ? error.message : String(error),
+                    });
+                }
+
+                const latencyMs = Date.now() - startedAt;
+
+                if (!response.ok) {
+                    return this.recordProbe({
+                        ok: false,
+                        code: 'http',
+                        detail: `HTTP ${response.status}`,
+                        latencyMs,
+                    });
+                }
+
+                const models = readModelIds(await response.json().catch(() => null));
+                this.availableModels = models;
+                return this.recordProbe({ ok: true, models, latencyMs });
+            } finally {
+                this.probing = false;
+            }
+        },
+
+        recordProbe(result: ReforgedConnectionProbeResult): ReforgedConnectionProbeResult {
+            this.lastProbe = result;
+            return result;
         },
 
         clearAll(): void {
@@ -501,4 +563,28 @@ function maskSecret(value: string): string {
     }
 
     return `${value.slice(0, 3)}****${value.slice(-4)}`;
+}
+
+function readModelIds(payload: unknown): string[] {
+    const list = Array.isArray(payload)
+        ? payload
+        : payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).data)
+            ? (payload as { data: unknown[] }).data
+            : payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).models)
+                ? (payload as { models: unknown[] }).models
+                : [];
+
+    const ids = list
+        .map((item) => {
+            if (typeof item === 'string') {
+                return item;
+            }
+            if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string') {
+                return (item as { id: string }).id;
+            }
+            return '';
+        })
+        .filter((id) => id.length > 0);
+
+    return [...new Set(ids)].sort((left, right) => left.localeCompare(right));
 }
