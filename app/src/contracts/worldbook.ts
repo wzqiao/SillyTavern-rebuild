@@ -1,11 +1,8 @@
-// DRAFT: 待主干评审
-
 export type ReforgedWorldbookSource =
     | 'sillytavern-world-info'
     | 'character-book'
     | 'unknown';
 
-// DRAFT: 待主干评审
 export type ReforgedWorldbookEntryPosition =
     | 'before'
     | 'after'
@@ -17,7 +14,6 @@ export type ReforgedWorldbookEntryPosition =
     | 'outlet'
     | 'unknown';
 
-// DRAFT: 待主干评审
 export interface ReforgedWorldbookEntry {
     id: string;
     uid: string | number | null;
@@ -66,7 +62,6 @@ export interface ReforgedWorldbookEntry {
     raw: Record<string, unknown>;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedWorldbook {
     name: string;
     source: ReforgedWorldbookSource;
@@ -74,14 +69,12 @@ export interface ReforgedWorldbook {
     raw: Record<string, unknown>;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedWorldbookImportInput {
     fileName: string;
     mimeType?: string;
     text?: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedWorldbookLibraryItem {
     id: string;
     worldbook: ReforgedWorldbook;
@@ -90,21 +83,18 @@ export interface ReforgedWorldbookLibraryItem {
     warnings: string[];
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedWorldbookImportSource {
     fileName: string;
     mimeType?: string;
     format: 'json' | 'unknown';
 }
 
-// DRAFT: 待主干评审
 export type ReforgedWorldbookImportFailureCode =
     | 'missing-content'
     | 'invalid-json'
     | 'unsupported-format'
     | 'empty-worldbook';
 
-// DRAFT: 待主干评审
 export interface ReforgedWorldbookImportSuccess {
     ok: true;
     worldbook: ReforgedWorldbook;
@@ -112,7 +102,6 @@ export interface ReforgedWorldbookImportSuccess {
     warnings: string[];
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedWorldbookImportFailure {
     ok: false;
     code: ReforgedWorldbookImportFailureCode;
@@ -121,7 +110,6 @@ export interface ReforgedWorldbookImportFailure {
     warnings: string[];
 }
 
-// DRAFT: 待主干评审
 export type ReforgedWorldbookImportResult =
     | ReforgedWorldbookImportSuccess
     | ReforgedWorldbookImportFailure;

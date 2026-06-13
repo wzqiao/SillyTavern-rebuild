@@ -1,6 +1,8 @@
 # Reforged Server
 
-M4/M4.1 backend runtime for ST-Reforged. This process is intentionally small and in-memory so the room protocol, websocket flow, OpenAI-compatible generation proxy, and credential rules can be verified before choosing durable storage.
+M4/M4.1 backend runtime for ST-Reforged. The process now owns the preferred single-player OpenAI-compatible generation proxy, JSON-backed app storage, minimal server-token auth, and the first multiplayer room spike.
+
+Room state and participant credential vaults are still in memory. App library/session/settings data use JSON files under `reforged-server/data/`, which is ignored by git and intended as the local/dev storage backend until M4 chooses durable room/event storage.
 
 ## Run
 
@@ -35,11 +37,14 @@ Default address: `http://127.0.0.1:8787`.
 
 ## Security Rules
 
+- Set `REFORGED_TOKEN` or pass `--token` to require a server token on `/api/reforged/*` routes and WebSocket upgrades. Without a token, the server keeps the local single-user development behavior.
+- CORS defaults to `http://localhost:5173,http://127.0.0.1:5173`; override with `REFORGED_ALLOWED_ORIGIN` only for known deployment origins.
 - Raw API keys are held only in the in-memory `credentialVault`.
 - Single-player runtime keys are transient and must not be written to room state, event logs, response bodies, or console logs.
 - Raw API keys are not written to room snapshots, append-only events, WebSocket payloads, persisted files, or console logs.
 - Generation uses the WebSocket participant id as authority and ignores any client-supplied raw key.
 - The first version uses room passwords, not accounts. This is not yet sufficient for public untrusted deployments.
+- Public deployments still need TLS, provider target allowlisting or private-address blocking, rate limits, and a stronger identity/permission model.
 
 ## Tests
 
@@ -47,4 +52,4 @@ Default address: `http://127.0.0.1:8787`.
 node --test reforged-server/server.test.js
 ```
 
-The test covers password joins, WebSocket broadcast, per-participant generation key selection, and raw-key absence from public state/events.
+The test covers password joins, WebSocket broadcast, per-participant generation key selection, raw-key absence from public state/events, chat completion proxying, sanitized provider errors, storage persistence, request body limits, provider URL protocol checks, and server-token enforcement.

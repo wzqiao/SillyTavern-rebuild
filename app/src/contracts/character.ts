@@ -1,5 +1,3 @@
-// DRAFT: 待主干评审
-
 export type ReforgedCharacterCardSource =
     | 'json-v1-like'
     | 'json-v2'
@@ -7,10 +5,8 @@ export type ReforgedCharacterCardSource =
     | 'json-v3-like'
     | 'json-unknown';
 
-// DRAFT: 待主干评审
 export type ReforgedCharacterCardPngChunkType = 'tEXt' | 'iTXt' | 'zTXt';
 
-// DRAFT: 待主干评审
 export type ReforgedCharacterCardPngParseReasonCode =
     | 'invalid-input'
     | 'invalid-png-signature'
@@ -19,7 +15,6 @@ export type ReforgedCharacterCardPngParseReasonCode =
     | 'compressed-metadata-unsupported'
     | 'metadata-not-json';
 
-// DRAFT: 待主干评审
 export interface ReforgedCharacterCardPngParseReason {
     code: ReforgedCharacterCardPngParseReasonCode;
     message: string;
@@ -42,7 +37,6 @@ export interface ReforgedCharacterCard {
     source: ReforgedCharacterCardSource;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedCharacterCardPngParseResult {
     card: ReforgedCharacterCard | null;
     chunkType: ReforgedCharacterCardPngChunkType | null;
@@ -50,7 +44,6 @@ export interface ReforgedCharacterCardPngParseResult {
     reasons: ReforgedCharacterCardPngParseReason[];
 }
 
-// DRAFT: 待主干评审
 export type ReforgedCharacterImportFormat =
     | 'json'
     | 'png'
@@ -59,7 +52,6 @@ export type ReforgedCharacterImportFormat =
     | 'byaf'
     | 'unknown';
 
-// DRAFT: 待主干评审
 export type ReforgedCharacterImportFailureCode =
     | 'unsupported-format'
     | 'missing-content'
@@ -68,7 +60,6 @@ export type ReforgedCharacterImportFailureCode =
     | 'png-metadata-not-found'
     | 'png-metadata-invalid';
 
-// DRAFT: 待主干评审
 export interface ReforgedCharacterImportInput {
     fileName: string;
     mimeType?: string;
@@ -76,14 +67,12 @@ export interface ReforgedCharacterImportInput {
     bytes?: ArrayBuffer | Uint8Array | readonly number[];
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedCharacterImportSource {
     fileName: string;
     format: ReforgedCharacterImportFormat;
     mimeType?: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedCharacterImportSuccess {
     ok: true;
     card: ReforgedCharacterCard;
@@ -91,7 +80,6 @@ export interface ReforgedCharacterImportSuccess {
     warnings: ReforgedCharacterCardPngParseReason[];
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedCharacterImportFailure {
     ok: false;
     code: ReforgedCharacterImportFailureCode;
@@ -100,12 +88,10 @@ export interface ReforgedCharacterImportFailure {
     reasons: ReforgedCharacterCardPngParseReason[];
 }
 
-// DRAFT: 待主干评审
 export type ReforgedCharacterImportResult =
     | ReforgedCharacterImportSuccess
     | ReforgedCharacterImportFailure;
 
-// DRAFT: 待主干评审
 export interface ReforgedCharacterRosterItem {
     id: string;
     card: ReforgedCharacterCard;

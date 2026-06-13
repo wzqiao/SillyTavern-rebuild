@@ -1,5 +1,3 @@
-// DRAFT: 待主干评审
-
 /**
  * 旧版 OpenAI preset 兼容契约(M2 阶段二)。
  * 范围:采样参数 + prompts/prompt_order 主结构。

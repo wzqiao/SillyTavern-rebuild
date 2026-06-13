@@ -11,7 +11,6 @@ import type {
     ReforgedChatSession,
 } from '@/contracts/chat';
 
-// DRAFT: 待主干评审
 export interface ReforgedChatGenerationRequestInput {
     session: ReforgedChatSession;
     messages: ReforgedChatMessage[];

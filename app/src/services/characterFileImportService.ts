@@ -1,7 +1,6 @@
 import type { ReforgedCharacterImportInput } from '@/contracts/character';
 import { detectCharacterImportFormat } from './characterImportService';
 
-// DRAFT: 待主干评审
 export interface ReforgedCharacterImportFileLike {
     name: string;
     type?: string;

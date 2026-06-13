@@ -1,6 +1,5 @@
 import type { ReforgedWorldbookImportInput } from '@/contracts/worldbook';
 
-// DRAFT: 待主干评审
 export interface ReforgedWorldbookImportFileLike {
     name: string;
     type?: string;

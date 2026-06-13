@@ -1,5 +1,3 @@
-// DRAFT: 待主干评审
-
 /**
  * 本机密钥通道(ADR-006 边界):API key 快照只落本机 localStorage,
  * 永远不经主持久化网关上传——即使主网关是 Reforged 后端。

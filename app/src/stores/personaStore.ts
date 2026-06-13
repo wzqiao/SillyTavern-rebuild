@@ -1,5 +1,3 @@
-// DRAFT: 待主干评审
-
 import { defineStore } from 'pinia';
 import type { ReforgedChatPersonaContext } from '@/contracts/chat';
 

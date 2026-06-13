@@ -1,5 +1,3 @@
-// DRAFT: 待主干评审
-
 export interface ReforgedRuntimeClientOptions {
     baseUrl?: string;
     fetch?: typeof fetch;

@@ -1,5 +1,3 @@
-// DRAFT: 待主干评审
-
 import type { ReforgedPresetSampling } from './preset';
 
 type ExtensibleString<TValue extends string> = TValue | (string & Record<never, never>);

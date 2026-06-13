@@ -1,4 +1,4 @@
-// DRAFT: M4 backend spike, pending mainline review.
+// M2.5 accepted runtime baseline. Room protocol remains spike-level until M4主体.
 
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync, rmSync } from 'node:fs';
