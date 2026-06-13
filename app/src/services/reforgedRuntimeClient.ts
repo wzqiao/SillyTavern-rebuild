@@ -5,9 +5,28 @@ export interface ReforgedRuntimeClientOptions {
 
 export const DEFAULT_REFORGED_SERVER_URL = 'http://127.0.0.1:8787';
 
+interface ReforgedLocationLike {
+    protocol?: string;
+    hostname?: string;
+    origin?: string;
+}
+
+export function getDefaultReforgedServerUrl(locationLike: ReforgedLocationLike | null = readBrowserLocation()): string {
+    const protocol = locationLike?.protocol ?? '';
+    const hostname = locationLike?.hostname ?? '';
+    const origin = locationLike?.origin ?? '';
+    const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
+
+    if ((protocol === 'https:' || protocol === 'http:') && origin && !isLocalHost) {
+        return origin;
+    }
+
+    return DEFAULT_REFORGED_SERVER_URL;
+}
+
 export function normalizeReforgedHttpBaseUrl(value: string | undefined): string {
     const trimmed = value?.trim().replace(/\/+$/g, '') ?? '';
-    return trimmed || DEFAULT_REFORGED_SERVER_URL;
+    return trimmed || getDefaultReforgedServerUrl();
 }
 
 const SERVER_URL_STORAGE_KEY = 'st-reforged-server-url';
@@ -62,5 +81,13 @@ function writeLocalValue(key: string, value: string): void {
         }
     } catch {
         // 隐私模式:忽略
+    }
+}
+
+function readBrowserLocation(): ReforgedLocationLike | null {
+    try {
+        return globalThis.location ?? null;
+    } catch {
+        return null;
     }
 }

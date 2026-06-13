@@ -6,6 +6,7 @@ import { getAppPersistenceKind } from '@/repositories';
 import {
     readConfiguredReforgedServerToken,
     readConfiguredReforgedServerUrl,
+    getDefaultReforgedServerUrl,
     writeConfiguredReforgedServerToken,
     writeConfiguredReforgedServerUrl,
 } from '@/services/reforgedRuntimeClient';
@@ -55,6 +56,7 @@ const storageKindLabel = computed(() => {
 const serverUrlInput = ref(readConfiguredReforgedServerUrl() ?? '');
 const serverTokenInput = ref(readConfiguredReforgedServerToken() ?? '');
 const serverConfigSaved = ref(false);
+const serverUrlPlaceholder = computed(() => getDefaultReforgedServerUrl());
 
 function saveServerConfig(): void {
     writeConfiguredReforgedServerUrl(serverUrlInput.value);
@@ -423,7 +425,7 @@ function resetLocalPreview(): void {
                                 <Input
                                     v-model="serverUrlInput"
                                     :label="t.settings.server.urlLabel"
-                                    :placeholder="'http://127.0.0.1:8787'"
+                                    :placeholder="serverUrlPlaceholder"
                                     inputmode="url"
                                     autocomplete="off"
                                 />

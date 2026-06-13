@@ -4,7 +4,12 @@ import type {
     ReforgedPersistedEnvelope,
     ReforgedPersistenceGateway,
 } from './types';
-import { readConfiguredReforgedServerUrl, reforgedAuthHeaders } from '@/services/reforgedRuntimeClient';
+import {
+    DEFAULT_REFORGED_SERVER_URL,
+    normalizeReforgedHttpBaseUrl,
+    readConfiguredReforgedServerUrl,
+    reforgedAuthHeaders,
+} from '@/services/reforgedRuntimeClient';
 
 /**
  * Reforged 后端存储网关(M2.5-B2):同一仓储契约的 HTTP 实现。
@@ -15,8 +20,6 @@ export interface ReforgedBackendGatewayOptions {
     baseUrl?: string;
     fetch?: typeof fetch;
 }
-
-export const DEFAULT_REFORGED_SERVER_URL = 'http://127.0.0.1:8787';
 
 export class ReforgedBackendStorageError extends Error {
     constructor(message: string, public readonly status?: number) {
@@ -139,7 +142,7 @@ export function createReforgedBackendPersistenceGateway(
 }
 
 function normalizeBaseUrl(baseUrl: string | undefined): string {
-    return (baseUrl ?? readConfiguredServerUrl() ?? DEFAULT_REFORGED_SERVER_URL).replace(/\/+$/g, '');
+    return normalizeReforgedHttpBaseUrl(baseUrl ?? readConfiguredServerUrl() ?? undefined);
 }
 
 export function readConfiguredServerUrl(): string | null {
