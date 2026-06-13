@@ -4,7 +4,7 @@ import { cx } from './utils';
 
 const switchTrackToneClasses: Record<ReforgedUiTone, string> = {
     neutral: 'data-[checked=true]:bg-white/22',
-    brand: 'data-[checked=true]:bg-cyan-300/70',
+    brand: 'data-[checked=true]:bg-amber-300/70',
     success: 'data-[checked=true]:bg-emerald-300/70',
     warning: 'data-[checked=true]:bg-amber-300/70',
     danger: 'data-[checked=true]:bg-rose-300/70',
@@ -12,7 +12,7 @@ const switchTrackToneClasses: Record<ReforgedUiTone, string> = {
 
 const switchShellToneClasses: Record<ReforgedUiTone, string> = {
     neutral: 'border-white/10 bg-white/4',
-    brand: 'border-cyan-400/18 bg-cyan-400/6',
+    brand: 'border-amber-400/18 bg-amber-400/6',
     success: 'border-emerald-400/18 bg-emerald-400/6',
     warning: 'border-amber-400/18 bg-amber-400/8',
     danger: 'border-rose-400/18 bg-rose-400/8',

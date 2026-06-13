@@ -2,7 +2,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { createChatLorebookContext } from '@/services';
-import MultiplayerRoomPanel from '@/components/MultiplayerRoomPanel.vue';
 import { parseChatJsonl } from '@/parsers/chatJsonl';
 import { useCharacterStore, useChatStore, useConnectionStore, useMultiplayerStore, usePersonaStore, usePresetStore, useWorldbookStore } from '@/stores';
 import { Button, Drawer, ListItem, Spinner, Textarea } from '@/ui-kit';
@@ -48,6 +47,7 @@ const runtimeFallbackNotice = ref<string | null>(null);
 const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
 const sendNotice = ref<string | null>(null);
 const timeline = ref<HTMLElement | null>(null);
+const composerTextarea = ref<HTMLTextAreaElement | null>(null);
 const sessionDrawerOpen = ref(false);
 const legacyChatInput = ref<HTMLInputElement | null>(null);
 
@@ -210,6 +210,8 @@ onMounted(async () => {
         }
     }
     autoStartSession();
+    await nextTick();
+    resizeComposerTextarea();
 });
 
 onBeforeUnmount(() => {
@@ -253,6 +255,27 @@ watch(
     },
     { flush: 'sync' },
 );
+
+watch(
+    composer,
+    async () => {
+        await nextTick();
+        resizeComposerTextarea();
+    },
+);
+
+function resizeComposerTextarea(): void {
+    const textarea = composerTextarea.value;
+    if (!textarea) {
+        return;
+    }
+
+    const maxHeight = 132;
+    textarea.style.height = 'auto';
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${Math.max(nextHeight, 32)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
 
 function autoStartSession(): void {
     if (!selectedCharacter.value || activeSession.value) {
@@ -620,12 +643,12 @@ function messageRoleLabel(message: ReforgedChatMessage): string {
 }
 
 function messageBubbleClass(message: ReforgedChatMessage): string {
-    const base = 'message-bubble max-w-[min(40rem,90%)] rounded-lg px-4 py-3 text-sm leading-7 shadow-[0_14px_40px_rgba(0,0,0,0.28)]';
+    const base = 'message-bubble group max-w-[min(40rem,90%)] rounded-[1.35rem] px-4 py-3.5 text-sm leading-7 shadow-[0_14px_40px_rgba(0,0,0,0.28)]';
     const role = message.role === 'user'
-        ? 'ml-auto border border-cyan-200/35 bg-cyan-200/14 text-cyan-50'
-        : 'mr-auto border border-white/10 bg-neutral-950/68 text-neutral-100';
+        ? 'ml-auto border border-amber-400/20 bg-amber-500/10 text-amber-50'
+        : 'mr-auto border border-white/[0.07] bg-white/[0.04] text-neutral-100';
     const state = message.status === 'failed' ? 'ring-2 ring-rose-400/70' : '';
-    const live = message.status === 'generating' ? 'signal-glow' : '';
+    const live = message.status === 'generating' ? 'hearth-glow' : '';
 
     return [base, role, state, live].filter(Boolean).join(' ');
 }
@@ -734,7 +757,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 <template>
     <section class="scene-console mx-auto flex h-full w-full max-w-6xl min-w-0 flex-col">
         <div class="mx-auto flex h-full min-h-0 min-w-0 w-full max-w-3xl flex-1 flex-col gap-3">
-            <header class="console-surface flex min-w-0 items-center justify-between gap-3 rounded-lg px-3 py-3 sm:px-4">
+            <header class="flex min-w-0 items-center justify-between gap-3 border-b border-white/[0.06] px-3 py-3 sm:px-4">
                 <div class="flex min-w-0 items-center gap-2">
                     <Button
                         type="button"
@@ -772,7 +795,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                     <button
                         type="button"
                         class="rounded-md px-3 py-1.5 text-xs font-medium transition"
-                        :class="adapterMode === 'demo' ? 'bg-cyan-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
+                        :class="adapterMode === 'demo' ? 'bg-amber-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
                         :disabled="chatStore.isGenerating"
                         @click="selectDemoAdapter()"
                     >
@@ -781,7 +804,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                     <button
                         type="button"
                         class="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition"
-                        :class="adapterMode === 'runtime' ? 'bg-cyan-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
+                        :class="adapterMode === 'runtime' ? 'bg-amber-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
                         :disabled="chatStore.isGenerating"
                         @click="() => activateRuntimeAdapter()"
                     >
@@ -798,23 +821,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                 <span class="min-w-0">{{ runtimeFallbackNotice ?? runtimeIssueLines[0] ?? statusMessage }}</span>
                 <RouterLink
                     to="/connection"
-                    class="inline-flex min-h-9 items-center rounded-md border border-cyan-300/30 bg-cyan-300/15 px-3 font-medium text-cyan-100 transition hover:bg-cyan-300/25"
+                    class="inline-flex min-h-9 items-center rounded-md border border-amber-300/30 bg-amber-300/15 px-3 font-medium text-amber-100 transition hover:bg-amber-300/25"
                 >
                     {{ t.chat.configureConnection }}
                 </RouterLink>
             </div>
 
-            <MultiplayerRoomPanel />
+
 
             <div
                 ref="timeline"
-                class="chat-stage console-surface scanline min-h-0 flex-1 space-y-4 overflow-y-auto rounded-lg px-3 py-5 sm:px-5"
+                class="chat-timeline warm-stage scanline min-h-0 flex-1 space-y-5 overflow-y-auto rounded-lg px-3 py-5 sm:px-5 border border-white/[0.06]"
             >
                 <div
                     v-if="messages.length === 0"
                     class="flex min-h-72 flex-col items-center justify-center px-4 py-10 text-center"
                 >
-                    <div class="signal-glow flex h-14 w-14 items-center justify-center rounded-lg border border-cyan-300/25 bg-cyan-300/12 text-lg font-semibold text-cyan-100">
+                    <div class="signal-glow flex h-14 w-14 items-center justify-center rounded-lg border border-amber-300/25 bg-amber-300/12 text-lg font-semibold text-amber-100">
                         {{ characterName ? characterName.slice(0, 1) : t.chat.emptyAvatarFallback }}
                     </div>
                     <h3 class="mt-4 font-display text-lg font-semibold text-neutral-50">
@@ -826,7 +849,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                     <RouterLink
                         v-if="!selectedCharacter"
                         to="/characters"
-                        class="mt-5 inline-flex min-h-11 items-center rounded-md border border-cyan-300/30 bg-cyan-300/15 px-4 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/25"
+                        class="mt-5 inline-flex min-h-11 items-center rounded-md border border-amber-300/30 bg-amber-300/15 px-4 text-sm font-medium text-amber-100 transition hover:bg-amber-300/25"
                     >
                         {{ t.chat.pickCharacter }}
                     </RouterLink>
@@ -932,7 +955,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                             </Button>
                         </div>
 
-                        <div class="mt-3 flex flex-wrap items-center gap-1.5">
+                        <div class="message-actions mt-2 flex flex-wrap items-center gap-1 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                             <Button
                                 v-if="message.role === 'assistant'"
                                 type="button"
@@ -991,45 +1014,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
             </div>
 
             <form
-                class="safe-bottom console-surface rounded-lg p-2"
+                class="safe-bottom px-2 pb-2 pt-1 sm:px-4"
                 @submit.prevent="sendMessage"
             >
-                <div class="flex items-end gap-2">
-                    <Textarea
+                <div class="flex min-h-11 items-end gap-1.5 rounded-[1.45rem] border border-white/[0.08] bg-white/[0.05] px-2 py-1.5 backdrop-blur-sm transition-colors focus-within:border-amber-400/30 focus-within:bg-white/[0.07]">
+                    <textarea
+                        ref="composerTextarea"
                         v-model="composer"
                         data-testid="chat-composer"
+                        class="composer-textarea min-h-8 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm leading-5 text-neutral-100 outline-none placeholder:text-neutral-500 disabled:cursor-not-allowed disabled:opacity-55"
+                        rows="1"
                         :aria-label="t.chat.messageLabel"
                         :placeholder="t.chat.composerPlaceholder"
-                        :rows="2"
                         :disabled="isGenerationBusy"
-                        class="flex-1"
+                        @input="resizeComposerTextarea"
                     />
-                    <Button
+                    <button
                         v-if="isGenerationBusy"
                         type="button"
-                        variant="danger"
+                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-400/80 text-white transition hover:bg-rose-400"
                         @click="stopGeneration"
                     >
-                        {{ t.common.stop }}
-                    </Button>
-                    <Button
+                        <svg viewBox="0 0 20 20" class="h-4 w-4" fill="currentColor" aria-hidden="true">
+                            <rect x="6" y="6" width="8" height="8" rx="1.5" />
+                        </svg>
+                    </button>
+                    <button
                         v-else
                         type="submit"
                         data-testid="send-message-button"
                         :disabled="!canSend"
+                        class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition"
+                        :class="canSend ? 'bg-amber-400/90 text-neutral-950 hover:bg-amber-300' : 'bg-white/[0.06] text-neutral-500 cursor-not-allowed'"
                     >
-                        {{ t.common.send }}
-                    </Button>
+                        <svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path d="M10 15V5M10 5l-4 4M10 5l4 4" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
                 </div>
-                <p class="px-2 pt-1.5 text-xs leading-5 text-neutral-500">
-                    <template v-if="selectedCharacter">
-                        {{ t.chat.speakingWith(selectedCharacter.card.name) }}
-                        <span v-if="selectedWorldbook">{{ t.chat.worldbookSummary(selectedWorldbook.worldbook.name, lorebookEntryCount) }}</span>
-                    </template>
-                    <template v-else>
-                        {{ t.chat.noCharacterHint }}
-                    </template>
-                </p>
             </form>
         </div>
 
@@ -1128,15 +1150,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     position: relative;
 }
 
-.chat-stage article {
+.chat-timeline article {
     animation: message-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes message-in {
     from {
         opacity: 0;
-        transform: translateY(10px);
-        filter: blur(4px);
+        transform: translateY(8px);
+        filter: blur(3px);
     }
 
     to {
@@ -1146,12 +1168,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     }
 }
 
-.chat-stage {
+.warm-stage {
     background-image:
-        linear-gradient(90deg, rgba(237, 247, 255, 0.035) 1px, transparent 1px),
-        linear-gradient(180deg, rgba(237, 247, 255, 0.025) 1px, transparent 1px),
-        linear-gradient(180deg, rgba(13, 21, 29, 0.88), rgba(7, 10, 13, 0.78));
+        linear-gradient(90deg, rgba(216, 164, 95, 0.025) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(216, 164, 95, 0.02) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(28, 18, 13, 0.9), rgba(15, 9, 6, 0.82));
     background-size: 48px 48px, 48px 48px, auto;
+    box-shadow: inset 0 0 0 1px rgba(216, 164, 95, 0.02);
 }
 
 .message-bubble {
@@ -1160,17 +1183,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 .message-bubble::before {
     position: absolute;
-    top: 0.75rem;
+    top: 0.85rem;
     left: -0.35rem;
     width: 0.7rem;
     height: 1px;
     content: '';
-    background: rgba(237, 247, 255, 0.28);
+    background: rgba(237, 247, 255, 0.15);
 }
 
-.justify-end .message-bubble::before {
+.ml-auto.message-bubble::before {
     right: -0.35rem;
     left: auto;
-    background: rgba(143, 227, 208, 0.42);
+    background: rgba(216, 164, 95, 0.35);
+}
+
+/* Mobile: tap to show actions (toggle via :active workaround or JS) */
+@media (hover: none) {
+    .message-actions {
+        opacity: 1 !important;
+    }
+}
+
+.composer-textarea {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(216, 164, 95, 0.35) transparent;
+}
+
+.composer-textarea::-webkit-scrollbar {
+    width: 4px;
+}
+
+.composer-textarea::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(216, 164, 95, 0.35);
 }
 </style>

@@ -69,6 +69,7 @@ const probeStatus = computed(() => {
 });
 
 async function runProbe(): Promise<void> {
+    connectionStore.normalizeDraftFields();
     await connectionStore.probeConnection();
 }
 
@@ -275,6 +276,10 @@ function updateDraft(input: Partial<Pick<ReforgedConnectionDraft, 'baseUrl' | 'm
     connectionStore.patchDraft(input);
 }
 
+function normalizeDraftFields(): void {
+    connectionStore.normalizeDraftFields();
+}
+
 function updateProvider(value: string): void {
     if (value === 'openai-compatible') {
         connectionStore.patchDraft({ provider: value });
@@ -464,6 +469,7 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                     required
                     data-testid="connection-base-url-input"
                     @update:model-value="updateDraft({ baseUrl: $event })"
+                    @blur="normalizeDraftFields"
                 />
 
                 <p class="-mt-2 text-xs leading-5 text-neutral-500">

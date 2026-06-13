@@ -638,7 +638,7 @@ function describeError(error: unknown): string {
                 class="field-input"
                 data-testid="connection-base-url-input"
                 inputmode="url"
-                placeholder="https://api.example.com/v1"
+                placeholder="https://www.rua.chat/"
               >
               <input
                 v-model="connectionStore.draft.model"

@@ -22,7 +22,7 @@ describe('tabs helpers', () => {
         expect(resolveTabsListClasses('underline', true)).toContain('border-b');
 
         const classes = resolveTabTriggerClasses(true, 'underline', 'sm', false);
-        expect(classes).toContain('border-cyan-300');
+        expect(classes).toContain('border-amber-300');
         expect(classes).toContain('min-h-10');
     });
 });

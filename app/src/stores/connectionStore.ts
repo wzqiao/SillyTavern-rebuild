@@ -15,6 +15,7 @@ import type {
     ReforgedConnectionValidationIssue,
     ReforgedConnectionProbeResult,
 } from '@/contracts/connection';
+import { normalizeReforgedHttpBaseUrl, reforgedAuthHeaders } from '@/services/reforgedRuntimeClient';
 
 interface ConnectionStoreState {
     draft: ReforgedConnectionDraft;
@@ -98,11 +99,15 @@ export const useConnectionStore = defineStore('connection', {
 
     actions: {
         patchDraft(input: ReforgedConnectionDraftPatch): void {
-            this.draft = normalizeDraft({
+            this.draft = normalizeDraftForEditing({
                 ...this.draft,
                 ...input,
                 provider: 'openai-compatible',
             });
+        },
+
+        normalizeDraftFields(): void {
+            this.draft = normalizeDraft(this.draft);
         },
 
         setTransportMode(mode: ReforgedConnectionTransportMode): void {
@@ -111,6 +116,7 @@ export const useConnectionStore = defineStore('connection', {
 
         applyDraft(appliedAt = new Date().toISOString()): ReforgedConnectionApplyResult {
             const normalizedDraft = normalizeDraft(this.draft);
+            this.draft = normalizedDraft;
             const issues = validateDraft(normalizedDraft);
 
             if (issues.length > 0) {
@@ -185,12 +191,14 @@ export const useConnectionStore = defineStore('connection', {
         },
 
         /**
-         * 连接测试 + 模型列表(A1):浏览器直连 GET {baseUrl}/models。
+         * 连接测试 + 模型列表(A1/B3):新后端/auto 经 Reforged 代理 GET 上游模型,
+         * 显式浏览器直连/旧代理则保留直接 GET {baseUrl}/models。
          * 拉不到列表不阻塞使用——模型仍可手填,生成走所选 transport。
          */
         async probeConnection(fetcher: typeof fetch = globalThis.fetch): Promise<ReforgedConnectionProbeResult> {
             const draft = normalizeDraft(this.draft);
             const apiKey = readVaultSecret(DRAFT_SECRET_SLOT);
+            this.draft = draft;
 
             if (!draft.baseUrl || !apiKey) {
                 return this.recordProbe({ ok: false, code: 'config' });
@@ -200,18 +208,15 @@ export const useConnectionStore = defineStore('connection', {
             const startedAt = Date.now();
 
             try {
-                let response: Response;
-
-                try {
-                    response = await fetcher(`${draft.baseUrl.replace(/\/+$/g, '')}/models`, {
-                        headers: { Authorization: `Bearer ${apiKey}` },
-                    });
-                } catch (error) {
-                    return this.recordProbe({
+                const response = await probeModels(draft, apiKey, this.transportMode, fetcher)
+                    .catch((error: unknown) => this.recordProbe({
                         ok: false,
                         code: 'cors-or-network',
                         detail: error instanceof Error ? error.message : String(error),
-                    });
+                    }));
+
+                if (!(response instanceof Response)) {
+                    return response;
                 }
 
                 const latencyMs = Date.now() - startedAt;
@@ -220,7 +225,7 @@ export const useConnectionStore = defineStore('connection', {
                     return this.recordProbe({
                         ok: false,
                         code: 'http',
-                        detail: `HTTP ${response.status}`,
+                        detail: await readProbeErrorDetail(response),
                         latencyMs,
                     });
                 }
@@ -278,10 +283,97 @@ export function restoreConnectionSecretsFromPersistence(secrets: Record<string, 
 function normalizeDraft(draft: DraftNormalizeInput): ReforgedConnectionDraft {
     return {
         provider: 'openai-compatible',
-        baseUrl: draft.baseUrl.trim().replace(/\/+$/g, ''),
+        baseUrl: normalizeBaseUrlInput(draft.baseUrl),
         model: draft.model.trim(),
         apiKey: draft.apiKey,
     };
+}
+
+function normalizeDraftForEditing(draft: DraftNormalizeInput): ReforgedConnectionDraft {
+    return {
+        provider: 'openai-compatible',
+        baseUrl: draft.baseUrl.trim(),
+        model: draft.model.trim(),
+        apiKey: draft.apiKey,
+    };
+}
+
+function normalizeBaseUrlInput(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return '';
+    }
+
+    const hasExplicitScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed);
+    if (hasExplicitScheme && !/^https?:\/\//i.test(trimmed)) {
+        return trimmed.replace(/\/+$/g, '');
+    }
+
+    const withProtocol = withDefaultWebProtocol(trimmed);
+    let url: URL;
+    try {
+        url = new URL(withProtocol);
+    } catch {
+        return trimmed.replace(/\/+$/g, '');
+    }
+
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return trimmed.replace(/\/+$/g, '');
+    }
+
+    url.hash = '';
+    url.search = '';
+
+    const segments = url.pathname.split('/').filter(Boolean);
+    removeKnownEndpointSuffix(segments);
+    if (segments.length === 0) {
+        segments.push('v1');
+    }
+
+    url.pathname = `/${segments.join('/')}`;
+    return url.toString().replace(/\/+$/g, '');
+}
+
+function withDefaultWebProtocol(value: string): string {
+    if (/^\/\//.test(value)) {
+        return `https:${value}`;
+    }
+
+    if (/^https?:\/\//i.test(value)) {
+        return value;
+    }
+
+    return `${shouldDefaultToHttp(value) ? 'http' : 'https'}://${value}`;
+}
+
+function shouldDefaultToHttp(value: string): boolean {
+    return /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::|\/|$)/i.test(value);
+}
+
+function removeKnownEndpointSuffix(segments: string[]): void {
+    const lower = segments.map((segment) => segment.toLowerCase());
+    const endpointSuffixes = [
+        ['chat', 'completions'],
+        ['images', 'generations'],
+        ['images', 'edits'],
+        ['audio', 'speech'],
+        ['audio', 'transcriptions'],
+        ['audio', 'translations'],
+        ['completions'],
+        ['responses'],
+        ['embeddings'],
+        ['models'],
+    ];
+
+    for (const suffix of endpointSuffixes) {
+        if (
+            lower.length >= suffix.length &&
+            suffix.every((segment, index) => lower[lower.length - suffix.length + index] === segment)
+        ) {
+            segments.splice(segments.length - suffix.length, suffix.length);
+            return;
+        }
+    }
 }
 
 function createRuntimeHandoff(input: {
@@ -482,6 +574,37 @@ function toResolvedRuntimeConfig(appliedDraft: ReforgedAppliedConnectionDraft): 
     };
 }
 
+async function probeModels(
+    draft: ReforgedConnectionDraft,
+    apiKey: string,
+    transportMode: ReforgedConnectionTransportMode,
+    fetcher: typeof fetch,
+): Promise<Response> {
+    if (transportMode === 'reforged-backend' || transportMode === 'auto') {
+        try {
+            return await fetcher(`${normalizeReforgedHttpBaseUrl(undefined)}/api/reforged/models`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${apiKey}`,
+                    ...reforgedAuthHeaders(),
+                },
+                body: JSON.stringify({
+                    baseUrl: draft.baseUrl.replace(/\/+$/g, ''),
+                }),
+            });
+        } catch (error) {
+            if (transportMode === 'reforged-backend') {
+                throw error;
+            }
+        }
+    }
+
+    return fetcher(`${draft.baseUrl.replace(/\/+$/g, '')}/models`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+    });
+}
+
 function createRuntimeConnectionTaker(
     connection: ReforgedConnectionResolvedRuntimeConfig,
     transportMode: ReforgedConnectionTransportMode,
@@ -587,4 +710,25 @@ function readModelIds(payload: unknown): string[] {
         .filter((id) => id.length > 0);
 
     return [...new Set(ids)].sort((left, right) => left.localeCompare(right));
+}
+
+async function readProbeErrorDetail(response: Response): Promise<string> {
+    const fallback = `HTTP ${response.status}`;
+
+    try {
+        const payload = await response.clone().json();
+        if (payload && typeof payload === 'object') {
+            const error = (payload as Record<string, unknown>).error;
+            if (typeof error === 'string' && error.trim()) {
+                return error.trim();
+            }
+            if (error && typeof error === 'object' && typeof (error as Record<string, unknown>).message === 'string') {
+                return ((error as Record<string, unknown>).message as string).trim() || fallback;
+            }
+        }
+    } catch {
+        // Non-JSON provider/proxy errors keep the status-only fallback.
+    }
+
+    return fallback;
 }

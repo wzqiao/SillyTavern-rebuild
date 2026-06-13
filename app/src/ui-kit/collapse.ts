@@ -34,6 +34,6 @@ export function resolveCollapsePanelClasses(open: boolean): string {
 export function resolveCollapseIconClasses(open: boolean): string {
     return cx(
         'shrink-0 transition duration-200 ease-out',
-        open ? 'rotate-180 text-cyan-200' : 'rotate-0 text-neutral-400',
+        open ? 'rotate-180 text-amber-200' : 'rotate-0 text-neutral-400',
     );
 }

@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue';
+import { computed, defineAsyncComponent, ref } from 'vue';
 import { RouterLink, RouterView, useRoute } from 'vue-router';
 import ScrambleText from './ScrambleText.vue';
+import MultiplayerRoomPanel from './MultiplayerRoomPanel.vue';
+import { Drawer } from '@/ui-kit';
 import { useI18n } from '@/i18n';
+import { useMultiplayerStore } from '@/stores';
 
 const AtmosphereCanvas = defineAsyncComponent(() => import('./AtmosphereCanvas.vue'));
+
+const multiplayerStore = useMultiplayerStore();
+const multiplayerDrawerOpen = ref(false);
 
 type PrimaryNavigationItem = {
   to: string;
@@ -40,6 +46,12 @@ const ICON_PATHS: Record<string, string[]> = {
     'M3.5 4.5h13v11h-13z',
     'M6.5 8l2.4 2.4L6.5 12.8',
     'M10.8 13h2.7',
+  ],
+  multiplayer: [
+    'M10 4a3 3 0 100 6 3 3 0 000-6z',
+    'M4.5 16.5c.8-2.6 2.8-4 5.5-4s4.7 1.4 5.5 4',
+    'M14 5.5a2.2 2.2 0 110 4.4',
+    'M16 16c.6-1.8 1.8-2.8 3.2-3.2',
   ],
 };
 
@@ -133,7 +145,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
       >
         <RouterLink
           to="/chat"
-          class="rail-brand flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-200/24 bg-cyan-200/10 text-cyan-100 transition duration-200 hover:border-cyan-200/45 hover:bg-cyan-200/16"
+          class="rail-brand flex h-11 w-11 items-center justify-center rounded-lg border border-amber-200/24 bg-amber-200/10 text-amber-100 transition duration-200 hover:border-amber-200/45 hover:bg-amber-200/16"
           :title="t.app.name"
           :aria-label="t.app.name"
         >
@@ -157,7 +169,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
             :to="item.to"
             class="rail-item relative flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
             :class="isCurrentPath(item.to)
-              ? 'rail-item--active border-cyan-200/45 bg-cyan-200/14 text-cyan-50 shadow-[0_0_22px_rgba(143,227,208,0.16)]'
+              ? 'rail-item--active border-amber-200/45 bg-amber-200/14 text-amber-50 shadow-[0_0_22px_rgba(216,164,95,0.18)]'
               : 'border-white/8 bg-white/[0.04] text-neutral-300 hover:border-white/18 hover:bg-white/[0.08] hover:text-neutral-100'"
             :aria-label="item.label"
             @mouseenter="emitBeacon($event, true)"
@@ -186,11 +198,45 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
           </RouterLink>
         </nav>
 
+        <button
+          type="button"
+          class="rail-item relative mt-auto flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
+          :class="multiplayerStore.isConnected
+            ? 'border-emerald-300/40 bg-emerald-300/12 text-emerald-100'
+            : 'border-white/8 bg-white/[0.04] text-neutral-400 hover:border-white/18 hover:bg-white/[0.08] hover:text-neutral-100'"
+          aria-label="多人房间"
+          @click="multiplayerDrawerOpen = true"
+          @mouseenter="emitBeacon($event, true)"
+          @mouseleave="emitBeacon($event, false)"
+        >
+          <svg
+            viewBox="0 0 20 20"
+            class="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <path
+              v-for="(pathData, pathIndex) in ICON_PATHS.multiplayer"
+              :key="pathIndex"
+              :d="pathData"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span
+            v-if="multiplayerStore.isConnected"
+            class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(88,195,138,0.6)]"
+          />
+          <span class="rail-flyout">多人房间</span>
+        </button>
+
         <RouterLink
           to="/dev"
-          class="rail-item relative mt-auto flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
+          class="rail-item relative mt-2 flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
           :class="route.path.startsWith('/dev')
-            ? 'rail-item--active border-cyan-200/45 bg-cyan-200/14 text-cyan-50'
+            ? 'rail-item--active border-amber-200/45 bg-amber-200/14 text-amber-50'
             : 'border-white/8 bg-white/[0.04] text-neutral-400 hover:border-white/18 hover:bg-white/[0.08] hover:text-neutral-100'"
           :aria-label="t.nav.dev"
           @mouseenter="emitBeacon($event, true)"
@@ -223,7 +269,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
         >
           <div class="flex items-center justify-between gap-4">
             <div class="min-w-0">
-              <p class="technical-label text-cyan-100/70">
+              <p class="technical-label text-amber-100/70">
                 {{ t.app.name }}
               </p>
               <h1 class="mt-1.5 truncate font-display text-xl font-black text-white">
@@ -244,7 +290,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
           class="safe-top hidden items-end justify-between gap-6 px-8 pb-1 pt-6 md:flex"
         >
           <div class="min-w-0">
-            <p class="technical-label text-cyan-100/70">
+            <p class="technical-label text-amber-100/70">
               {{ t.shell.desktopEyebrow }}
             </p>
             <h2 class="mt-2 truncate font-display text-3xl font-black text-white">
@@ -279,7 +325,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
               :to="item.to"
               class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-center transition"
               :class="isCurrentPath(item.to)
-                ? 'border-cyan-200/35 bg-cyan-200/14 text-white'
+                ? 'border-amber-200/35 bg-amber-200/14 text-white'
                 : 'border-white/8 bg-white/[0.03] text-neutral-300'"
             >
               <svg
@@ -306,6 +352,16 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
         </nav>
       </div>
     </div>
+
+    <Drawer
+      v-model:open="multiplayerDrawerOpen"
+      title="多人房间"
+      description="链接、昵称和房间密码加入多人角色扮演。"
+      placement="left"
+      size="lg"
+    >
+      <MultiplayerRoomPanel />
+    </Drawer>
   </div>
 </template>
 
@@ -322,8 +378,8 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
   pointer-events: none;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(237, 247, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(180deg, rgba(237, 247, 255, 0.024) 1px, transparent 1px);
+    linear-gradient(90deg, rgba(255, 232, 184, 0.026) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 232, 184, 0.02) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: linear-gradient(180deg, black, transparent 82%);
   opacity: 0.5;
@@ -356,7 +412,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
   content: '';
   transform: translateY(-50%);
   border-radius: 999px;
-  background: linear-gradient(180deg, transparent, rgba(143, 227, 208, 0.9), transparent);
+  background: linear-gradient(180deg, transparent, rgba(216, 164, 95, 0.9), transparent);
 }
 
 .rail-flyout {
@@ -368,9 +424,9 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
   flex-direction: column;
   gap: 0.2rem;
   padding: 0.45rem 0.7rem;
-  border: 1px solid rgba(237, 247, 255, 0.14);
+  border: 1px solid rgba(255, 232, 184, 0.14);
   border-radius: 0.45rem;
-  background: rgba(7, 10, 13, 0.94);
+  background: rgba(15, 9, 6, 0.94);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   font-size: 0.78rem;
   font-weight: 700;
@@ -388,7 +444,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(143, 227, 208, 0.75);
+  color: rgba(216, 164, 95, 0.78);
 }
 
 .rail-item:hover .rail-flyout,

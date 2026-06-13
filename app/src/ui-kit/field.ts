@@ -5,8 +5,8 @@ import { cx } from './utils';
 export type FieldTone = ReforgedUiTone;
 
 const fieldToneClasses: Record<FieldTone, string> = {
-    neutral: 'border-white/10 bg-neutral-950/72 text-neutral-100 placeholder:text-neutral-500 hover:border-white/16 focus:border-cyan-300/45',
-    brand: 'border-cyan-400/20 bg-cyan-400/8 text-cyan-50 placeholder:text-cyan-200/35 hover:border-cyan-300/32 focus:border-cyan-200/55',
+    neutral: 'border-white/10 bg-neutral-950/72 text-neutral-100 placeholder:text-neutral-500 hover:border-white/16 focus:border-amber-300/45',
+    brand: 'border-amber-400/20 bg-amber-400/8 text-amber-50 placeholder:text-amber-200/35 hover:border-amber-300/32 focus:border-amber-200/55',
     success: 'border-emerald-400/20 bg-emerald-400/8 text-emerald-50 placeholder:text-emerald-200/35 hover:border-emerald-300/32 focus:border-emerald-200/55',
     warning: 'border-amber-400/20 bg-amber-400/10 text-amber-50 placeholder:text-amber-200/40 hover:border-amber-300/32 focus:border-amber-200/55',
     danger: 'border-rose-400/24 bg-rose-400/10 text-rose-50 placeholder:text-rose-200/38 hover:border-rose-300/34 focus:border-rose-200/55',
@@ -46,10 +46,12 @@ export function resolveFieldHintClass(tone: FieldTone = 'neutral'): string {
         return fieldHintClass;
     }
 
-    return cx('text-xs leading-5', {
-        'text-cyan-200/82': tone === 'brand',
-        'text-emerald-200/82': tone === 'success',
-        'text-amber-200/82': tone === 'warning',
-        'text-rose-200/82': tone === 'danger',
-    });
+    const toneHintClass: Record<Exclude<FieldTone, 'neutral'>, string> = {
+        brand: 'text-amber-200/82',
+        success: 'text-emerald-200/82',
+        warning: 'text-amber-200/82',
+        danger: 'text-rose-200/82',
+    };
+
+    return cx('text-xs leading-5', toneHintClass[tone]);
 }

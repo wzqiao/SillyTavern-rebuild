@@ -66,7 +66,7 @@ function handlePress(event: MouseEvent): void {
             <div class="space-y-1">
                 <p
                     v-if="eyebrow"
-                    class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-cyan-200/78"
+                    class="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-amber-200/78"
                 >
                     {{ eyebrow }}
                 </p>

@@ -75,6 +75,7 @@ const compactMode = ref(false);
 const showDiagnostics = ref(false);
 const reduceMotion = ref(false);
 const advancedOpen = ref(false);
+const serverAdvancedOpen = ref(false);
 const samplingPreset = ref('balanced');
 const temperature = ref('0.80');
 const topP = ref('0.95');
@@ -187,6 +188,7 @@ function resetLocalPreview(): void {
     showDiagnostics.value = false;
     reduceMotion.value = false;
     advancedOpen.value = false;
+    serverAdvancedOpen.value = false;
     samplingPreset.value = 'balanced';
     temperature.value = '0.80';
     topP.value = '0.95';
@@ -421,29 +423,40 @@ function resetLocalPreview(): void {
                                     {{ t.settings.server.description }}
                                 </span>
                             </dt>
-                            <dd class="grid gap-2">
-                                <Input
-                                    v-model="serverUrlInput"
-                                    :label="t.settings.server.urlLabel"
-                                    :placeholder="serverUrlPlaceholder"
-                                    inputmode="url"
-                                    autocomplete="off"
-                                />
-                                <Input
-                                    v-model="serverTokenInput"
-                                    :label="t.settings.server.tokenLabel"
-                                    :hint="t.settings.server.tokenHint"
-                                    type="password"
-                                    autocomplete="off"
-                                />
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    @click="saveServerConfig"
+                            <dd class="grid gap-3">
+                                <div class="rounded-xl border border-emerald-300/15 bg-emerald-300/10 px-3 py-2 text-xs leading-5 text-emerald-50/85">
+                                    {{ t.settings.server.managedHint(serverUrlPlaceholder) }}
+                                </div>
+                                <Collapse
+                                    v-model="serverAdvancedOpen"
+                                    :title="t.settings.server.advancedTitle"
+                                    :description="t.settings.server.advancedDescription"
                                 >
-                                    {{ serverConfigSaved ? t.settings.server.saved : t.settings.server.save }}
-                                </Button>
+                                    <div class="grid gap-2">
+                                        <Input
+                                            v-model="serverUrlInput"
+                                            :label="t.settings.server.urlLabel"
+                                            :placeholder="serverUrlPlaceholder"
+                                            inputmode="url"
+                                            autocomplete="off"
+                                        />
+                                        <Input
+                                            v-model="serverTokenInput"
+                                            :label="t.settings.server.tokenLabel"
+                                            :hint="t.settings.server.tokenHint"
+                                            type="password"
+                                            autocomplete="off"
+                                        />
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            @click="saveServerConfig"
+                                        >
+                                            {{ serverConfigSaved ? t.settings.server.saved : t.settings.server.save }}
+                                        </Button>
+                                    </div>
+                                </Collapse>
                             </dd>
                         </div>
                         <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">

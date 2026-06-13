@@ -37,9 +37,9 @@ export function resolveTabTriggerClasses(
         'inline-flex min-w-max items-center justify-center gap-2 whitespace-nowrap rounded-2xl px-4 font-medium tracking-[-0.01em] transition duration-200 ease-out',
         focusRingClass,
         size === 'sm' ? 'min-h-10 text-sm' : 'min-h-11 text-sm',
-        variant === 'pill' && active && 'bg-cyan-300 text-neutral-950 shadow-[0_10px_28px_rgba(34,211,238,0.18)]',
+        variant === 'pill' && active && 'bg-amber-300 text-neutral-950 shadow-[0_10px_28px_rgba(216,164,95,0.18)]',
         variant === 'pill' && !active && 'text-neutral-300 hover:bg-white/8 hover:text-neutral-50',
-        variant === 'underline' && active && 'rounded-b-none border-b-2 border-cyan-300 text-cyan-100',
+        variant === 'underline' && active && 'rounded-b-none border-b-2 border-amber-300 text-amber-100',
         variant === 'underline' && !active && 'rounded-b-none border-b-2 border-transparent text-neutral-400 hover:text-neutral-100',
         disabled && 'cursor-not-allowed opacity-45',
     );

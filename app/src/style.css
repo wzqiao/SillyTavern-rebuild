@@ -1,48 +1,48 @@
 @import 'tailwindcss';
 
 /*
- * ST-Reforged visual direction: Frosted stage console.
- * The product stays readable, while the app shell carries the Igloo-like
- * WebGL/technical ambience through color, glass, grid, and signal motion.
+ * ST-Reforged visual direction: warm night-lamp console.
+ * The product stays readable, while the app shell carries the tavern-like
+ * WebGL/technical ambience through amber light, smoked glass, and signal motion.
  */
 @theme {
   --font-display: "IBM Plex Mono", "SFMono-Regular", "Menlo", "Noto Sans Mono CJK SC", ui-monospace, monospace;
 
-  --color-white: #edf7ff;
+  --color-white: #fff4e6;
 
-  --color-neutral-50: #f3f8fb;
-  --color-neutral-100: #e4eef5;
-  --color-neutral-200: #c9d6e5;
-  --color-neutral-300: #aebdca;
-  --color-neutral-400: #83909d;
-  --color-neutral-500: #66727e;
-  --color-neutral-600: #48535e;
-  --color-neutral-700: #26313b;
-  --color-neutral-800: #151f29;
-  --color-neutral-900: #0d151d;
-  --color-neutral-950: #070a0d;
+  --color-neutral-50: #fff7ed;
+  --color-neutral-100: #f5ead8;
+  --color-neutral-200: #dfcfb8;
+  --color-neutral-300: #c6b296;
+  --color-neutral-400: #9d8870;
+  --color-neutral-500: #7e6a56;
+  --color-neutral-600: #604d3d;
+  --color-neutral-700: #3a2a21;
+  --color-neutral-800: #241913;
+  --color-neutral-900: #18100c;
+  --color-neutral-950: #0f0906;
 
-  --color-stone-50: #f3f8fb;
-  --color-stone-100: #e4eef5;
-  --color-stone-200: #c9d6e5;
-  --color-stone-300: #aebdca;
-  --color-stone-400: #83909d;
-  --color-stone-500: #66727e;
-  --color-stone-600: #48535e;
-  --color-stone-700: #26313b;
-  --color-stone-800: #151f29;
-  --color-stone-900: #0d151d;
-  --color-stone-950: #070a0d;
+  --color-stone-50: #fff7ed;
+  --color-stone-100: #f5ead8;
+  --color-stone-200: #dfcfb8;
+  --color-stone-300: #c6b296;
+  --color-stone-400: #9d8870;
+  --color-stone-500: #7e6a56;
+  --color-stone-600: #604d3d;
+  --color-stone-700: #3a2a21;
+  --color-stone-800: #241913;
+  --color-stone-900: #18100c;
+  --color-stone-950: #0f0906;
 
-  --color-cyan-50: #eafffb;
-  --color-cyan-100: #cafcf3;
-  --color-cyan-200: #9af0df;
-  --color-cyan-300: #8fe3d0;
-  --color-cyan-400: #5bc3b2;
-  --color-cyan-500: #339d90;
+  --color-cyan-50: #fff8e8;
+  --color-cyan-100: #ffe8b8;
+  --color-cyan-200: #f5c978;
+  --color-cyan-300: #d8a45f;
+  --color-cyan-400: #b97a35;
+  --color-cyan-500: #8f5428;
 
-  --color-teal-200: #9af0df;
-  --color-sky-200: #c9d6e5;
+  --color-teal-200: #f5c978;
+  --color-sky-200: #dfcfb8;
 
   --color-amber-100: #fff2d6;
   --color-amber-200: #f5d99a;
@@ -61,7 +61,7 @@ html,
 body,
 #app {
   min-height: 100%;
-  background: #070a0d;
+  background: #0f0906;
   color: var(--color-neutral-100);
 }
 
@@ -79,15 +79,15 @@ select {
 }
 
 ::selection {
-  background: rgb(143 227 208 / 0.28);
+  background: rgb(216 164 95 / 0.32);
   color: var(--color-white);
 }
 
 .glass-panel {
-  border: 1px solid rgb(237 247 255 / 0.11);
+  border: 1px solid rgb(255 232 184 / 0.12);
   background:
-    linear-gradient(180deg, rgb(237 247 255 / 0.085), rgb(237 247 255 / 0.035)),
-    rgb(7 10 13 / 0.68);
+    linear-gradient(180deg, rgb(255 232 184 / 0.085), rgb(255 232 184 / 0.035)),
+    rgb(15 9 6 / 0.7);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.08),
     0 24px 90px rgb(0 0 0 / 0.32);
@@ -95,21 +95,21 @@ select {
 }
 
 .console-surface {
-  border: 1px solid rgb(237 247 255 / 0.1);
+  border: 1px solid rgb(255 232 184 / 0.1);
   background:
-    linear-gradient(135deg, rgb(143 227 208 / 0.08), transparent 38%),
-    linear-gradient(180deg, rgb(13 21 29 / 0.86), rgb(7 10 13 / 0.78));
+    linear-gradient(135deg, rgb(216 164 95 / 0.08), transparent 38%),
+    linear-gradient(180deg, rgb(28 18 13 / 0.88), rgb(15 9 6 / 0.8));
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.06),
-    inset 0 0 0 1px rgb(143 227 208 / 0.035),
+    inset 0 0 0 1px rgb(216 164 95 / 0.045),
     0 18px 70px rgb(0 0 0 / 0.34);
 }
 
 .signal-glow,
 .lamp-glow {
   box-shadow:
-    0 0 0 1px rgb(143 227 208 / 0.2),
-    0 0 24px rgb(143 227 208 / 0.18),
+    0 0 0 1px rgb(216 164 95 / 0.24),
+    0 0 24px rgb(216 164 95 / 0.18),
     0 18px 50px rgb(0 0 0 / 0.35);
 }
 
@@ -132,7 +132,7 @@ select {
   background: linear-gradient(
     180deg,
     transparent,
-    rgb(237 247 255 / 0.045),
+    rgb(255 232 184 / 0.04),
     transparent
   );
   opacity: 0.75;

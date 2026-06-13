@@ -11,7 +11,7 @@ const spinnerSizeClasses: Record<SpinnerSize, string> = {
 
 const spinnerToneClasses: Record<ReforgedUiTone, string> = {
     neutral: 'border-white/18 border-t-white',
-    brand: 'border-cyan-100/20 border-t-cyan-200',
+    brand: 'border-amber-100/20 border-t-amber-200',
     success: 'border-emerald-100/20 border-t-emerald-200',
     warning: 'border-amber-100/20 border-t-amber-200',
     danger: 'border-rose-100/20 border-t-rose-200',

@@ -8,7 +8,7 @@ export type ToastAlign = 'start' | 'center' | 'end';
 
 const toastToneClasses: Record<ReforgedUiTone, string> = {
     neutral: 'border-white/10 bg-neutral-900/95 text-neutral-100',
-    brand: 'border-cyan-400/20 bg-cyan-500/12 text-cyan-50',
+    brand: 'border-amber-400/20 bg-amber-500/12 text-amber-50',
     success: 'border-emerald-400/20 bg-emerald-500/12 text-emerald-50',
     warning: 'border-amber-400/20 bg-amber-500/14 text-amber-50',
     danger: 'border-rose-400/20 bg-rose-500/14 text-rose-50',

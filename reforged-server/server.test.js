@@ -278,6 +278,65 @@ test('proxy chat completions forward provider SSE as OpenAI-compatible chunks', 
     }
 });
 
+test('models route proxies provider model lists without leaking keys', async () => {
+    const requests = [];
+    const server = createReforgedServer({
+        generationMode: 'proxy',
+        fetch: async (url, init) => {
+            requests.push({
+                url,
+                authorization: init.headers.Authorization,
+                accept: init.headers.Accept,
+            });
+            return new Response(JSON.stringify({
+                data: [
+                    { id: 'b-model', owned_by: 'provider' },
+                    { id: 'a-model', secret_hint: 'ignored' },
+                    { id: 'a-model' },
+                ],
+            }), {
+                status: 200,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+        },
+    });
+
+    await server.listen(0);
+    const baseUrl = httpBaseUrl(server);
+
+    try {
+        const response = await fetch(`${baseUrl}/api/reforged/models`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: 'Bearer sk-model-secret',
+            },
+            body: JSON.stringify({
+                baseUrl: 'https://provider-models.test/v1',
+            }),
+        });
+
+        assert.equal(response.status, 200);
+        const payload = await response.json();
+        assert.deepEqual(payload, {
+            object: 'list',
+            data: [
+                { id: 'b-model', object: 'model' },
+                { id: 'a-model', object: 'model' },
+            ],
+        });
+        assert.equal(requests[0].url, 'https://provider-models.test/v1/models');
+        assert.equal(requests[0].authorization, 'Bearer sk-model-secret');
+        assert.equal(requests[0].accept, 'application/json');
+        assert.equal(JSON.stringify(payload).includes('sk-model-secret'), false);
+        assert.equal(JSON.stringify(payload).includes('secret_hint'), false);
+    } finally {
+        await server.close();
+    }
+});
+
 test('provider errors are sanitized for JSON and SSE responses', async () => {
     const server = createReforgedServer({
         generationMode: 'proxy',
@@ -700,6 +759,14 @@ test('enforces server token on http routes and websocket upgrades', async () => 
 
         await new Promise((resolve, reject) => {
             const ws = new WebSocket(`${wsBase}${wsPath}&token=secret-token`);
+            ws.on('open', () => { ws.close(); resolve(); });
+            ws.on('error', (error) => reject(error));
+        });
+
+        await new Promise((resolve, reject) => {
+            const ws = new WebSocket(`${wsBase}${wsPath}`, {
+                headers: { 'X-Reforged-Token': 'secret-token' },
+            });
             ws.on('open', () => { ws.close(); resolve(); });
             ws.on('error', (error) => reject(error));
         });

@@ -5,7 +5,7 @@ describe('resolveButtonClasses', () => {
     it('uses primary medium button styles by default', () => {
         const classes = resolveButtonClasses();
 
-        expect(classes).toContain('bg-cyan-300');
+        expect(classes).toContain('bg-amber-300');
         expect(classes).toContain('min-h-12');
         expect(classes).toContain('rounded-lg');
     });

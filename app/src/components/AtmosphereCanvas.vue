@@ -3,8 +3,8 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import * as THREE from 'three';
 
 /**
- * Igloo-inspired WebGL atmosphere:
- * - fullscreen FBM "frost aurora" shader with pointer parallax and edge
+ * Warm night-lamp WebGL atmosphere:
+ * - fullscreen FBM ember haze shader with pointer parallax and edge
  *   chromatic aberration
  * - additive particle field that drifts, follows the pointer in parallax, and
  *   coalesces around UI beacons (dispatched as `reforged-beacon` events)
@@ -72,7 +72,7 @@ void main() {
     vec2 drift = uPointer * 0.07;
     float t = uTime * 0.035;
 
-    vec3 color = mix(vec3(0.024, 0.035, 0.047), vec3(0.051, 0.082, 0.114), smoothstep(1.15, -0.35, vUv.y) * 0.85);
+    vec3 color = mix(vec3(0.050, 0.030, 0.020), vec3(0.110, 0.066, 0.040), smoothstep(1.15, -0.35, vUv.y) * 0.85);
 
     vec2 auroraField = vec2(centered.x * 1.35 + t * 2.1, centered.y * 3.1 - t * 0.9) + drift;
     float aberration = 0.045 * dot(centered, centered);
@@ -82,15 +82,15 @@ void main() {
     float ribbon = fbm(vec2(centered.x * 2.3 - t * 1.5, centered.y * 4.2 + t * 0.6) - drift);
 
     float heightFade = smoothstep(-0.65, 0.45, centered.y + fbm(centered * 2.0) * 0.35);
-    vec3 mint = vec3(0.561, 0.890, 0.816);
-    vec3 ice = vec3(0.788, 0.839, 0.898);
+    vec3 amber = vec3(0.847, 0.643, 0.373);
+    vec3 honey = vec3(1.000, 0.815, 0.520);
     vec3 aurora = vec3(
-        mint.r * smoothstep(0.46, 0.88, bandR),
-        mint.g * smoothstep(0.46, 0.88, bandG),
-        mint.b * smoothstep(0.46, 0.88, bandB)
+        amber.r * smoothstep(0.46, 0.88, bandR),
+        amber.g * smoothstep(0.46, 0.88, bandG),
+        amber.b * smoothstep(0.46, 0.88, bandB)
     );
-    color += aurora * 0.17 * (0.45 + heightFade);
-    color += ice * smoothstep(0.52, 0.92, ribbon) * 0.06 * heightFade;
+    color += aurora * 0.19 * (0.45 + heightFade);
+    color += honey * smoothstep(0.52, 0.92, ribbon) * 0.055 * heightFade;
 
     float hearth = exp(-length(centered - vec2(uAspect * -0.38, -0.44)) * 2.1);
     color += vec3(0.847, 0.643, 0.373) * hearth * 0.075;
@@ -153,9 +153,9 @@ varying float vTint;
 void main() {
     float distanceToCenter = length(gl_PointCoord - 0.5);
     float core = smoothstep(0.5, 0.04, distanceToCenter);
-    vec3 frost = mix(vec3(0.788, 0.839, 0.898), vec3(0.561, 0.890, 0.816), step(0.55, vTint));
-    vec3 color = mix(frost, vec3(0.847, 0.643, 0.373), step(0.93, vTint));
-    color = mix(color, vec3(0.93, 1.0, 0.97), clamp(vGlow, 0.0, 1.0));
+    vec3 ember = mix(vec3(0.847, 0.643, 0.373), vec3(1.0, 0.815, 0.520), step(0.55, vTint));
+    vec3 color = mix(ember, vec3(0.584, 0.353, 0.157), step(0.93, vTint));
+    color = mix(color, vec3(1.0, 0.91, 0.72), clamp(vGlow, 0.0, 1.0));
     float alpha = core * (0.3 + 0.42 * vTint) * (0.5 + vGlow * 1.4);
     gl_FragColor = vec4(color, alpha);
 }

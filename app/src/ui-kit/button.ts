@@ -6,9 +6,9 @@ export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'dan
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 const buttonVariantClasses: Record<ButtonVariant, string> = {
-    primary: 'border border-cyan-200/40 bg-cyan-300 text-neutral-950 hover:bg-cyan-200 active:bg-cyan-100 shadow-[0_0_24px_rgba(143,227,208,0.16)]',
+    primary: 'border border-amber-200/40 bg-amber-300 text-neutral-950 hover:bg-amber-200 active:bg-amber-100 shadow-[0_0_24px_rgba(216,164,95,0.18)]',
     secondary: 'border border-white/12 bg-white/8 text-neutral-100 hover:bg-white/12 active:bg-white/16',
-    outline: 'border border-white/12 bg-neutral-950/72 text-neutral-100 hover:border-cyan-300/40 hover:bg-white/6 active:bg-white/10',
+    outline: 'border border-white/12 bg-neutral-950/72 text-neutral-100 hover:border-amber-300/40 hover:bg-white/6 active:bg-white/10',
     ghost: 'border border-transparent bg-transparent text-neutral-100 hover:bg-white/8 active:bg-white/10',
     danger: 'border border-rose-200/30 bg-rose-300 text-rose-950 hover:bg-rose-200 active:bg-rose-100',
 };

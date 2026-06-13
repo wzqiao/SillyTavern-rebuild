@@ -2,7 +2,7 @@ import type { ReforgedUiTone } from '@/contracts/ui';
 import { cx } from './utils';
 
 export const focusRingClass =
-    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950';
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950';
 
 export const disabledClass = 'disabled:cursor-not-allowed disabled:opacity-55';
 
@@ -20,7 +20,7 @@ export const supportingTextClass = 'text-xs leading-5 text-neutral-400';
 
 const toneTextMap: Record<ReforgedUiTone, string> = {
     neutral: 'text-neutral-100',
-    brand: 'text-cyan-100',
+    brand: 'text-amber-100',
     success: 'text-emerald-100',
     warning: 'text-amber-100',
     danger: 'text-rose-100',
@@ -28,7 +28,7 @@ const toneTextMap: Record<ReforgedUiTone, string> = {
 
 const toneBadgeMap: Record<ReforgedUiTone, string> = {
     neutral: 'border-white/10 bg-white/6 text-neutral-200',
-    brand: 'border-cyan-400/20 bg-cyan-400/12 text-cyan-100',
+    brand: 'border-amber-400/20 bg-amber-400/12 text-amber-100',
     success: 'border-emerald-400/20 bg-emerald-400/12 text-emerald-100',
     warning: 'border-amber-400/20 bg-amber-400/12 text-amber-100',
     danger: 'border-rose-400/20 bg-rose-400/12 text-rose-100',
@@ -36,7 +36,7 @@ const toneBadgeMap: Record<ReforgedUiTone, string> = {
 
 const toneSoftMap: Record<ReforgedUiTone, string> = {
     neutral: 'border-white/10 bg-white/5 text-neutral-100',
-    brand: 'border-cyan-400/20 bg-cyan-400/10 text-cyan-50',
+    brand: 'border-amber-400/20 bg-amber-400/10 text-amber-50',
     success: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-50',
     warning: 'border-amber-400/20 bg-amber-400/12 text-amber-50',
     danger: 'border-rose-400/20 bg-rose-400/12 text-rose-50',
@@ -44,7 +44,7 @@ const toneSoftMap: Record<ReforgedUiTone, string> = {
 
 const toneSolidMap: Record<ReforgedUiTone, string> = {
     neutral: 'border-white/12 bg-neutral-100 text-neutral-950',
-    brand: 'border-cyan-200/40 bg-cyan-300 text-neutral-950',
+    brand: 'border-amber-200/40 bg-amber-300 text-neutral-950',
     success: 'border-emerald-200/40 bg-emerald-300 text-emerald-950',
     warning: 'border-amber-200/40 bg-amber-300 text-amber-950',
     danger: 'border-rose-200/40 bg-rose-300 text-rose-950',

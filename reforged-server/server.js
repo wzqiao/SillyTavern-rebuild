@@ -97,6 +97,12 @@ export function createReforgedServer(options = {}) {
                 return;
             }
 
+            if (request.method === 'POST' && url.pathname === '/api/reforged/models') {
+                const body = await readJsonBody(request);
+                await handleModelsRequest(request, response, body);
+                return;
+            }
+
             const kvMatch = url.pathname.match(/^\/api\/reforged\/storage\/kv\/(.+)$/);
             if (kvMatch) {
                 const key = decodeURIComponent(kvMatch[1]);
@@ -182,7 +188,7 @@ export function createReforgedServer(options = {}) {
         }
 
         if (serverToken) {
-            const providedToken = url.searchParams.get('token') ?? '';
+            const providedToken = url.searchParams.get('token') ?? readHeaderToken(request) ?? '';
             if (!providedToken || !timingSafeEqualStrings(providedToken, serverToken)) {
                 socket.destroy();
                 return;
@@ -595,6 +601,13 @@ export function createReforgedServer(options = {}) {
         writeJson(response, 200, completion);
     }
 
+    async function handleModelsRequest(request, response, body) {
+        const providerRequest = normalizeModelsRequest(request, body);
+        const providerResponse = await requestProviderModels(providerRequest);
+        const models = await normalizeModelsResponse(providerResponse);
+        writeJson(response, 200, models);
+    }
+
     function normalizeChatCompletionRequest(request, body) {
         const baseUrl = readRequiredString(body, 'baseUrl').replace(/\/+$/g, '');
         const model = readRequiredString(body, 'model');
@@ -609,6 +622,16 @@ export function createReforgedServer(options = {}) {
             stream,
             apiKey,
             requestOptions: readChatCompletionOptions(body),
+        };
+    }
+
+    function normalizeModelsRequest(request, body) {
+        const baseUrl = readRequiredString(body, 'baseUrl').replace(/\/+$/g, '');
+        const apiKey = readBearerToken(request.headers.authorization);
+
+        return {
+            baseUrl,
+            apiKey,
         };
     }
 
@@ -648,6 +671,35 @@ export function createReforgedServer(options = {}) {
         return response;
     }
 
+    async function requestProviderModels(providerRequest) {
+        if (!fetchImpl) {
+            throw new PublicHttpError(500, 'Fetch is not available for model discovery proxying.');
+        }
+        if (!providerRequest.apiKey) {
+            throw new PublicHttpError(400, 'Authorization bearer token is required.');
+        }
+        assertHttpProviderUrl(providerRequest.baseUrl);
+
+        let response;
+        try {
+            response = await fetchImpl(`${providerRequest.baseUrl}/models`, {
+                method: 'GET',
+                headers: {
+                    Accept: 'application/json',
+                    Authorization: `Bearer ${providerRequest.apiKey}`,
+                },
+            });
+        } catch (_error) {
+            throw new PublicHttpError(502, 'Provider request failed.');
+        }
+
+        if (!response.ok) {
+            throw await toSanitizedProviderError(response);
+        }
+
+        return response;
+    }
+
     async function normalizeChatCompletionResponse(providerResponse, providerRequest) {
         let payload;
         try {
@@ -672,6 +724,23 @@ export function createReforgedServer(options = {}) {
                     content: normalizeTextContent(choice?.message?.content ?? choice?.text ?? ''),
                 },
                 finish_reason: choice?.finish_reason ?? null,
+            })),
+        };
+    }
+
+    async function normalizeModelsResponse(providerResponse) {
+        let payload;
+        try {
+            payload = await providerResponse.json();
+        } catch (_error) {
+            throw new PublicHttpError(502, 'Provider returned an invalid JSON response.');
+        }
+
+        return {
+            object: 'list',
+            data: readProviderModelIds(payload).map((modelId) => ({
+                id: modelId,
+                object: 'model',
             })),
         };
     }
@@ -980,6 +1049,31 @@ function readScalarOptions(value, allowedKeys) {
         }
     }
     return sanitized;
+}
+
+function readProviderModelIds(payload) {
+    const list = Array.isArray(payload)
+        ? payload
+        : isRecord(payload) && Array.isArray(payload.data)
+            ? payload.data
+            : isRecord(payload) && Array.isArray(payload.models)
+                ? payload.models
+                : [];
+
+    const ids = list
+        .map((item) => {
+            if (typeof item === 'string') {
+                return item;
+            }
+            if (isRecord(item) && typeof item.id === 'string') {
+                return item.id;
+            }
+            return '';
+        })
+        .map((modelId) => modelId.trim())
+        .filter(Boolean);
+
+    return [...new Set(ids)];
 }
 
 function readBearerToken(value) {

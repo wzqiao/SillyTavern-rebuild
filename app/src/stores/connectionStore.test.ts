@@ -28,7 +28,7 @@ describe('useConnectionStore', () => {
         expect(store.transportMode).toBe('auto');
     });
 
-    it('patches and normalizes the draft without applying it', () => {
+    it('patches and trims the draft without applying it', () => {
         const store = useConnectionStore();
 
         store.patchDraft({
@@ -39,7 +39,7 @@ describe('useConnectionStore', () => {
 
         expect(store.draft).toEqual({
             provider: 'openai-compatible',
-            baseUrl: 'https://api.example.test/v1',
+            baseUrl: 'https://api.example.test/v1/',
             model: 'gpt-example',
             apiKey: {
                 hasValue: true,
@@ -57,6 +57,32 @@ describe('useConnectionStore', () => {
         })).not.toContain('sk-test-123456');
     });
 
+    it('normalizes pasted base URLs on commit actions', () => {
+        const cases = [
+            ['www.rua.chat', 'https://www.rua.chat/v1'],
+            ['https://www.rua.chat/', 'https://www.rua.chat/v1'],
+            ['https://www.rua.chat/v1/', 'https://www.rua.chat/v1'],
+            ['https://www.rua.chat/v1/models', 'https://www.rua.chat/v1'],
+            ['https://www.rua.chat/v1/chat/completions', 'https://www.rua.chat/v1'],
+            ['https://www.rua.chat/chat/completions', 'https://www.rua.chat/v1'],
+            ['https://gateway.example/openai/v1/chat/completions?debug=1#top', 'https://gateway.example/openai/v1'],
+            ['https://gateway.example/api', 'https://gateway.example/api'],
+            ['localhost:1234/v1/models', 'http://localhost:1234/v1'],
+        ] satisfies Array<[string, string]>;
+
+        for (const [input, expected] of cases) {
+            const store = useConnectionStore();
+
+            store.patchDraft({
+                baseUrl: input,
+                model: 'gpt-example',
+            });
+            store.normalizeDraftFields();
+
+            expect(store.draft.baseUrl).toBe(expected);
+        }
+    });
+
     it('reports validation errors for incomplete drafts', () => {
         const store = useConnectionStore();
 
@@ -67,10 +93,6 @@ describe('useConnectionStore', () => {
 
         expect(store.draftStatus).toBe('incomplete');
         expect(store.draftErrors).toEqual([
-            {
-                field: 'baseUrl',
-                message: 'Base URL must start with http:// or https://.',
-            },
             {
                 field: 'model',
                 message: 'Model id is required.',
@@ -83,7 +105,7 @@ describe('useConnectionStore', () => {
         expect(store.applyDraft()).toEqual({
             ok: false,
             issues: store.draftErrors,
-            message: 'Base URL must start with http:// or https://.',
+            message: 'Model id is required.',
         });
         expect(store.appliedDraft).toBeNull();
     });
@@ -141,7 +163,6 @@ describe('useConnectionStore', () => {
             connection: null,
             takeRuntimeConnection: null,
             issues: [
-                { code: 'draft-incomplete', field: 'baseUrl' },
                 { code: 'draft-incomplete', field: 'model' },
                 { code: 'draft-incomplete', field: 'apiKey' },
             ],
@@ -374,11 +395,21 @@ describe('probeConnection', () => {
         return store;
     }
 
-    it('fetches and sorts model ids from an openai-style payload', async () => {
+    it('proxies model discovery through the Reforged backend in auto mode', async () => {
         const store = prepareDraft();
-        const calls: Array<{ url: string; auth: string | undefined }> = [];
+        const calls: Array<{
+            url: string;
+            method: string | undefined;
+            auth: string | undefined;
+            body: string | undefined;
+        }> = [];
         const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
-            calls.push({ url: String(url), auth: (init?.headers as Record<string, string>)?.Authorization });
+            calls.push({
+                url: String(url),
+                method: init?.method,
+                auth: (init?.headers as Record<string, string>)?.Authorization,
+                body: typeof init?.body === 'string' ? init.body : undefined,
+            });
             return new Response(JSON.stringify({ data: [{ id: 'b-model' }, { id: 'a-model' }, { id: 'a-model' }] }), { status: 200 });
         }) as typeof fetch;
 
@@ -387,19 +418,84 @@ describe('probeConnection', () => {
         expect(result.ok).toBe(true);
         expect(result.models).toEqual(['a-model', 'b-model']);
         expect(store.availableModels).toEqual(['a-model', 'b-model']);
-        expect(calls[0].url).toBe('https://api.example.com/v1/models');
+        expect(calls[0].url).toBe('http://127.0.0.1:8787/api/reforged/models');
+        expect(calls[0].method).toBe('POST');
         expect(calls[0].auth).toBe('Bearer sk-probe-secret');
+        expect(JSON.parse(calls[0].body ?? '{}')).toEqual({
+            baseUrl: 'https://api.example.com/v1',
+        });
         expect(store.probing).toBe(false);
+    });
+
+    it('keeps direct browser model discovery when that transport is selected', async () => {
+        const store = prepareDraft();
+        store.setTransportMode('browser-direct');
+        const calls: Array<{ url: string; auth: string | undefined }> = [];
+        const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+            calls.push({ url: String(url), auth: (init?.headers as Record<string, string>)?.Authorization });
+            return new Response(JSON.stringify({ models: ['direct-model'] }), { status: 200 });
+        }) as typeof fetch;
+
+        const result = await store.probeConnection(fetcher);
+
+        expect(result.ok).toBe(true);
+        expect(result.models).toEqual(['direct-model']);
+        expect(calls).toEqual([{
+            url: 'https://api.example.com/v1/models',
+            auth: 'Bearer sk-probe-secret',
+        }]);
+    });
+
+    it('falls back to browser discovery in auto mode only when the Reforged backend is unreachable', async () => {
+        const store = prepareDraft();
+        const calls: string[] = [];
+        const fetcher = (async (url: RequestInfo | URL) => {
+            calls.push(String(url));
+            if (String(url).includes('/api/reforged/models')) {
+                throw new TypeError('backend offline');
+            }
+            return new Response(JSON.stringify({ data: [{ id: 'direct-fallback' }] }), { status: 200 });
+        }) as typeof fetch;
+
+        const result = await store.probeConnection(fetcher);
+
+        expect(result.ok).toBe(true);
+        expect(result.models).toEqual(['direct-fallback']);
+        expect(calls).toEqual([
+            'http://127.0.0.1:8787/api/reforged/models',
+            'https://api.example.com/v1/models',
+        ]);
+    });
+
+    it('does not fall back from explicit Reforged backend model discovery', async () => {
+        const store = prepareDraft();
+        store.setTransportMode('reforged-backend');
+        const calls: string[] = [];
+        const fetcher = (async (url: RequestInfo | URL) => {
+            calls.push(String(url));
+            throw new TypeError('backend offline');
+        }) as typeof fetch;
+
+        const result = await store.probeConnection(fetcher);
+
+        expect(result).toMatchObject({ ok: false, code: 'cors-or-network' });
+        expect(calls).toEqual(['http://127.0.0.1:8787/api/reforged/models']);
     });
 
     it('classifies http failures without clearing previous models', async () => {
         const store = prepareDraft();
         store.availableModels = ['keep-me'];
-        const fetcher = (async () => new Response('denied', { status: 401 })) as typeof fetch;
+        const fetcher = (async () => new Response(JSON.stringify({
+            error: 'Reforged server token is missing or invalid.',
+        }), { status: 401 })) as typeof fetch;
 
         const result = await store.probeConnection(fetcher);
 
-        expect(result).toMatchObject({ ok: false, code: 'http', detail: 'HTTP 401' });
+        expect(result).toMatchObject({
+            ok: false,
+            code: 'http',
+            detail: 'Reforged server token is missing or invalid.',
+        });
         expect(store.availableModels).toEqual(['keep-me']);
     });
 
