@@ -1,5 +1,3 @@
-// DRAFT: 待主干评审
-
 import type {
     HeadlessEngineAdapter,
     HeadlessChatCompletionRequest,
@@ -9,17 +7,14 @@ import type {
     ReforgedChatRole,
     ReforgedGenerationApi,
 } from './engine';
+import type { ReforgedPresetPrompt, ReforgedPresetSampling } from './preset';
 
-// DRAFT: 待主干评审
 export type ReforgedChatMessageRole = Extract<ReforgedChatRole, 'system' | 'user' | 'assistant'>;
 
-// DRAFT: 待主干评审
 export type ReforgedChatMessageStatus = 'sent' | 'generating' | 'failed';
 
-// DRAFT: 待主干评审
 export type ReforgedChatGenerationStatus = 'idle' | 'generating' | 'failed' | 'cancelled';
 
-// DRAFT: 待主干评审
 export type ReforgedChatErrorCode =
     | 'adapter-not-configured'
     | 'empty-message'
@@ -29,14 +24,12 @@ export type ReforgedChatErrorCode =
     | 'runtime-connection-unavailable'
     | 'session-not-found';
 
-// DRAFT: 待主干评审
 export interface ReforgedChatError {
     code: ReforgedChatErrorCode;
     message: string;
     detail?: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatCharacterContext {
     id: string;
     name: string;
@@ -44,19 +37,18 @@ export interface ReforgedChatCharacterContext {
     personality?: string;
     scenario?: string;
     firstMessage?: string;
+    /** 旧版 mes_example 原文,生成时按 <START> 分块注入(M2.5-A2)。 */
+    exampleMessages?: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatLorebookEntryContext {
     id: string;
     title?: string;
     content: string;
 }
 
-// DRAFT: 待主干评审
 export type ReforgedChatLorebookExamplePosition = 'before' | 'after';
 
-// DRAFT: 待主干评审
 export interface ReforgedChatLorebookExampleContext {
     position: ReforgedChatLorebookExamplePosition;
     content: string;
@@ -64,14 +56,12 @@ export interface ReforgedChatLorebookExampleContext {
     title?: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatLorebookDepthContext {
     depth: number;
     role: ReforgedChatMessageRole;
     entries: ReforgedChatLorebookEntryContext[];
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatLorebookContext {
     id: string;
     name: string;
@@ -85,14 +75,12 @@ export interface ReforgedChatLorebookContext {
     outletEntries?: Record<string, ReforgedChatLorebookEntryContext[]>;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatMessageAlternative {
     id: string;
     content: string;
     createdAt: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatMessage {
     id: string;
     sessionId: string;
@@ -104,9 +92,12 @@ export interface ReforgedChatMessage {
     error?: ReforgedChatError;
     alternatives: ReforgedChatMessageAlternative[];
     activeAlternativeIndex: number;
+    /** 联机预留:消息作者。单机恒为 local-user / local-character。 */
+    authorId?: string;
+    /** 联机预留:单调递增序号,为将来增量同步排序用。 */
+    seq?: number;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatSession {
     id: string;
     character: ReforgedChatCharacterContext | null;
@@ -114,9 +105,15 @@ export interface ReforgedChatSession {
     createdAt: string;
     updatedAt: string;
     messageIds: string[];
+    /** 联机预留:会话参与者。单机恒为 ['local-user']。 */
+    participants?: string[];
 }
 
-// DRAFT: 待主干评审
+export interface ReforgedChatPersonaContext {
+    name?: string;
+    description?: string;
+}
+
 export interface ReforgedChatGenerationOptions {
     api?: ReforgedGenerationApi | null;
     instructOverride?: boolean;
@@ -126,15 +123,19 @@ export interface ReforgedChatGenerationOptions {
     prefill?: string;
     jsonSchema?: HeadlessGenerationRequest['jsonSchema'];
     systemPrompt?: string;
+    /** 预设采样参数(M2 阶段二),直连后端时透传请求体。 */
+    sampling?: ReforgedPresetSampling | null;
+    /** 预设 prompt 结构(已按 prompt_order 排序),存在时接管消息拼装。 */
+    presetPrompts?: ReforgedPresetPrompt[] | null;
+    /** 用户身份(M2.5-A3):{{user}} 宏与 personaDescription 槽位的数据源。 */
+    persona?: ReforgedChatPersonaContext | null;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatStartSessionInput {
     character?: ReforgedChatCharacterContext | null;
     title?: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatSendInput {
     content: string;
     sessionId?: string;
@@ -146,7 +147,6 @@ export interface ReforgedChatSendInput {
     runtimeConnectionProvider?: ReforgedChatRuntimeConnectionProvider | null;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatPendingRequest {
     id: string;
     sessionId: string;
@@ -156,7 +156,6 @@ export interface ReforgedChatPendingRequest {
     canAbort: boolean;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatGenerationState {
     status: ReforgedChatGenerationStatus;
     sessionId: string | null;
@@ -168,7 +167,6 @@ export interface ReforgedChatGenerationState {
     error: ReforgedChatError | null;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatReadiness {
     canSend: boolean;
     hasAdapter: boolean;
@@ -176,7 +174,6 @@ export interface ReforgedChatReadiness {
     reason: ReforgedChatError | null;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatSendSuccess {
     ok: true;
     session: ReforgedChatSession;
@@ -184,7 +181,6 @@ export interface ReforgedChatSendSuccess {
     assistantMessage: ReforgedChatMessage;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatSendFailure {
     ok: false;
     error: ReforgedChatError;
@@ -193,31 +189,23 @@ export interface ReforgedChatSendFailure {
     assistantMessage: ReforgedChatMessage | null;
 }
 
-// DRAFT: 待主干评审
 export type ReforgedChatSendResult = ReforgedChatSendSuccess | ReforgedChatSendFailure;
 
-// DRAFT: 待主干评审
 export type ReforgedChatEngineMessage = ReforgedChatCompletionMessage;
 
-// DRAFT: 待主干评审
 export type ReforgedChatRuntimeSource = 'stream' | 'non-stream' | 'text';
 
-// DRAFT: 待主干评审
 export type ReforgedChatRuntimeMode = 'generate-text' | 'chat-completion';
 
-// DRAFT: 待主干评审
 export interface ReforgedChatRuntimeOptions {
     mode: ReforgedChatRuntimeMode;
     chatCompletionType?: HeadlessChatCompletionRequest['type'];
 }
 
-// DRAFT: 待主干评审
 export type ReforgedChatRuntimeConnectionProvider = () => HeadlessChatCompletionRuntimeConnection | null;
 
-// DRAFT: 待主干评审
 export type ReforgedChatRuntimeEventType = 'snapshot' | 'complete';
 
-// DRAFT: 待主干评审
 export interface ReforgedChatRuntimeSnapshot {
     text: string;
     alternatives: string[];
@@ -232,7 +220,6 @@ export interface ReforgedChatRuntimeSnapshot {
     chunkCount: number;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatRuntimeToolCall {
     id?: string;
     type?: string;
@@ -242,12 +229,10 @@ export interface ReforgedChatRuntimeToolCall {
     signature?: string | null;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedChatRuntimeResult extends ReforgedChatRuntimeSnapshot {
     completed: true;
 }
 
-// DRAFT: 待主干评审
 export type ReforgedChatRuntimeEvent =
     | {
         type: 'snapshot';
@@ -258,7 +243,6 @@ export type ReforgedChatRuntimeEvent =
         result: ReforgedChatRuntimeResult;
     };
 
-// DRAFT: 待主干评审
 export interface ReforgedChatRuntimeRequestInput {
     session: ReforgedChatSession;
     messages: ReforgedChatMessage[];

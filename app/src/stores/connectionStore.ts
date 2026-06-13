@@ -9,15 +9,22 @@ import type {
     ReforgedConnectionResolvedRuntimeConfig,
     ReforgedConnectionRuntimeRequestConfig,
     ReforgedConnectionSecretMetadata,
+    ReforgedConnectionTransportMode,
     ReforgedConnectionRuntimeHandoff,
     ReforgedConnectionRuntimeHandoffInput,
     ReforgedConnectionValidationIssue,
+    ReforgedConnectionProbeResult,
 } from '@/contracts/connection';
 
 interface ConnectionStoreState {
     draft: ReforgedConnectionDraft;
     appliedDraft: ReforgedAppliedConnectionDraft | null;
+    transportMode: ReforgedConnectionTransportMode;
     nextLocalId: number;
+    /** 探测结果与模型列表是会话级瞬态,不持久化。 */
+    availableModels: string[];
+    lastProbe: ReforgedConnectionProbeResult | null;
+    probing: boolean;
 }
 
 const connectionSecretVault = new Map<string, string>();
@@ -38,7 +45,11 @@ export const useConnectionStore = defineStore('connection', {
     state: (): ConnectionStoreState => ({
         draft: emptyDraft(),
         appliedDraft: null,
+        transportMode: 'auto',
         nextLocalId: 1,
+        availableModels: [],
+        lastProbe: null,
+        probing: false,
     }),
 
     getters: {
@@ -78,6 +89,7 @@ export const useConnectionStore = defineStore('connection', {
             return (input = {}) => createRuntimeHandoff({
                 appliedDraft: state.appliedDraft,
                 draft: normalizeDraft(state.draft),
+                transportMode: state.transportMode,
                 runtimeDirectRequestReady: input.runtimeDirectRequestReady === true,
                 runtimeAdapterReady: input.runtimeAdapterReady === true,
             });
@@ -91,6 +103,10 @@ export const useConnectionStore = defineStore('connection', {
                 ...input,
                 provider: 'openai-compatible',
             });
+        },
+
+        setTransportMode(mode: ReforgedConnectionTransportMode): void {
+            this.transportMode = mode;
         },
 
         applyDraft(appliedAt = new Date().toISOString()): ReforgedConnectionApplyResult {
@@ -168,10 +184,65 @@ export const useConnectionStore = defineStore('connection', {
             this.draft.apiKey = emptySecretMetadata();
         },
 
+        /**
+         * 连接测试 + 模型列表(A1):浏览器直连 GET {baseUrl}/models。
+         * 拉不到列表不阻塞使用——模型仍可手填,生成走所选 transport。
+         */
+        async probeConnection(fetcher: typeof fetch = globalThis.fetch): Promise<ReforgedConnectionProbeResult> {
+            const draft = normalizeDraft(this.draft);
+            const apiKey = readVaultSecret(DRAFT_SECRET_SLOT);
+
+            if (!draft.baseUrl || !apiKey) {
+                return this.recordProbe({ ok: false, code: 'config' });
+            }
+
+            this.probing = true;
+            const startedAt = Date.now();
+
+            try {
+                let response: Response;
+
+                try {
+                    response = await fetcher(`${draft.baseUrl.replace(/\/+$/g, '')}/models`, {
+                        headers: { Authorization: `Bearer ${apiKey}` },
+                    });
+                } catch (error) {
+                    return this.recordProbe({
+                        ok: false,
+                        code: 'cors-or-network',
+                        detail: error instanceof Error ? error.message : String(error),
+                    });
+                }
+
+                const latencyMs = Date.now() - startedAt;
+
+                if (!response.ok) {
+                    return this.recordProbe({
+                        ok: false,
+                        code: 'http',
+                        detail: `HTTP ${response.status}`,
+                        latencyMs,
+                    });
+                }
+
+                const models = readModelIds(await response.json().catch(() => null));
+                this.availableModels = models;
+                return this.recordProbe({ ok: true, models, latencyMs });
+            } finally {
+                this.probing = false;
+            }
+        },
+
+        recordProbe(result: ReforgedConnectionProbeResult): ReforgedConnectionProbeResult {
+            this.lastProbe = result;
+            return result;
+        },
+
         clearAll(): void {
             clearAllVaultSecrets();
             this.draft = emptyDraft();
             this.appliedDraft = null;
+            this.transportMode = 'auto';
         },
     },
 });
@@ -190,6 +261,20 @@ export function resetConnectionSecretVaultForTest(): void {
     clearAllVaultSecrets();
 }
 
+// 持久化接线(M2):金库刻意不进 reactive state,导出/恢复只供仓储层快照使用。
+export function exportConnectionSecretsForPersistence(): Record<string, string> {
+    return Object.fromEntries(connectionSecretVault);
+}
+
+export function restoreConnectionSecretsFromPersistence(secrets: Record<string, string>): void {
+    clearAllVaultSecrets();
+    for (const [slot, secret] of Object.entries(secrets)) {
+        if (typeof secret === 'string' && secret.length > 0) {
+            connectionSecretVault.set(slot, secret);
+        }
+    }
+}
+
 function normalizeDraft(draft: DraftNormalizeInput): ReforgedConnectionDraft {
     return {
         provider: 'openai-compatible',
@@ -202,6 +287,7 @@ function normalizeDraft(draft: DraftNormalizeInput): ReforgedConnectionDraft {
 function createRuntimeHandoff(input: {
     appliedDraft: ReforgedAppliedConnectionDraft | null;
     draft: ReforgedConnectionDraft;
+    transportMode: ReforgedConnectionTransportMode;
     runtimeAdapterReady: boolean;
     runtimeDirectRequestReady: boolean;
 }): ReforgedConnectionRuntimeHandoff {
@@ -286,7 +372,7 @@ function createRuntimeHandoff(input: {
         };
     }
 
-    const takeRuntimeConnection = createRuntimeConnectionTaker(connection);
+    const takeRuntimeConnection = createRuntimeConnectionTaker(connection, input.transportMode);
     if (!takeRuntimeConnection) {
         return {
             status: 'applied-but-unwired',
@@ -398,6 +484,7 @@ function toResolvedRuntimeConfig(appliedDraft: ReforgedAppliedConnectionDraft): 
 
 function createRuntimeConnectionTaker(
     connection: ReforgedConnectionResolvedRuntimeConfig,
+    transportMode: ReforgedConnectionTransportMode,
 ): (() => ReforgedConnectionRuntimeRequestConfig | null) | null {
     const slot = appliedSecretSlot(connection.id);
     if (!readVaultSecret(slot)) {
@@ -420,6 +507,7 @@ function createRuntimeConnectionTaker(
         return {
             ...connection,
             apiKey,
+            transport: transportMode,
         };
     };
 }
@@ -475,4 +563,28 @@ function maskSecret(value: string): string {
     }
 
     return `${value.slice(0, 3)}****${value.slice(-4)}`;
+}
+
+function readModelIds(payload: unknown): string[] {
+    const list = Array.isArray(payload)
+        ? payload
+        : payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).data)
+            ? (payload as { data: unknown[] }).data
+            : payload && typeof payload === 'object' && Array.isArray((payload as Record<string, unknown>).models)
+                ? (payload as { models: unknown[] }).models
+                : [];
+
+    const ids = list
+        .map((item) => {
+            if (typeof item === 'string') {
+                return item;
+            }
+            if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).id === 'string') {
+                return (item as { id: string }).id;
+            }
+            return '';
+        })
+        .filter((id) => id.length > 0);
+
+    return [...new Set(ids)].sort((left, right) => left.localeCompare(right));
 }

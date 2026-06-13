@@ -1,98 +1,169 @@
 @import 'tailwindcss';
 
 /*
- * ST-Reforged 主题：暖夜灯下 / Lamplit Evening
- * 思路：不新增依赖、不逐文件改色。直接在 Tailwind v4 @theme 里把现有视图
- * 已经在用的调色板 token（neutral 冷灰 / white / amber）重定义为暖色，
- * 整个应用即统一变暖。语义：夜读·火光·沉浸·护眼。
+ * ST-Reforged visual direction: Frosted stage console.
+ * The product stays readable, while the app shell carries the Igloo-like
+ * WebGL/technical ambience through color, glass, grid, and signal motion.
  */
 @theme {
-  --font-display: "Noto Serif SC", "Songti SC", "STSong", ui-serif, serif;
+  --font-display: "IBM Plex Mono", "SFMono-Regular", "Menlo", "Noto Sans Mono CJK SC", ui-monospace, monospace;
 
-  /* 暖奶白：text-white / bg-white / border-white/x 等全部随之变暖 */
-  --color-white: #f3e9dc;
+  --color-white: #edf7ff;
 
-  /* neutral 冷灰 → 暖棕梯度（底色/卡面/边框/文字层级都靠它） */
-  --color-neutral-50: #f7efe2;
-  --color-neutral-100: #f0e6d8;
-  --color-neutral-200: #e2d6c4;
-  --color-neutral-300: #cabda9;
-  --color-neutral-400: #b5a695; /* 次要文字 */
-  --color-neutral-500: #8f7d6a; /* 更次要 */
-  --color-neutral-600: #6a5a49;
-  --color-neutral-700: #4a3b2e; /* 边框/分隔 */
-  --color-neutral-800: #34291f; /* 抬升表面 */
-  --color-neutral-900: #29211c; /* 卡面 */
-  --color-neutral-950: #1c1714; /* 底色 */
+  --color-neutral-50: #f3f8fb;
+  --color-neutral-100: #e4eef5;
+  --color-neutral-200: #c9d6e5;
+  --color-neutral-300: #aebdca;
+  --color-neutral-400: #83909d;
+  --color-neutral-500: #66727e;
+  --color-neutral-600: #48535e;
+  --color-neutral-700: #26313b;
+  --color-neutral-800: #151f29;
+  --color-neutral-900: #0d151d;
+  --color-neutral-950: #070a0d;
 
-  /* stone 同样暖化，保持一致（部分视图用它） */
-  --color-stone-50: #f7efe2;
-  --color-stone-100: #f0e6d8;
-  --color-stone-200: #e2d6c4;
-  --color-stone-300: #cabda9;
-  --color-stone-400: #b5a695;
-  --color-stone-500: #8f7d6a;
-  --color-stone-600: #6a5a49;
-  --color-stone-700: #4a3b2e;
-  --color-stone-800: #34291f;
-  --color-stone-900: #29211c;
-  --color-stone-950: #1c1714;
+  --color-stone-50: #f3f8fb;
+  --color-stone-100: #e4eef5;
+  --color-stone-200: #c9d6e5;
+  --color-stone-300: #aebdca;
+  --color-stone-400: #83909d;
+  --color-stone-500: #66727e;
+  --color-stone-600: #48535e;
+  --color-stone-700: #26313b;
+  --color-stone-800: #151f29;
+  --color-stone-900: #0d151d;
+  --color-stone-950: #070a0d;
 
-  /* 品牌色：cyan 冷青 → 蜜糖灯光（用户气泡/链接/激活态全靠它，是暖化关键） */
-  --color-cyan-50: #fbf3e6;
-  --color-cyan-100: #f7e7c9;
-  --color-cyan-200: #f0cf95;
-  --color-cyan-300: #e8a14c; /* 主强调 / 用户气泡 */
-  --color-cyan-400: #d98c2e;
-  --color-cyan-500: #bc741f;
-  /* 两处零星冷色一并暖化 */
-  --color-teal-200: #f0cf95;
-  --color-sky-200: #f0cf95;
+  --color-cyan-50: #eafffb;
+  --color-cyan-100: #cafcf3;
+  --color-cyan-200: #9af0df;
+  --color-cyan-300: #8fe3d0;
+  --color-cyan-400: #5bc3b2;
+  --color-cyan-500: #339d90;
 
-  /* amber 警告 → 偏黄的暖金，与品牌蜜糖橙区分开 */
-  --color-amber-100: #f7ebd0;
-  --color-amber-200: #f3deac;
-  --color-amber-300: #efce85;
-  --color-amber-400: #e9bf5c; /* 警告：暖金 */
-  --color-amber-500: #d9a839;
-  --color-amber-600: #bc8c22;
+  --color-teal-200: #9af0df;
+  --color-sky-200: #c9d6e5;
 
-  /* 状态色：暖化但保留语义辨识度 */
-  --color-emerald-300: #8fd6a8;
-  --color-emerald-400: #5fbf86;
-  --color-rose-300: #f0a59a;
-  --color-rose-400: #e6796b;
+  --color-amber-100: #fff2d6;
+  --color-amber-200: #f5d99a;
+  --color-amber-300: #d8a45f;
+  --color-amber-400: #b97a35;
+  --color-amber-500: #935a28;
+  --color-amber-600: #74431f;
+
+  --color-emerald-300: #8fe3b3;
+  --color-emerald-400: #58c38a;
+  --color-rose-300: #e18a9b;
+  --color-rose-400: #b95771;
 }
 
-/* 全局底子：暖底 + 暖奶白文字，平滑字体 */
 html,
 body,
 #app {
-  background-color: var(--color-neutral-950);
+  min-height: 100%;
+  background: #070a0d;
   color: var(--color-neutral-100);
 }
 
 body {
+  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/*
- * 招牌元素：活动消息背后的"灯晕"。供 .lamp-glow 使用，
- * 在 ChatView 的活动助手气泡上加这个类即可获得柔和暖光。
- */
-.lamp-glow {
-  box-shadow:
-    0 0 0 1px rgb(232 161 76 / 0.12),
-    0 8px 30px -12px rgb(232 161 76 / 0.28);
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
 
-/* 尊重 reduce-motion */
+::selection {
+  background: rgb(143 227 208 / 0.28);
+  color: var(--color-white);
+}
+
+.glass-panel {
+  border: 1px solid rgb(237 247 255 / 0.11);
+  background:
+    linear-gradient(180deg, rgb(237 247 255 / 0.085), rgb(237 247 255 / 0.035)),
+    rgb(7 10 13 / 0.68);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 24px 90px rgb(0 0 0 / 0.32);
+  backdrop-filter: blur(18px);
+}
+
+.console-surface {
+  border: 1px solid rgb(237 247 255 / 0.1);
+  background:
+    linear-gradient(135deg, rgb(143 227 208 / 0.08), transparent 38%),
+    linear-gradient(180deg, rgb(13 21 29 / 0.86), rgb(7 10 13 / 0.78));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    inset 0 0 0 1px rgb(143 227 208 / 0.035),
+    0 18px 70px rgb(0 0 0 / 0.34);
+}
+
+.signal-glow,
+.lamp-glow {
+  box-shadow:
+    0 0 0 1px rgb(143 227 208 / 0.2),
+    0 0 24px rgb(143 227 208 / 0.18),
+    0 18px 50px rgb(0 0 0 / 0.35);
+}
+
+.hearth-glow {
+  box-shadow:
+    0 0 0 1px rgb(216 164 95 / 0.24),
+    0 0 26px rgb(216 164 95 / 0.16);
+}
+
+.scanline {
+  position: relative;
+  overflow: hidden;
+}
+
+.scanline::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgb(237 247 255 / 0.045),
+    transparent
+  );
+  opacity: 0.75;
+  transform: translateY(-120%);
+  animation: scanline-sweep 7s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.technical-label {
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+@keyframes scanline-sweep {
+  0% {
+    transform: translateY(-120%);
+  }
+  44%,
+  100% {
+    transform: translateY(120%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

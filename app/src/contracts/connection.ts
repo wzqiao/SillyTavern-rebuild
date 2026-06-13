@@ -1,14 +1,11 @@
-// DRAFT: 待主干评审
-
 import type { ReforgedGenerationApi } from './engine';
 
-// DRAFT: 待主干评审
 export type ReforgedConnectionProvider = 'openai-compatible';
 
-// DRAFT: 待主干评审
+export type ReforgedConnectionTransportMode = 'auto' | 'reforged-backend' | 'browser-direct' | 'legacy-proxy';
+
 export type ReforgedConnectionDraftStatus = 'empty' | 'incomplete' | 'complete' | 'applied';
 
-// DRAFT: 待主干评审
 export type ReforgedConnectionRuntimeHandoffStatus =
     | 'empty'
     | 'incomplete'
@@ -16,7 +13,6 @@ export type ReforgedConnectionRuntimeHandoffStatus =
     | 'applied-but-unwired'
     | 'ready-to-attempt';
 
-// DRAFT: 待主干评审
 export type ReforgedConnectionRuntimeHandoffIssueCode =
     | 'draft-empty'
     | 'draft-incomplete'
@@ -24,13 +20,11 @@ export type ReforgedConnectionRuntimeHandoffIssueCode =
     | 'runtime-unwired'
     | 'runtime-connection-unwired';
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionSecretMetadata {
     hasValue: boolean;
     maskedValue: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionDraft {
     provider: ReforgedConnectionProvider;
     baseUrl: string;
@@ -38,7 +32,6 @@ export interface ReforgedConnectionDraft {
     apiKey: ReforgedConnectionSecretMetadata;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionDraftPatch {
     provider?: ReforgedConnectionProvider;
     baseUrl?: string;
@@ -46,26 +39,22 @@ export interface ReforgedConnectionDraftPatch {
     apiKey?: ReforgedConnectionSecretMetadata;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedAppliedConnectionDraft extends ReforgedConnectionDraft {
     id: string;
     appliedAt: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionValidationIssue {
     field: keyof ReforgedConnectionDraft;
     message: string;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionRuntimeHandoffIssue {
     code: ReforgedConnectionRuntimeHandoffIssueCode;
     message: string;
     field?: keyof ReforgedConnectionDraft;
 }
 
-// DRAFT: 待主干评审
 export type ReforgedConnectionApplyResult =
     | {
         ok: true;
@@ -78,29 +67,25 @@ export type ReforgedConnectionApplyResult =
         message: string;
     };
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionGenerationMapping {
     api: ReforgedGenerationApi;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionResolvedRuntimeConfig extends ReforgedAppliedConnectionDraft {
     api: ReforgedGenerationApi;
 }
 
-// DRAFT: 待主干评审
 export type ReforgedConnectionRuntimeRequestConfig =
     Omit<ReforgedConnectionResolvedRuntimeConfig, 'apiKey'> & {
         apiKey: string;
+        transport: ReforgedConnectionTransportMode;
     };
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionRuntimeHandoffInput {
     runtimeAdapterReady?: boolean;
     runtimeDirectRequestReady?: boolean;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedConnectionRuntimeHandoff {
     status: ReforgedConnectionRuntimeHandoffStatus;
     canAttempt: boolean;
@@ -109,4 +94,14 @@ export interface ReforgedConnectionRuntimeHandoff {
     takeRuntimeConnection: (() => ReforgedConnectionRuntimeRequestConfig | null) | null;
     issues: ReforgedConnectionRuntimeHandoffIssue[];
     message: string;
+}
+
+export type ReforgedConnectionProbeFailureCode = 'config' | 'cors-or-network' | 'http';
+
+export interface ReforgedConnectionProbeResult {
+    ok: boolean;
+    code?: ReforgedConnectionProbeFailureCode;
+    detail?: string;
+    models?: string[];
+    latencyMs?: number;
 }

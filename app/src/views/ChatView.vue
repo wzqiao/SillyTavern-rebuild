@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 import { createChatLorebookContext } from '@/services';
-import { useCharacterStore, useChatStore, useConnectionStore, useWorldbookStore } from '@/stores';
+import MultiplayerRoomPanel from '@/components/MultiplayerRoomPanel.vue';
+import { parseChatJsonl } from '@/parsers/chatJsonl';
+import { useCharacterStore, useChatStore, useConnectionStore, useMultiplayerStore, usePersonaStore, usePresetStore, useWorldbookStore } from '@/stores';
 import { Button, Drawer, ListItem, Spinner, Textarea } from '@/ui-kit';
 import { useI18n } from '@/i18n';
 import type { ReforgedCharacterRosterItem } from '@/contracts/character';
@@ -32,6 +34,9 @@ interface RuntimeActivationOptions {
 const characterStore = useCharacterStore();
 const chatStore = useChatStore();
 const connectionStore = useConnectionStore();
+const multiplayerStore = useMultiplayerStore();
+const personaStore = usePersonaStore();
+const presetStore = usePresetStore();
 const worldbookStore = useWorldbookStore();
 const { t, locale } = useI18n();
 
@@ -44,6 +49,37 @@ const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
 const sendNotice = ref<string | null>(null);
 const timeline = ref<HTMLElement | null>(null);
 const sessionDrawerOpen = ref(false);
+const legacyChatInput = ref<HTMLInputElement | null>(null);
+
+function triggerLegacyChatImport(): void {
+    legacyChatInput.value?.click();
+}
+
+async function handleLegacyChatFile(event: Event): Promise<void> {
+    const inputElement = event.target as HTMLInputElement;
+    const file = inputElement.files?.[0];
+    inputElement.value = '';
+
+    if (!file) {
+        return;
+    }
+
+    try {
+        const parsed = parseChatJsonl(await file.text());
+        const rosterMatch = parsed.characterName
+            ? characterStore.characters.find((item) => item.card.name === parsed.characterName)
+            : null;
+        const character = rosterMatch ? toChatCharacter(rosterMatch) : null;
+        const session = chatStore.importLegacySession(parsed, { character });
+        const missingCharacterNote = !character && parsed.characterName
+            ? ` ${t.value.chat.importLegacy.noCharacter(parsed.characterName)}`
+            : '';
+        sendNotice.value = t.value.chat.importLegacy.success(session.title, parsed.messages.length) + missingCharacterNote;
+        sessionDrawerOpen.value = false;
+    } catch (error) {
+        sendNotice.value = t.value.chat.importLegacy.failed(error instanceof Error ? error.message : String(error));
+    }
+}
 const editingMessageId = ref<string | null>(null);
 const editingContent = ref('');
 const confirmingDeleteMessageId = ref<string | null>(null);
@@ -80,7 +116,8 @@ const demoAdapter: HeadlessEngineAdapter = {
 const selectedCharacter = computed(() => characterStore.selectedCharacter);
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
 const activeSession = computed(() => chatStore.selectedSession);
-const messages = computed(() => chatStore.selectedMessages);
+const isRoomMode = computed(() => multiplayerStore.isConnected);
+const messages = computed(() => isRoomMode.value ? multiplayerStore.chatMessages : chatStore.selectedMessages);
 const sortedSessions = computed(() => [...chatStore.sessions].sort((left, right) => (
     new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
 )));
@@ -100,19 +137,37 @@ const runtimeHandoff = computed(() => connectionStore.runtimeHandoff({
     runtimeDirectRequestReady: runtimeDirectRequestReady.value,
 }));
 const canAttemptRuntime = computed(() => adapterMode.value !== 'runtime' || runtimeHandoff.value.canAttempt);
+const isGenerationBusy = computed(() => (
+    isRoomMode.value
+        ? multiplayerStore.activeGenerations.length > 0
+        : chatStore.isGenerating
+));
 const canSend = computed(() => (
     composer.value.trim().length > 0 &&
-    readiness.value.canSend &&
-    canAttemptRuntime.value &&
-    !chatStore.isGenerating
+    (
+        isRoomMode.value
+            ? multiplayerStore.socketConnected
+            : readiness.value.canSend && canAttemptRuntime.value && !chatStore.isGenerating
+    )
 ));
 const characterName = computed(() => selectedCharacter.value?.card.name ?? '');
 const headerTitle = computed(() => (
+    multiplayerStore.room?.title ||
     activeSession.value?.title ||
     selectedCharacter.value?.card.name ||
     t.value.chat.openChat
 ));
 const statusMessage = computed(() => {
+    if (isRoomMode.value) {
+        if (multiplayerStore.activeGenerations.length > 0) {
+            return t.value.chat.generatingReply;
+        }
+
+        return multiplayerStore.keyState?.hasKey
+            ? `多人房间就绪 · ${multiplayerStore.participants.length} 人`
+            : '多人房间已连接，填入你的 API Key 后可触发生成。';
+    }
+
     if (chatStore.isGenerating) {
         return t.value.chat.generatingReply;
     }
@@ -143,6 +198,7 @@ const lorebookContext = computed(() => selectedWorldbook.value
 const lorebookEntryCount = computed(() => lorebookContext.value?.entries.length ?? 0);
 
 onMounted(async () => {
+    window.addEventListener('reforged-transport-fallback', handleTransportFallback);
     selectDemoAdapter();
     if (connectionStore.hasAppliedDraft) {
         await activateRuntimeAdapter();
@@ -154,6 +210,10 @@ onMounted(async () => {
         }
     }
     autoStartSession();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('reforged-transport-fallback', handleTransportFallback);
 });
 
 watch(
@@ -200,6 +260,12 @@ function autoStartSession(): void {
     }
 
     startCharacterSession();
+}
+
+function handleTransportFallback(event: Event): void {
+    const detail = event instanceof CustomEvent && isRecord(event.detail) ? event.detail : {};
+    const reason = typeof detail.reason === 'string' ? detail.reason : t.value.chat.runtimeDiagFailed;
+    runtimeFallbackNotice.value = t.value.chat.transportFallback(reason);
 }
 
 function selectDemoAdapter(options: { preserveFallbackNotice?: boolean } = {}): void {
@@ -296,7 +362,17 @@ function removeChatSession(session: ReforgedChatSession): void {
 
 async function sendMessage(): Promise<void> {
     const content = composer.value.trim();
-    if (!content || chatStore.isGenerating) {
+    if (!content || isGenerationBusy.value) {
+        return;
+    }
+
+    if (isRoomMode.value) {
+        composer.value = '';
+        multiplayerStore.sendChatMessageAndGenerate(content);
+        if (multiplayerStore.lastError) {
+            composer.value = content;
+            sendNotice.value = multiplayerStore.lastError.message;
+        }
         return;
     }
 
@@ -323,6 +399,11 @@ async function sendMessage(): Promise<void> {
 }
 
 function stopGeneration(): void {
+    if (isRoomMode.value) {
+        multiplayerStore.cancelActiveGeneration();
+        return;
+    }
+
     chatStore.cancelGeneration();
 }
 
@@ -375,7 +456,12 @@ function createGenerationInput(options: {
         runtimeConnectionProvider,
         generation: {
             api: handoff.generation.api,
-            responseLength: 220,
+            responseLength: presetStore.selectedSampling?.maxTokens ?? 220,
+            sampling: presetStore.selectedSampling,
+            presetPrompts: presetStore.selectedEnabledPrompts.length > 0
+                ? presetStore.selectedEnabledPrompts
+                : null,
+            persona: personaStore.persona,
         },
     };
 }
@@ -482,6 +568,7 @@ function shiftSwipe(message: ReforgedChatMessage, delta: number): void {
 
 function canRunMessageAction(message: ReforgedChatMessage): boolean {
     return (
+        !isRoomMode.value &&
         !chatStore.isGenerating &&
         !pendingActionMessageId.value &&
         message.status !== 'generating'
@@ -521,20 +608,24 @@ function findPreviousUserMessage(message: ReforgedChatMessage): ReforgedChatMess
 }
 
 function messageRoleLabel(message: ReforgedChatMessage): string {
+    if (isRoomMode.value) {
+        return multiplayerStore.participantNameById(message.authorId ?? (message.role === 'assistant' ? 'assistant' : 'system'));
+    }
+
     if (message.role === 'user') {
-        return t.value.chat.roleUser;
+        return personaStore.displayName || t.value.chat.roleUser;
     }
 
     return characterName.value || t.value.chat.roleAssistant;
 }
 
 function messageBubbleClass(message: ReforgedChatMessage): string {
-    const base = 'max-w-[min(40rem,90%)] rounded-[1.35rem] px-4 py-3 text-sm leading-7 shadow-[0_14px_40px_rgba(0,0,0,0.28)]';
+    const base = 'message-bubble max-w-[min(40rem,90%)] rounded-lg px-4 py-3 text-sm leading-7 shadow-[0_14px_40px_rgba(0,0,0,0.28)]';
     const role = message.role === 'user'
-        ? 'ml-auto bg-cyan-300 text-neutral-950'
-        : 'mr-auto border border-white/10 bg-white/8 text-neutral-100';
+        ? 'ml-auto border border-cyan-200/35 bg-cyan-200/14 text-cyan-50'
+        : 'mr-auto border border-white/10 bg-neutral-950/68 text-neutral-100';
     const state = message.status === 'failed' ? 'ring-2 ring-rose-400/70' : '';
-    const live = message.status === 'generating' ? 'lamp-glow' : '';
+    const live = message.status === 'generating' ? 'signal-glow' : '';
 
     return [base, role, state, live].filter(Boolean).join(' ');
 }
@@ -607,6 +698,7 @@ function toChatCharacter(rosterItem: ReforgedCharacterRosterItem): ReforgedChatC
         personality: rosterItem.card.personality,
         scenario: rosterItem.card.scenario,
         firstMessage: rosterItem.card.firstMessage,
+        exampleMessages: rosterItem.card.exampleMessages,
     };
 }
 
@@ -633,93 +725,21 @@ function delay(ms: number): Promise<void> {
 function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
 </script>
 
 <template>
-    <section class="mx-auto grid h-[calc(100dvh-7.5rem)] w-full max-w-6xl min-w-0 gap-3 pb-2 lg:h-[calc(100dvh-3rem)] lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <aside class="hidden min-h-0 min-w-0 flex-col rounded-[1.5rem] border border-white/10 bg-neutral-900/72 p-3 backdrop-blur lg:flex">
-            <div class="flex items-center justify-between gap-3 px-1 pb-3">
-                <div class="min-w-0">
-                    <p class="font-display text-base font-semibold text-neutral-50">
-                        {{ t.chat.sessionsTitle }}
-                    </p>
-                    <p class="mt-0.5 text-xs text-neutral-500">
-                        {{ t.chat.sessionCount(sortedSessions.length) }}
-                    </p>
-                </div>
-                <Button
-                    type="button"
-                    size="sm"
-                    :disabled="chatStore.isGenerating"
-                    @click="startFreshSession"
-                >
-                    {{ t.chat.newSession }}
-                </Button>
-            </div>
-
-            <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                <div
-                    v-if="sortedSessions.length === 0"
-                    class="rounded-2xl border border-white/8 bg-neutral-950/54 px-3 py-4 text-sm leading-6 text-neutral-400"
-                >
-                    <p class="font-medium text-neutral-200">
-                        {{ t.chat.noSessionsTitle }}
-                    </p>
-                    <p class="mt-1 text-xs leading-5">
-                        {{ t.chat.noSessionsDescription }}
-                    </p>
-                </div>
-
-                <div
-                    v-for="session in sortedSessions"
-                    :key="session.id"
-                    class="flex items-stretch gap-2"
-                >
-                    <ListItem
-                        class="min-w-0 flex-1"
-                        :title="formatSessionTitle(session)"
-                        :subtitle="formatSessionMessageCount(session)"
-                        :description="formatSessionDescription(session)"
-                        :selected="session.id === activeSession?.id"
-                        :disabled="chatStore.isGenerating"
-                        interactive
-                        @press="selectChatSession(session.id)"
-                    />
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        class="self-start"
-                        :aria-label="t.chat.deleteSession(formatSessionTitle(session))"
-                        :disabled="chatStore.isGenerating"
-                        @click="removeChatSession(session)"
-                    >
-                        <svg
-                            viewBox="0 0 20 20"
-                            class="h-4 w-4"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="1.8"
-                            aria-hidden="true"
-                        >
-                            <path
-                                d="M6 6L14 14M14 6L6 14"
-                                stroke-linecap="round"
-                            />
-                        </svg>
-                    </Button>
-                </div>
-            </div>
-        </aside>
-
-        <div class="mx-auto flex min-h-0 min-w-0 w-full max-w-3xl flex-col gap-3">
-            <header class="flex min-w-0 items-center justify-between gap-3 rounded-[1.5rem] border border-white/10 bg-neutral-900/80 px-3 py-3 backdrop-blur sm:px-4">
+    <section class="scene-console mx-auto flex h-full w-full max-w-6xl min-w-0 flex-col">
+        <div class="mx-auto flex h-full min-h-0 min-w-0 w-full max-w-3xl flex-1 flex-col gap-3">
+            <header class="console-surface flex min-w-0 items-center justify-between gap-3 rounded-lg px-3 py-3 sm:px-4">
                 <div class="flex min-w-0 items-center gap-2">
                     <Button
                         type="button"
                         size="sm"
                         variant="ghost"
-                        class="lg:hidden"
                         :aria-label="t.chat.sessionsOpen"
                         @click="sessionDrawerOpen = true"
                     >
@@ -748,10 +768,10 @@ function describeError(error: unknown): string {
                     </div>
                 </div>
 
-                <div class="flex shrink-0 items-center gap-1 rounded-full border border-white/10 bg-neutral-950/60 p-1">
+                <div class="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-neutral-950/60 p-1">
                     <button
                         type="button"
-                        class="rounded-full px-3 py-1.5 text-xs font-medium transition"
+                        class="rounded-md px-3 py-1.5 text-xs font-medium transition"
                         :class="adapterMode === 'demo' ? 'bg-cyan-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
                         :disabled="chatStore.isGenerating"
                         @click="selectDemoAdapter()"
@@ -760,7 +780,7 @@ function describeError(error: unknown): string {
                     </button>
                     <button
                         type="button"
-                        class="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition"
+                        class="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition"
                         :class="adapterMode === 'runtime' ? 'bg-cyan-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
                         :disabled="chatStore.isGenerating"
                         @click="() => activateRuntimeAdapter()"
@@ -773,26 +793,28 @@ function describeError(error: unknown): string {
 
             <div
                 v-if="runtimeFallbackNotice || (adapterMode === 'runtime' && !runtimeHandoff.canAttempt)"
-                class="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-2.5 text-xs leading-5 text-amber-100"
+                class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-2.5 text-xs leading-5 text-amber-100"
             >
                 <span class="min-w-0">{{ runtimeFallbackNotice ?? runtimeIssueLines[0] ?? statusMessage }}</span>
                 <RouterLink
                     to="/connection"
-                    class="inline-flex min-h-9 items-center rounded-xl border border-cyan-300/30 bg-cyan-300/15 px-3 font-medium text-cyan-100 transition hover:bg-cyan-300/25"
+                    class="inline-flex min-h-9 items-center rounded-md border border-cyan-300/30 bg-cyan-300/15 px-3 font-medium text-cyan-100 transition hover:bg-cyan-300/25"
                 >
                     {{ t.chat.configureConnection }}
                 </RouterLink>
             </div>
 
+            <MultiplayerRoomPanel />
+
             <div
                 ref="timeline"
-                class="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-[1.5rem] border border-white/10 bg-neutral-900/55 px-3 py-5 sm:px-5"
+                class="chat-stage console-surface scanline min-h-0 flex-1 space-y-4 overflow-y-auto rounded-lg px-3 py-5 sm:px-5"
             >
                 <div
                     v-if="messages.length === 0"
                     class="flex min-h-72 flex-col items-center justify-center px-4 py-10 text-center"
                 >
-                    <div class="lamp-glow flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-300/25 bg-cyan-300/12 text-lg font-semibold text-cyan-100">
+                    <div class="signal-glow flex h-14 w-14 items-center justify-center rounded-lg border border-cyan-300/25 bg-cyan-300/12 text-lg font-semibold text-cyan-100">
                         {{ characterName ? characterName.slice(0, 1) : t.chat.emptyAvatarFallback }}
                     </div>
                     <h3 class="mt-4 font-display text-lg font-semibold text-neutral-50">
@@ -804,7 +826,7 @@ function describeError(error: unknown): string {
                     <RouterLink
                         v-if="!selectedCharacter"
                         to="/characters"
-                        class="mt-5 inline-flex min-h-11 items-center rounded-xl border border-cyan-300/30 bg-cyan-300/15 px-4 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/25"
+                        class="mt-5 inline-flex min-h-11 items-center rounded-md border border-cyan-300/30 bg-cyan-300/15 px-4 text-sm font-medium text-cyan-100 transition hover:bg-cyan-300/25"
                     >
                         {{ t.chat.pickCharacter }}
                     </RouterLink>
@@ -870,9 +892,15 @@ function describeError(error: unknown): string {
 
                         <p
                             v-if="message.error"
-                            class="mt-3 rounded-xl border border-rose-400/20 bg-rose-400/12 px-3 py-2 text-xs leading-5 text-rose-100"
+                            class="mt-3 rounded-md border border-rose-400/20 bg-rose-400/12 px-3 py-2 text-xs leading-5 text-rose-100"
                         >
                             {{ message.error.message }}
+                            <span
+                                v-if="message.error.detail"
+                                class="mt-1 block break-all text-rose-200/75"
+                            >
+                                {{ message.error.detail }}
+                            </span>
                         </p>
 
                         <div
@@ -963,7 +991,7 @@ function describeError(error: unknown): string {
             </div>
 
             <form
-                class="safe-bottom rounded-[1.6rem] border border-white/10 bg-neutral-900/85 p-2 backdrop-blur"
+                class="safe-bottom console-surface rounded-lg p-2"
                 @submit.prevent="sendMessage"
             >
                 <div class="flex items-end gap-2">
@@ -973,11 +1001,11 @@ function describeError(error: unknown): string {
                         :aria-label="t.chat.messageLabel"
                         :placeholder="t.chat.composerPlaceholder"
                         :rows="2"
-                        :disabled="chatStore.isGenerating"
+                        :disabled="isGenerationBusy"
                         class="flex-1"
                     />
                     <Button
-                        v-if="chatStore.isGenerating"
+                        v-if="isGenerationBusy"
                         type="button"
                         variant="danger"
                         @click="stopGeneration"
@@ -1009,8 +1037,8 @@ function describeError(error: unknown): string {
             v-model:open="sessionDrawerOpen"
             :title="t.chat.sessionsTitle"
             :description="t.chat.sessionCount(sortedSessions.length)"
-            placement="bottom"
-            size="lg"
+            placement="left"
+            size="md"
         >
             <div class="grid gap-3">
                 <Button
@@ -1022,9 +1050,26 @@ function describeError(error: unknown): string {
                     {{ t.chat.newSession }}
                 </Button>
 
+                <Button
+                    type="button"
+                    block
+                    variant="outline"
+                    :disabled="chatStore.isGenerating"
+                    @click="triggerLegacyChatImport"
+                >
+                    {{ t.chat.importLegacy.action }}
+                </Button>
+                <input
+                    ref="legacyChatInput"
+                    type="file"
+                    accept=".jsonl,application/jsonl,application/x-ndjson"
+                    class="hidden"
+                    @change="handleLegacyChatFile"
+                >
+
                 <div
                     v-if="sortedSessions.length === 0"
-                    class="rounded-2xl border border-white/8 bg-neutral-950/54 px-3 py-4 text-sm leading-6 text-neutral-400"
+                    class="rounded-lg border border-white/8 bg-neutral-950/54 px-3 py-4 text-sm leading-6 text-neutral-400"
                 >
                     <p class="font-medium text-neutral-200">
                         {{ t.chat.noSessionsTitle }}
@@ -1077,3 +1122,55 @@ function describeError(error: unknown): string {
         </Drawer>
     </section>
 </template>
+
+<style scoped>
+.scene-console {
+    position: relative;
+}
+
+.chat-stage article {
+    animation: message-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes message-in {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+        filter: blur(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+        filter: blur(0);
+    }
+}
+
+.chat-stage {
+    background-image:
+        linear-gradient(90deg, rgba(237, 247, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(237, 247, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(13, 21, 29, 0.88), rgba(7, 10, 13, 0.78));
+    background-size: 48px 48px, 48px 48px, auto;
+}
+
+.message-bubble {
+    position: relative;
+}
+
+.message-bubble::before {
+    position: absolute;
+    top: 0.75rem;
+    left: -0.35rem;
+    width: 0.7rem;
+    height: 1px;
+    content: '';
+    background: rgba(237, 247, 255, 0.28);
+}
+
+.justify-end .message-bubble::before {
+    right: -0.35rem;
+    left: auto;
+    background: rgba(143, 227, 208, 0.42);
+}
+</style>

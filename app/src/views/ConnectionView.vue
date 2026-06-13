@@ -8,10 +8,12 @@ import type {
     ReforgedConnectionRuntimeHandoffIssue,
     ReforgedConnectionRuntimeHandoffIssueCode,
     ReforgedConnectionRuntimeHandoffStatus,
+    ReforgedConnectionTransportMode,
     ReforgedConnectionValidationIssue,
 } from '@/contracts/connection';
 import { useI18n } from '@/i18n';
 import { setConnectionDraftApiKeySecret, useConnectionStore } from '@/stores/connectionStore';
+import { usePresetStore } from '@/stores/presetStore';
 import { Button, Input, Select } from '@/ui-kit';
 
 type ConnectionField = keyof ReforgedConnectionDraft;
@@ -31,12 +33,139 @@ interface DisplayIssue {
 
 const { t, locale } = useI18n();
 const connectionStore = useConnectionStore();
+const presetStore = usePresetStore();
+
+const presetFileInput = ref<HTMLInputElement | null>(null);
+const presetNotice = ref<string | null>(null);
+
+const modelOptions = computed<ReforgedSelectOption[]>(() => connectionStore.availableModels.map((model) => ({
+    value: model,
+    label: model,
+})));
+
+const probeStatus = computed(() => {
+    const probe = connectionStore.lastProbe;
+
+    if (!probe) {
+        return null;
+    }
+
+    if (probe.ok) {
+        return {
+            tone: 'success' as const,
+            text: probe.models && probe.models.length > 0
+                ? t.value.connection.probe.success(probe.models.length, probe.latencyMs ?? 0)
+                : t.value.connection.probe.successNoList(probe.latencyMs ?? 0),
+        };
+    }
+
+    const text = probe.code === 'config'
+        ? t.value.connection.probe.failConfig
+        : probe.code === 'cors-or-network'
+            ? t.value.connection.probe.failCors
+            : t.value.connection.probe.failHttp(probe.detail ?? '');
+
+    return { tone: 'danger' as const, text };
+});
+
+async function runProbe(): Promise<void> {
+    await connectionStore.probeConnection();
+}
+
+const presetOptions = computed<ReforgedSelectOption[]>(() => [
+    { value: '', label: t.value.connection.preset.none },
+    ...presetStore.presets.map((item) => ({
+        value: item.id,
+        label: item.preset.name,
+        description: item.source.fileName,
+    })),
+]);
+
+const selectedPresetSummary = computed(() => {
+    const item = presetStore.selectedPreset;
+    if (!item) {
+        return null;
+    }
+
+    const sampling = item.preset.sampling;
+    const samplingParts = [
+        sampling.temperature != null ? `temp ${sampling.temperature}` : null,
+        sampling.topP != null ? `top_p ${sampling.topP}` : null,
+        sampling.maxTokens != null ? `max ${sampling.maxTokens}` : null,
+    ].filter(Boolean);
+
+    return {
+        prompts: t.value.connection.preset.summary(
+            item.preset.prompts.filter((prompt) => prompt.enabled).length,
+            item.preset.prompts.length,
+        ),
+        sampling: samplingParts.join(' · '),
+        warnings: item.warnings,
+    };
+});
+
+function triggerPresetImport(): void {
+    presetFileInput.value?.click();
+}
+
+async function handlePresetFileChange(event: Event): Promise<void> {
+    const inputElement = event.target as HTMLInputElement;
+    const file = inputElement.files?.[0];
+    inputElement.value = '';
+
+    if (!file) {
+        return;
+    }
+
+    const text = await file.text();
+    const result = presetStore.importPreset({ fileName: file.name, mimeType: file.type, text });
+    presetNotice.value = result.ok
+        ? (result.warnings.length > 0
+            ? t.value.connection.preset.importedWithWarnings(result.preset.name, result.warnings.length)
+            : t.value.connection.preset.imported(result.preset.name))
+        : result.message;
+}
+
+function updateSelectedPreset(value: string): void {
+    presetStore.selectPreset(value || null);
+    presetNotice.value = null;
+}
+
+function removeSelectedPreset(): void {
+    if (presetStore.selectedPresetId) {
+        presetStore.removePreset(presetStore.selectedPresetId);
+        presetNotice.value = null;
+    }
+}
 
 const providerOptions = computed<ReforgedSelectOption[]>(() => [
     {
         value: 'openai-compatible',
         label: t.value.connection.providerOpenAI,
         description: t.value.connection.providerOpenAIDescription,
+    },
+]);
+
+const transportOptions = computed<ReforgedSelectOption[]>(() => [
+    {
+        value: 'auto',
+        label: t.value.connection.transport.auto,
+        description: t.value.connection.transport.autoDescription,
+    },
+    {
+        value: 'reforged-backend',
+        label: t.value.connection.transport.reforged,
+        description: t.value.connection.transport.reforgedDescription,
+    },
+    {
+        value: 'browser-direct',
+        label: t.value.connection.transport.direct,
+        description: t.value.connection.transport.directDescription,
+    },
+    {
+        value: 'legacy-proxy',
+        label: t.value.connection.transport.proxy,
+        description: t.value.connection.transport.proxyDescription,
     },
 ]);
 
@@ -337,6 +466,10 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                     @update:model-value="updateDraft({ baseUrl: $event })"
                 />
 
+                <p class="-mt-2 text-xs leading-5 text-neutral-500">
+                    {{ t.connection.fields.baseUrlHint }}
+                </p>
+
                 <Input
                     :model-value="apiKeyInput"
                     :error="fieldErrors.apiKey"
@@ -361,6 +494,38 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                     data-testid="connection-model-input"
                     @update:model-value="updateDraft({ model: $event })"
                 />
+
+                <Select
+                    v-if="modelOptions.length > 0"
+                    :model-value="connectionStore.availableModels.includes(connectionStore.draft.model) ? connectionStore.draft.model : ''"
+                    :options="modelOptions"
+                    :label="t.connection.probe.pickModel"
+                    :placeholder="t.connection.fields.modelPlaceholder"
+                    @update:model-value="updateDraft({ model: $event })"
+                />
+
+                <div class="grid gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        block
+                        :loading="connectionStore.probing"
+                        data-testid="connection-probe-button"
+                        @click="runProbe"
+                    >
+                        {{ t.connection.probe.action }}
+                    </Button>
+                    <p
+                        v-if="probeStatus"
+                        class="rounded-2xl border px-3 py-2 text-xs leading-5"
+                        :class="probeStatus.tone === 'success'
+                            ? 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100'
+                            : 'border-rose-400/25 bg-rose-400/10 text-rose-100'"
+                        role="status"
+                    >
+                        {{ probeStatus.text }}
+                    </p>
+                </div>
             </div>
 
             <ul
@@ -432,6 +597,112 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                 </ul>
             </div>
         </form>
+
+        <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/82 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.32)] sm:p-5">
+            <div class="mb-4">
+                <p class="text-sm font-semibold text-white">
+                    {{ t.connection.transport.title }}
+                </p>
+                <p class="mt-1 text-sm leading-6 text-neutral-400">
+                    {{ t.connection.transport.description }}
+                </p>
+            </div>
+
+            <Select
+                :model-value="connectionStore.transportMode"
+                :options="transportOptions"
+                :label="t.connection.transport.title"
+                @update:model-value="connectionStore.setTransportMode($event as ReforgedConnectionTransportMode)"
+            />
+        </section>
+
+        <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/82 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.32)] sm:p-5">
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div class="min-w-0">
+                    <p class="text-sm font-semibold text-white">
+                        {{ t.connection.preset.title }}
+                    </p>
+                    <p class="mt-1 text-sm leading-6 text-neutral-400">
+                        {{ t.connection.preset.description }}
+                    </p>
+                </div>
+                <Button
+                    type="button"
+                    variant="secondary"
+                    class="shrink-0"
+                    @click="triggerPresetImport"
+                >
+                    {{ t.connection.preset.importAction }}
+                </Button>
+            </div>
+
+            <input
+                ref="presetFileInput"
+                type="file"
+                accept=".json,application/json"
+                class="hidden"
+                @change="handlePresetFileChange"
+            >
+
+            <div
+                v-if="presetStore.hasPresets"
+                class="mt-4 grid gap-3"
+            >
+                <Select
+                    :model-value="presetStore.selectedPresetId ?? ''"
+                    :options="presetOptions"
+                    :label="t.connection.preset.selectLabel"
+                    :placeholder="t.connection.preset.selectPlaceholder"
+                    @update:model-value="updateSelectedPreset"
+                />
+
+                <div
+                    v-if="selectedPresetSummary"
+                    class="rounded-2xl border border-white/8 bg-white/5 px-3 py-3 text-sm leading-6 text-neutral-300"
+                >
+                    <p>{{ selectedPresetSummary.prompts }}</p>
+                    <p
+                        v-if="selectedPresetSummary.sampling"
+                        class="mt-1 text-xs text-neutral-400"
+                    >
+                        {{ t.connection.preset.samplingLabel }}: {{ selectedPresetSummary.sampling }}
+                    </p>
+                    <div
+                        v-if="selectedPresetSummary.warnings.length"
+                        class="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100"
+                    >
+                        <p class="font-medium">
+                            {{ t.connection.preset.warningsTitle }}
+                        </p>
+                        <ul class="mt-1 space-y-0.5">
+                            <li
+                                v-for="(warning, warningIndex) in selectedPresetSummary.warnings.slice(0, 4)"
+                                :key="warningIndex"
+                            >
+                                {{ warning }}
+                            </li>
+                        </ul>
+                    </div>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        class="mt-2"
+                        @click="removeSelectedPreset"
+                    >
+                        {{ t.connection.preset.removeAction }}
+                    </Button>
+                </div>
+            </div>
+
+            <p
+                v-if="presetNotice"
+                class="mt-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs leading-5 text-neutral-300"
+                role="status"
+            >
+                {{ presetNotice }}
+            </p>
+        </section>
 
         <section
             v-if="activeStatus === 'ready-to-attempt'"

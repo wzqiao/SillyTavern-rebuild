@@ -6,7 +6,7 @@ export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'dan
 export type ButtonSize = 'sm' | 'md' | 'lg';
 
 const buttonVariantClasses: Record<ButtonVariant, string> = {
-    primary: 'border border-cyan-200/40 bg-cyan-300 text-neutral-950 hover:bg-cyan-200 active:bg-cyan-100',
+    primary: 'border border-cyan-200/40 bg-cyan-300 text-neutral-950 hover:bg-cyan-200 active:bg-cyan-100 shadow-[0_0_24px_rgba(143,227,208,0.16)]',
     secondary: 'border border-white/12 bg-white/8 text-neutral-100 hover:bg-white/12 active:bg-white/16',
     outline: 'border border-white/12 bg-neutral-950/72 text-neutral-100 hover:border-cyan-300/40 hover:bg-white/6 active:bg-white/10',
     ghost: 'border border-transparent bg-transparent text-neutral-100 hover:bg-white/8 active:bg-white/10',
@@ -14,9 +14,9 @@ const buttonVariantClasses: Record<ButtonVariant, string> = {
 };
 
 const buttonSizeClasses: Record<ButtonSize, string> = {
-    sm: 'min-h-10 rounded-xl px-3.5 text-sm',
-    md: 'min-h-12 rounded-2xl px-4 text-sm',
-    lg: 'min-h-14 rounded-[1.15rem] px-5 text-base',
+    sm: 'min-h-10 rounded-md px-3.5 text-sm',
+    md: 'min-h-12 rounded-lg px-4 text-sm',
+    lg: 'min-h-14 rounded-lg px-5 text-base',
 };
 
 export interface ResolveButtonClassOptions {

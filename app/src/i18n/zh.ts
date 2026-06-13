@@ -8,7 +8,7 @@
 export const zh = {
   app: {
     name: 'ST-Reforged',
-    tagline: '暖夜灯下，和角色好好聊天',
+    tagline: '冷光舞台里，和角色进入同一场景',
   },
 
   nav: {
@@ -38,14 +38,14 @@ export const zh = {
       settings: '默认极简，高级项按需展开（渐进式披露）。',
     },
     brandEyebrow: 'ST-Reforged',
-    brandTitle: '暖夜灯下的聊天外壳',
-    brandDescription: '为聊天、连接、角色与世界书重做的移动优先入口。',
+    brandTitle: '冷光酒馆控制台',
+    brandDescription: '为聊天、连接、角色与世界书重做的沉浸式移动入口。',
     debugEyebrow: '调试',
     debugTitle: '旧工作台仍可访问',
     debugDescription: '主流程已经进入正式页面，/dev 只保留给适配器和回归调试。',
     debugOpen: '打开调试 /dev',
     debugShort: '调试',
-    desktopEyebrow: '应用外壳',
+    desktopEyebrow: '场景控制台',
   },
 
   common: {
@@ -68,11 +68,12 @@ export const zh = {
     runtime: '实时',
     demoReady: '演示模式就绪，直接发消息即可。',
     runtimeReady: '实时就绪',
-    runtimeChecking: '正在检查同源的 SillyTavern 运行时…',
+    runtimeChecking: '正在检查 Reforged 运行时适配器…',
     runtimeDiagFailed: '运行时自检未通过。',
     runtimeLoadFailed: (detail: string) => `运行时适配器加载失败：${detail}`,
     runtimeKeyGone: '内存里的 API Key 已失效，请回连接页重新填写。',
     runtimeFallback: (reason: string) => `已自动回到演示模式：${reason}`,
+    transportFallback: (reason: string) => `运行时连接方式已回落：${reason}`,
     configureConnection: '去配置连接',
 
     // 头部 / 状态
@@ -117,6 +118,13 @@ export const zh = {
     deleted: '消息已删除',
     userUpdated: '用户消息已更新',
 
+    importLegacy: {
+      action: '导入旧版聊天 (.jsonl)',
+      success: (title: string, count: number) => `已导入「${title}」（${count} 条消息）。`,
+      failed: (detail: string) => `导入失败：${detail}`,
+      noCharacter: (name: string) => `角色库中未找到「${name}」，已作为无角色会话导入。`,
+    },
+
     // 角色卡占位
     roleUser: '我',
     roleAssistant: '角色',
@@ -130,7 +138,7 @@ export const zh = {
 
   connection: {
     providerOpenAI: 'OpenAI 兼容',
-    providerOpenAIDescription: '通过同源 SillyTavern 后端 chat-completions 通道发送请求。',
+    providerOpenAIDescription: '通过 Reforged 运行时通道使用 OpenAI 兼容服务商。',
     status: {
       empty: {
         label: '空白',
@@ -160,7 +168,7 @@ export const zh = {
       'applied-but-unwired': {
         label: '已应用，等待运行时',
         title: '运行时路径未就绪',
-        description: '草稿已应用，但当前页面状态还不能发起直接请求。',
+        description: '草稿已应用，但当前页面状态还不能发起运行时请求。',
       },
       'ready-to-attempt': {
         label: '可尝试',
@@ -173,15 +181,28 @@ export const zh = {
     headerDescription: '设置一个 OpenAI 兼容端点，把密钥留在瞬态保险箱里，再应用到仅内存的运行时交接。',
     currentStatus: '当前状态',
     draftTitle: '服务商草稿',
-    draftDescription: '第一阶段通过 direct backend seam 支持 OpenAI 兼容后端。',
+    draftDescription: 'OpenAI 兼容服务商可走 Reforged 新后端、浏览器直连或旧版代理兼容桥。',
+    transport: {
+      title: '连接方式',
+      description: 'Reforged 新后端是常规服务器运行时；浏览器直连和旧版代理保留作兼容路径。',
+      auto: '自动（推荐）',
+      autoDescription: '优先尝试 Reforged 新后端，再尝试浏览器直连，必要时回落旧版代理。',
+      reforged: 'Reforged 新后端',
+      reforgedDescription: '通过 127.0.0.1:8787 或部署环境中的 Reforged server 转发。',
+      direct: '浏览器直连',
+      directDescription: '只用浏览器直接请求 baseURL，失败不回落。',
+      proxy: '旧版代理',
+      proxyDescription: '始终经由本机旧版 ST 后端（8000）兼容桥转发。',
+    },
     fields: {
       provider: '服务商',
       providerPlaceholder: '选择服务商',
       baseUrl: 'Base URL',
       baseUrlPlaceholder: 'https://api.example.com/v1',
+      baseUrlHint: 'OpenAI 兼容端点通常要填到 /v1；例如 https://vip.yyyyai.org/v1。',
       model: '模型',
       modelPlaceholder: 'gpt-4.1-compatible',
-      modelHint: '先手动填写模型 ID；模型列表与测试连接将在后续接入。',
+      modelHint: '可手填模型 ID，或用下方「测试连接 / 获取模型」拉取列表。',
       apiKey: 'API Key',
       apiKeyPlaceholder: '粘贴 API Key',
       apiKeyStoredHint: '当前密钥标记：{key}',
@@ -226,8 +247,31 @@ export const zh = {
       draftEmpty: '请先添加 OpenAI 兼容草稿，再尝试运行时模式。',
       draftUnapplied: '请先应用这份完整草稿，再尝试运行时模式。',
       runtimeUnwired: '运行时适配器尚未就绪；这份草稿还没有交给真实请求路径。',
-      runtimeConnectionUnwired: '运行时适配器已就绪，但 direct backend 请求路径还不可用。',
+      runtimeConnectionUnwired: '运行时适配器已就绪，但 Reforged/backend 请求路径还不可用。',
       apiKeyUnavailable: '运行时适配器已就绪，但已应用的 API Key 已不在内存中。',
+    },
+    probe: {
+      action: '测试连接 / 获取模型',
+      success: (count: number, ms: number) => `连接成功 · ${count} 个模型 · ${ms}ms`,
+      successNoList: (ms: number) => `连接成功 · ${ms}ms（该服务未返回模型列表，可手填）`,
+      pickModel: '从列表选择模型',
+      failConfig: '请先填写 Base URL 和 API Key。',
+      failCors: '浏览器跨域被拒或地址不可达；模型可手填，生成仍可走其它连接方式。',
+      failHttp: (detail: string) => `服务端返回错误：${detail}`,
+    },
+    preset: {
+      title: '预设（可选）',
+      description: '导入旧版 SillyTavern OpenAI 预设 JSON。采样参数与 prompt 编排会在运行时生成中生效。',
+      importAction: '导入预设 JSON',
+      selectLabel: '使用预设',
+      selectPlaceholder: '请选择',
+      none: '不使用预设',
+      summary: (prompts: number, total: number) => `${prompts}/${total} 个 prompt 段启用`,
+      samplingLabel: '采样',
+      removeAction: '删除当前预设',
+      imported: (name: string) => `已导入「${name}」。`,
+      importedWithWarnings: (name: string, warnings: number) => `已导入「${name}」（${warnings} 条警告）。`,
+      warningsTitle: '导入警告',
     },
   },
 
@@ -378,8 +422,8 @@ export const zh = {
       },
       identity: {
         title: '用户身份',
-        description: 'Persona 与用户展示名还没有接入设置契约。',
-        value: '待接入',
+        description: '设置 {{user}} 的名称与设定，生成与聊天界面都会使用。',
+        value: '本机',
       },
       theme: {
         title: '主题',
@@ -445,6 +489,12 @@ export const zh = {
       contextReserve: '上下文保留',
       placeholder: '占位',
     },
+    identityFields: {
+      name: '用户名称',
+      nameHint: '替换 {{user}} 宏与聊天里的「我」标签；留空用默认。',
+      description: '用户设定',
+      descriptionHint: '预设启用 personaDescription 槽位时注入生成；旧式拼装会追加为系统说明。',
+    },
     advancedTitle: '高级',
     advancedDescription: '生成与提示词占位项。这些控件尚未接入运行时。',
     notConnectedTitle: '尚未接入引擎',
@@ -458,6 +508,27 @@ export const zh = {
       open: '已展开',
       closed: '已收起',
       unchanged: '未改变',
+    },
+    storageKinds: {
+      reforgedBackend: 'Reforged 后端（跨设备）',
+      indexedDb: 'IndexedDB 本机存储',
+      memory: '内存（刷新即丢）',
+      unknown: '初始化中…',
+    },
+    server: {
+      label: 'Reforged 服务',
+      description: '存储与联机使用的后端地址；配置口令后所有请求都会携带。改动刷新页面后生效。',
+      urlLabel: '服务地址',
+      tokenLabel: '服务口令（可选）',
+      tokenHint: '与服务端 REFORGED_TOKEN 一致；只保存在本机。',
+      save: '保存（刷新生效）',
+      saved: '已保存，刷新页面生效',
+    },
+    secrets: {
+      label: '本机密钥',
+      description: 'API key 默认保存在本机浏览器存储，仅本设备可见。',
+      clear: '清除本机密钥',
+      cleared: '已清除',
     },
     resetLocalPreview: '重置本地预览',
   },

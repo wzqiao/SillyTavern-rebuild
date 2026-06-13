@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { BrowserDirectChatCompletionError } from './browserDirectChatCompletionAdapter';
 import { EngineAdapterUnavailableError, createHeadlessEngineAdapter } from './headlessEngineAdapter';
 
 describe('createHeadlessEngineAdapter', () => {
@@ -219,9 +220,96 @@ describe('createHeadlessEngineAdapter', () => {
     );
   });
 
-  it('uses direct backend chat completion when a runtime connection is provided', async () => {
+  it('uses the Reforged backend first for auto runtime transport', async () => {
+    const browserFetch = vi.fn<typeof fetch>();
+    const legacyFetch = vi.fn<typeof fetch>();
+    const reforgedFetch = vi.fn<typeof fetch>(async (input, init) => {
+      expect(input).toBe('http://127.0.0.1:8787/api/reforged/chat/completions');
+      expect(init).toMatchObject({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer sk-memory-only-secret',
+        },
+      });
+      const body = JSON.parse(String(init?.body));
+      expect(body).toMatchObject({
+        baseUrl: 'https://api.example.test/v1',
+        model: 'example-chat-model',
+        stream: false,
+      });
+      expect(JSON.stringify(body)).not.toContain('sk-memory-only-secret');
+
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'reforged' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const adapter = createHeadlessEngineAdapter({
+      loadScriptModule: async () => ({}),
+      loadOpenAIModule: async () => ({}),
+      reforgedBackendChatCompletion: { fetch: reforgedFetch },
+      browserDirectChatCompletion: { fetch: browserFetch },
+      directBackendChatCompletion: { fetch: legacyFetch },
+    });
+
+    await expect(adapter.sendChatCompletion({
+      messages: [{ role: 'user', content: 'Ping' }],
+      stream: false,
+      runtimeConnection: {
+        provider: 'openai-compatible',
+        baseUrl: 'https://api.example.test/v1',
+        model: 'example-chat-model',
+        apiKey: 'sk-memory-only-secret',
+        transport: 'auto',
+      },
+    })).resolves.toEqual({ choices: [{ message: { content: 'reforged' } }] });
+
+    expect(reforgedFetch).toHaveBeenCalledOnce();
+    expect(browserFetch).not.toHaveBeenCalled();
+    expect(legacyFetch).not.toHaveBeenCalled();
+  });
+
+  it('uses the Reforged backend without touching browser direct or legacy proxy when selected', async () => {
+    const browserFetch = vi.fn<typeof fetch>();
+    const legacyFetch = vi.fn<typeof fetch>();
+    const reforgedFetch = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      choices: [{ message: { content: 'reforged selected' } }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const adapter = createHeadlessEngineAdapter({
+      loadScriptModule: async () => ({}),
+      loadOpenAIModule: async () => ({}),
+      reforgedBackendChatCompletion: { fetch: reforgedFetch },
+      browserDirectChatCompletion: { fetch: browserFetch },
+      directBackendChatCompletion: { fetch: legacyFetch },
+    });
+
+    await expect(adapter.sendChatCompletion({
+      messages: [{ role: 'user', content: 'Ping' }],
+      stream: false,
+      runtimeConnection: {
+        provider: 'openai-compatible',
+        baseUrl: 'https://api.example.test/v1',
+        model: 'example-chat-model',
+        apiKey: 'sk-memory-only-secret',
+        transport: 'reforged-backend',
+      },
+    })).resolves.toEqual({ choices: [{ message: { content: 'reforged selected' } }] });
+
+    expect(reforgedFetch).toHaveBeenCalledOnce();
+    expect(browserFetch).not.toHaveBeenCalled();
+    expect(legacyFetch).not.toHaveBeenCalled();
+  });
+
+  it('falls back from auto Reforged backend through browser direct to the legacy proxy only for network-style failures', async () => {
     const sendOpenAIRequest = vi.fn().mockResolvedValue({ ok: false });
-    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+    const browserFetch = vi.fn<typeof fetch>(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const legacyFetch = vi.fn<typeof fetch>(async (input, init) => {
       if (input === '/csrf-token') {
         return new Response(JSON.stringify({ token: 'csrf-token-1' }), {
           status: 200,
@@ -253,11 +341,30 @@ describe('createHeadlessEngineAdapter', () => {
     const adapter = createHeadlessEngineAdapter({
       loadScriptModule: async () => ({}),
       loadOpenAIModule: async () => ({ sendOpenAIRequest }),
-      directBackendChatCompletion: { fetch: fetcher },
+      reforgedBackendChatCompletion: {
+        fetch: vi.fn<typeof fetch>(async () => {
+          throw new TypeError('Reforged backend is offline');
+        }),
+      },
+      browserDirectChatCompletion: { fetch: browserFetch },
+      directBackendChatCompletion: { fetch: legacyFetch },
     });
+    const testWindow = new EventTarget();
+    vi.stubGlobal('window', testWindow);
+    vi.stubGlobal('CustomEvent', class TestCustomEvent<T = unknown> extends Event {
+      readonly detail: T;
 
-    await expect(
-      adapter.sendChatCompletion({
+      constructor(type: string, eventInitDict?: CustomEventInit<T>) {
+        super(type, eventInitDict);
+        this.detail = eventInitDict?.detail as T;
+      }
+    });
+    const fallbackEvents: unknown[] = [];
+    const listener = (event: Event) => fallbackEvents.push(event);
+    window.addEventListener('reforged-transport-fallback', listener);
+
+    try {
+      await expect(adapter.sendChatCompletion({
         messages: [{ role: 'user', content: 'Ping' }],
         stream: false,
         runtimeConnection: {
@@ -265,12 +372,166 @@ describe('createHeadlessEngineAdapter', () => {
           baseUrl: 'https://api.example.test/v1',
           model: 'example-chat-model',
           apiKey: 'sk-memory-only-secret',
+          transport: 'auto',
         },
-      }),
-    ).resolves.toEqual({ choices: [{ message: { content: 'direct' } }] });
+      })).resolves.toEqual({ choices: [{ message: { content: 'direct' } }] });
+    } finally {
+      window.removeEventListener('reforged-transport-fallback', listener);
+      vi.unstubAllGlobals();
+    }
 
     expect(adapter.supportsDirectBackendChatCompletion).toBe(true);
+    expect(browserFetch).toHaveBeenCalledOnce();
+    expect(legacyFetch).toHaveBeenCalledTimes(2);
     expect(sendOpenAIRequest).not.toHaveBeenCalled();
+    expect(fallbackEvents).toHaveLength(2);
+    expect(fallbackEvents[0]).toMatchObject({
+      detail: {
+        reason: expect.stringContaining('Reforged backend unavailable'),
+      },
+    });
+    expect(fallbackEvents[1]).toMatchObject({
+      detail: {
+        reason: expect.stringContaining('Failed to fetch'),
+      },
+    });
+  });
+
+  it('does not fall back from auto when the Reforged backend returns credential/provider HTTP errors', async () => {
+    const reforgedFetch = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({
+      error: 'Provider returned HTTP 401.',
+    }), {
+      status: 401,
+      statusText: 'Unauthorized',
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const browserFetch = vi.fn<typeof fetch>();
+    const legacyFetch = vi.fn<typeof fetch>();
+    const adapter = createHeadlessEngineAdapter({
+      loadScriptModule: async () => ({}),
+      loadOpenAIModule: async () => ({}),
+      reforgedBackendChatCompletion: { fetch: reforgedFetch },
+      browserDirectChatCompletion: { fetch: browserFetch },
+      directBackendChatCompletion: { fetch: legacyFetch },
+    });
+
+    await expect(adapter.sendChatCompletion({
+      messages: [{ role: 'user', content: 'Ping' }],
+      stream: false,
+      runtimeConnection: {
+        provider: 'openai-compatible',
+        baseUrl: 'https://api.example.test/v1',
+        model: 'example-chat-model',
+        apiKey: 'sk-memory-only-secret',
+        transport: 'auto',
+      },
+    })).rejects.toMatchObject({
+      name: 'ReforgedBackendChatCompletionError',
+      status: 401,
+    });
+    expect(reforgedFetch).toHaveBeenCalledOnce();
+    expect(browserFetch).not.toHaveBeenCalled();
+    expect(legacyFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back from explicit browser direct when the upstream returned HTTP errors', async () => {
+    const browserFetch = vi.fn<typeof fetch>(async () => new Response('Unauthorized', {
+      status: 401,
+      statusText: 'Unauthorized',
+    }));
+    const legacyFetch = vi.fn<typeof fetch>();
+    const adapter = createHeadlessEngineAdapter({
+      loadScriptModule: async () => ({}),
+      loadOpenAIModule: async () => ({}),
+      browserDirectChatCompletion: { fetch: browserFetch },
+      directBackendChatCompletion: { fetch: legacyFetch },
+    });
+
+    await expect(adapter.sendChatCompletion({
+      messages: [{ role: 'user', content: 'Ping' }],
+      stream: false,
+      runtimeConnection: {
+        provider: 'openai-compatible',
+        baseUrl: 'https://api.example.test/v1',
+        model: 'example-chat-model',
+        apiKey: 'sk-memory-only-secret',
+        transport: 'browser-direct',
+      },
+    })).rejects.toMatchObject({
+      name: 'BrowserDirectChatCompletionError',
+      kind: 'http',
+      status: 401,
+    });
+    expect(browserFetch).toHaveBeenCalledOnce();
+    expect(legacyFetch).not.toHaveBeenCalled();
+  });
+
+  it('does not fall back when browser-direct transport fails', async () => {
+    const browserFetch = vi.fn<typeof fetch>(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const legacyFetch = vi.fn<typeof fetch>();
+    const adapter = createHeadlessEngineAdapter({
+      loadScriptModule: async () => ({}),
+      loadOpenAIModule: async () => ({}),
+      browserDirectChatCompletion: { fetch: browserFetch },
+      directBackendChatCompletion: { fetch: legacyFetch },
+    });
+
+    await expect(adapter.sendChatCompletion({
+      messages: [{ role: 'user', content: 'Ping' }],
+      runtimeConnection: {
+        provider: 'openai-compatible',
+        baseUrl: 'https://api.example.test/v1',
+        model: 'example-chat-model',
+        apiKey: 'sk-memory-only-secret',
+        transport: 'browser-direct',
+      },
+    })).rejects.toMatchObject({
+      name: 'BrowserDirectChatCompletionError',
+      kind: 'cors-or-network',
+    });
+    expect(browserFetch).toHaveBeenCalledOnce();
+    expect(legacyFetch).not.toHaveBeenCalled();
+  });
+
+  it('uses the legacy proxy without touching browser direct when legacy-proxy transport is selected', async () => {
+    const browserFetch = vi.fn<typeof fetch>(async () => {
+      throw new BrowserDirectChatCompletionError('cors-or-network', 'should not run');
+    });
+    const legacyFetch = vi.fn<typeof fetch>(async (input) => {
+      if (input === '/csrf-token') {
+        return new Response(JSON.stringify({ token: 'csrf-token-1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ choices: [{ message: { content: 'legacy' } }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const adapter = createHeadlessEngineAdapter({
+      loadScriptModule: async () => ({}),
+      loadOpenAIModule: async () => ({}),
+      browserDirectChatCompletion: { fetch: browserFetch },
+      directBackendChatCompletion: { fetch: legacyFetch },
+    });
+
+    await expect(adapter.sendChatCompletion({
+      messages: [{ role: 'user', content: 'Ping' }],
+      stream: false,
+      runtimeConnection: {
+        provider: 'openai-compatible',
+        baseUrl: 'https://api.example.test/v1',
+        model: 'example-chat-model',
+        apiKey: 'sk-memory-only-secret',
+        transport: 'legacy-proxy',
+      },
+    })).resolves.toEqual({ choices: [{ message: { content: 'legacy' } }] });
+    expect(browserFetch).not.toHaveBeenCalled();
+    expect(legacyFetch).toHaveBeenCalledTimes(2);
   });
 
   it('throws a typed error when a required headless export is missing', async () => {

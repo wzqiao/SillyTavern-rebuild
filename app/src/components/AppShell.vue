@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, defineAsyncComponent } from 'vue';
 import { RouterLink, RouterView, useRoute } from 'vue-router';
+import ScrambleText from './ScrambleText.vue';
 import { useI18n } from '@/i18n';
+
+const AtmosphereCanvas = defineAsyncComponent(() => import('./AtmosphereCanvas.vue'));
 
 type PrimaryNavigationItem = {
   to: string;
@@ -9,6 +12,35 @@ type PrimaryNavigationItem = {
   shortLabel: string;
   eyebrow: string;
   description: string;
+  iconPaths: string[];
+};
+
+const ICON_PATHS: Record<string, string[]> = {
+  chat: [
+    'M3.5 5.25A1.75 1.75 0 015.25 3.5h9.5a1.75 1.75 0 011.75 1.75v6.5a1.75 1.75 0 01-1.75 1.75H9.6L6 16.5v-3h-.75A1.75 1.75 0 013.5 11.75z',
+  ],
+  characters: [
+    'M10 4.25a2.9 2.9 0 110 5.8 2.9 2.9 0 010-5.8z',
+    'M4.6 16.25c.85-2.7 3-4.15 5.4-4.15s4.55 1.45 5.4 4.15',
+  ],
+  worldbooks: [
+    'M6.25 3.5h8.25v13H6.25A2.25 2.25 0 014 14.25V5.75A2.25 2.25 0 016.25 3.5z',
+    'M4 14.25c0-1.24 1-2.25 2.25-2.25h8.25',
+  ],
+  connection: [
+    'M11.2 3L5.4 11h3.7l-.9 6 5.8-8h-3.7l.9-6z',
+  ],
+  settings: [
+    'M3.75 6h12.5M3.75 10h12.5M3.75 14h12.5',
+    'M12.4 6m-1.6 0a1.6 1.6 0 103.2 0a1.6 1.6 0 10-3.2 0',
+    'M7 10m-1.6 0a1.6 1.6 0 103.2 0a1.6 1.6 0 10-3.2 0',
+    'M10.8 14m-1.6 0a1.6 1.6 0 103.2 0a1.6 1.6 0 10-3.2 0',
+  ],
+  dev: [
+    'M3.5 4.5h13v11h-13z',
+    'M6.5 8l2.4 2.4L6.5 12.8',
+    'M10.8 13h2.7',
+  ],
 };
 
 const { t } = useI18n();
@@ -21,6 +53,7 @@ const primaryNavigation = computed<PrimaryNavigationItem[]>(() => [
     shortLabel: t.value.nav.chat,
     eyebrow: t.value.shell.navEyebrows.chat,
     description: t.value.shell.navDescriptions.chat,
+    iconPaths: ICON_PATHS.chat,
   },
   {
     to: '/characters',
@@ -28,6 +61,7 @@ const primaryNavigation = computed<PrimaryNavigationItem[]>(() => [
     shortLabel: t.value.nav.characters,
     eyebrow: t.value.shell.navEyebrows.characters,
     description: t.value.shell.navDescriptions.characters,
+    iconPaths: ICON_PATHS.characters,
   },
   {
     to: '/worldbooks',
@@ -35,6 +69,7 @@ const primaryNavigation = computed<PrimaryNavigationItem[]>(() => [
     shortLabel: t.value.nav.worldbooks,
     eyebrow: t.value.shell.navEyebrows.worldbooks,
     description: t.value.shell.navDescriptions.worldbooks,
+    iconPaths: ICON_PATHS.worldbooks,
   },
   {
     to: '/connection',
@@ -42,6 +77,7 @@ const primaryNavigation = computed<PrimaryNavigationItem[]>(() => [
     shortLabel: t.value.nav.connection,
     eyebrow: t.value.shell.navEyebrows.connection,
     description: t.value.shell.navDescriptions.connection,
+    iconPaths: ICON_PATHS.connection,
   },
   {
     to: '/settings',
@@ -49,6 +85,7 @@ const primaryNavigation = computed<PrimaryNavigationItem[]>(() => [
     shortLabel: t.value.nav.settings,
     eyebrow: t.value.shell.navEyebrows.settings,
     description: t.value.shell.navDescriptions.settings,
+    iconPaths: ICON_PATHS.settings,
   },
 ]);
 const currentNavigationItem = computed(() => primaryNavigation.value.find((item) => isCurrentPath(item.to)) ?? null);
@@ -62,131 +99,173 @@ const currentDescription = computed(() => (
   (route.name === 'dev-home' ? t.value.shell.debugDescription : null) ??
   (typeof route.meta.description === 'string' ? route.meta.description : t.value.app.tagline)
 ));
+const isChatRoute = computed(() => isCurrentPath('/chat'));
 
 function isCurrentPath(to: string): boolean {
   return route.path === to || route.path.startsWith(`${to}/`);
 }
+
+function emitBeacon(event: MouseEvent, active: boolean): void {
+  const target = event.currentTarget;
+
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const rect = target.getBoundingClientRect();
+  window.dispatchEvent(new CustomEvent('reforged-beacon', {
+    detail: {
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      active,
+    },
+  }));
+}
 </script>
 
 <template>
-  <div class="shell-frame min-h-dvh text-neutral-50">
-    <div class="mx-auto flex min-h-dvh w-full max-w-[112rem]">
+  <div class="shell-frame text-neutral-50" :class="isChatRoute ? 'h-dvh overflow-hidden' : 'min-h-dvh'">
+    <AtmosphereCanvas />
+
+    <div class="mx-auto flex w-full max-w-[112rem]" :class="isChatRoute ? 'h-dvh' : 'min-h-dvh'">
       <aside
-        class="shell-sidebar hidden w-80 shrink-0 flex-col border-r border-white/10 bg-black/20 px-6 py-6 backdrop-blur-xl md:flex"
+        class="shell-rail glass-panel hidden w-[4.25rem] shrink-0 flex-col items-center border-r border-white/10 px-2 md:flex"
       >
         <RouterLink
           to="/chat"
-          class="rounded-[2rem] border border-amber-300/20 bg-amber-200/10 px-5 py-5 transition hover:border-amber-200/40 hover:bg-amber-200/14"
+          class="rail-brand flex h-11 w-11 items-center justify-center rounded-lg border border-cyan-200/24 bg-cyan-200/10 text-cyan-100 transition duration-200 hover:border-cyan-200/45 hover:bg-cyan-200/16"
+          :title="t.app.name"
+          :aria-label="t.app.name"
         >
-          <p class="text-[0.68rem] font-black uppercase tracking-[0.28em] text-amber-100/75">
-            {{ t.shell.brandEyebrow }}
-          </p>
-          <h1 class="mt-3 font-display text-2xl font-black text-white">
-            {{ t.shell.brandTitle }}
-          </h1>
-          <p class="mt-3 text-sm leading-7 text-neutral-300">
-            {{ t.shell.brandDescription }}
-          </p>
+          <svg
+            viewBox="0 0 20 20"
+            class="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <path d="M10 2.5L17 10l-7 7.5L3 10z" stroke-linejoin="round" />
+            <path d="M10 6.5L13.5 10 10 13.8 6.5 10z" stroke-linejoin="round" />
+          </svg>
         </RouterLink>
 
-        <nav class="mt-8 space-y-3" :aria-label="t.nav.primary">
+        <nav class="mt-7 flex flex-col items-center gap-2.5" :aria-label="t.nav.primary">
           <RouterLink
             v-for="item in primaryNavigation"
             :key="item.to"
             :to="item.to"
-            class="block rounded-[1.6rem] border px-4 py-4 transition"
+            class="rail-item relative flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
             :class="isCurrentPath(item.to)
-              ? 'border-amber-200/45 bg-amber-200/14 shadow-[0_20px_45px_rgba(251,191,36,0.10)]'
-              : 'border-white/8 bg-white/[0.04] hover:border-white/15 hover:bg-white/[0.07]'"
+              ? 'rail-item--active border-cyan-200/45 bg-cyan-200/14 text-cyan-50 shadow-[0_0_22px_rgba(143,227,208,0.16)]'
+              : 'border-white/8 bg-white/[0.04] text-neutral-300 hover:border-white/18 hover:bg-white/[0.08] hover:text-neutral-100'"
+            :aria-label="item.label"
+            @mouseenter="emitBeacon($event, true)"
+            @mouseleave="emitBeacon($event, false)"
           >
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-[0.66rem] font-black uppercase tracking-[0.24em] text-neutral-400">
-                  {{ item.eyebrow }}
-                </p>
-                <p class="mt-2 text-lg font-bold text-white">
-                  {{ item.label }}
-                </p>
-              </div>
-              <div
-                class="flex h-11 w-11 items-center justify-center rounded-2xl border text-xs font-black uppercase tracking-[0.18em]"
-                :class="isCurrentPath(item.to)
-                  ? 'border-amber-100/30 bg-amber-100/12 text-amber-50'
-                  : 'border-white/10 bg-black/15 text-neutral-300'"
-              >
-                {{ item.shortLabel }}
-              </div>
-            </div>
-            <p class="mt-3 text-sm leading-6 text-neutral-300">
-              {{ item.description }}
-            </p>
+            <svg
+              viewBox="0 0 20 20"
+              class="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              aria-hidden="true"
+            >
+              <path
+                v-for="(pathData, pathIndex) in item.iconPaths"
+                :key="pathIndex"
+                :d="pathData"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span class="rail-flyout">
+              <span class="rail-flyout-eyebrow">{{ item.eyebrow }}</span>
+              {{ item.label }}
+            </span>
           </RouterLink>
         </nav>
 
-        <div class="mt-auto rounded-[1.8rem] border border-white/10 bg-white/[0.05] p-5">
-          <p class="text-[0.66rem] font-black uppercase tracking-[0.24em] text-teal-200/80">
-            {{ t.shell.debugEyebrow }}
-          </p>
-          <p class="mt-3 text-lg font-bold text-white">
-            {{ t.shell.debugTitle }}
-          </p>
-          <p class="mt-2 text-sm leading-6 text-neutral-300">
-            {{ t.shell.debugDescription }}
-          </p>
-          <RouterLink
-            to="/dev"
-            class="mt-4 inline-flex items-center rounded-full border border-white/15 bg-white/[0.07] px-4 py-2 text-sm font-semibold text-white transition hover:border-white/25 hover:bg-white/[0.12]"
+        <RouterLink
+          to="/dev"
+          class="rail-item relative mt-auto flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
+          :class="route.path.startsWith('/dev')
+            ? 'rail-item--active border-cyan-200/45 bg-cyan-200/14 text-cyan-50'
+            : 'border-white/8 bg-white/[0.04] text-neutral-400 hover:border-white/18 hover:bg-white/[0.08] hover:text-neutral-100'"
+          :aria-label="t.nav.dev"
+          @mouseenter="emitBeacon($event, true)"
+          @mouseleave="emitBeacon($event, false)"
+        >
+          <svg
+            viewBox="0 0 20 20"
+            class="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
           >
-            {{ t.shell.debugOpen }}
-          </RouterLink>
-        </div>
+            <path
+              v-for="(pathData, pathIndex) in ICON_PATHS.dev"
+              :key="pathIndex"
+              :d="pathData"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span class="rail-flyout">{{ t.nav.dev }}</span>
+        </RouterLink>
       </aside>
 
-      <div class="flex min-h-dvh min-w-0 flex-1 flex-col">
-        <header class="safe-top sticky top-0 z-20 border-b border-white/8 bg-neutral-950/80 px-4 pb-4 pt-3 backdrop-blur-xl md:hidden">
-          <div class="flex items-start justify-between gap-4">
+      <div class="flex min-w-0 flex-1 flex-col" :class="isChatRoute ? 'h-dvh min-h-0' : 'min-h-dvh'">
+        <header
+          v-if="!isChatRoute"
+          class="safe-top sticky top-0 z-20 border-b border-white/8 bg-neutral-950/78 px-4 pb-3 pt-3 backdrop-blur-xl md:hidden"
+        >
+          <div class="flex items-center justify-between gap-4">
             <div class="min-w-0">
-              <p class="text-[0.66rem] font-black uppercase tracking-[0.24em] text-amber-100/70">
+              <p class="technical-label text-cyan-100/70">
                 {{ t.app.name }}
               </p>
-              <h1 class="mt-2 truncate font-display text-2xl font-black text-white">
-                {{ currentTitle }}
+              <h1 class="mt-1.5 truncate font-display text-xl font-black text-white">
+                <ScrambleText :text="currentTitle" />
               </h1>
-              <p class="mt-2 text-sm leading-6 text-neutral-300">
-                {{ currentDescription }}
-              </p>
             </div>
             <RouterLink
               to="/dev"
-              class="inline-flex min-h-10 shrink-0 items-center rounded-full border border-white/12 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white"
+              class="inline-flex min-h-10 shrink-0 items-center rounded-md border border-white/12 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white"
             >
               {{ t.shell.debugShort }}
             </RouterLink>
           </div>
         </header>
 
-        <header class="safe-top hidden items-start justify-between gap-6 px-8 pb-2 pt-7 md:flex">
+        <header
+          v-if="!isChatRoute"
+          class="safe-top hidden items-end justify-between gap-6 px-8 pb-1 pt-6 md:flex"
+        >
           <div class="min-w-0">
-            <p class="text-[0.68rem] font-black uppercase tracking-[0.26em] text-amber-100/70">
+            <p class="technical-label text-cyan-100/70">
               {{ t.shell.desktopEyebrow }}
             </p>
-            <h2 class="mt-3 font-display text-4xl font-black text-white">
-              {{ currentTitle }}
+            <h2 class="mt-2 truncate font-display text-3xl font-black text-white">
+              <ScrambleText :text="currentTitle" />
             </h2>
-            <p class="mt-3 max-w-3xl text-sm leading-7 text-neutral-300">
-              {{ currentDescription }}
-            </p>
           </div>
-          <RouterLink
-            to="/dev"
-            class="mt-1 shrink-0 rounded-full border border-white/12 bg-white/[0.05] px-5 py-3 text-sm font-semibold text-white transition hover:border-white/20 hover:bg-white/[0.1]"
-          >
-            {{ t.shell.debugOpen }}
-          </RouterLink>
+          <p class="hidden max-w-md truncate pb-1 text-sm text-neutral-400 lg:block">
+            {{ currentDescription }}
+          </p>
         </header>
 
-        <main class="flex-1 px-4 pb-28 pt-6 sm:px-6 md:px-8 md:pb-10 md:pt-6">
-          <RouterView />
+        <main
+          :class="isChatRoute
+            ? 'flex min-h-0 flex-1 flex-col overflow-hidden px-3 pb-[5.75rem] pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4 md:px-6 md:pb-4 md:pt-4'
+            : 'flex-1 px-4 pb-28 pt-6 sm:px-6 md:px-8 md:pb-10 md:pt-6'"
+        >
+          <RouterView v-slot="{ Component }">
+            <Transition name="route" mode="out-in">
+              <component :is="Component" />
+            </Transition>
+          </RouterView>
         </main>
 
         <nav
@@ -198,15 +277,28 @@ function isCurrentPath(to: string): boolean {
               v-for="item in primaryNavigation"
               :key="`${item.to}-mobile`"
               :to="item.to"
-              class="flex min-h-16 flex-col items-center justify-center rounded-[1.25rem] border px-2 py-2 text-center transition"
+              class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-center transition"
               :class="isCurrentPath(item.to)
-                ? 'border-amber-200/35 bg-amber-200/14 text-white'
+                ? 'border-cyan-200/35 bg-cyan-200/14 text-white'
                 : 'border-white/8 bg-white/[0.03] text-neutral-300'"
             >
-              <span class="text-[0.58rem] font-black uppercase tracking-[0.22em] text-neutral-400">
-                {{ item.eyebrow }}
-              </span>
-              <span class="mt-1 text-xs font-bold">
+              <svg
+                viewBox="0 0 20 20"
+                class="h-[1.15rem] w-[1.15rem]"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.6"
+                aria-hidden="true"
+              >
+                <path
+                  v-for="(pathData, pathIndex) in item.iconPaths"
+                  :key="pathIndex"
+                  :d="pathData"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <span class="text-[0.66rem] font-bold leading-none">
                 {{ item.shortLabel }}
               </span>
             </RouterLink>
@@ -221,37 +313,20 @@ function isCurrentPath(to: string): boolean {
 .shell-frame {
   position: relative;
   isolation: isolate;
-  background:
-    radial-gradient(circle at top left, rgba(251, 191, 36, 0.12), transparent 32%),
-    radial-gradient(circle at bottom right, rgba(45, 212, 191, 0.14), transparent 34%),
-    linear-gradient(180deg, #09090b 0%, #111827 100%);
-}
-
-.shell-frame::before,
-.shell-frame::after {
-  position: absolute;
-  z-index: -1;
-  border-radius: 999px;
-  content: '';
-  filter: blur(18px);
-  opacity: 0.7;
-  pointer-events: none;
 }
 
 .shell-frame::before {
-  top: -7rem;
-  right: 8%;
-  width: 18rem;
-  height: 18rem;
-  background: rgba(251, 191, 36, 0.18);
-}
-
-.shell-frame::after {
-  bottom: 8%;
-  left: -6rem;
-  width: 20rem;
-  height: 20rem;
-  background: rgba(45, 212, 191, 0.12);
+  position: absolute;
+  z-index: -1;
+  content: '';
+  pointer-events: none;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(237, 247, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(237, 247, 255, 0.024) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, black, transparent 82%);
+  opacity: 0.5;
 }
 
 .safe-top {
@@ -262,13 +337,83 @@ function isCurrentPath(to: string): boolean {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
-.shell-sidebar {
-  padding-top: max(1.5rem, env(safe-area-inset-top));
-  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+.shell-rail {
+  padding-top: max(1.25rem, env(safe-area-inset-top));
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
 }
 
 .shell-bottom-nav {
   padding-left: max(0.75rem, env(safe-area-inset-left));
   padding-right: max(0.75rem, env(safe-area-inset-right));
+}
+
+.rail-item--active::before {
+  position: absolute;
+  top: 50%;
+  left: -0.625rem;
+  width: 2px;
+  height: 1.4rem;
+  content: '';
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, transparent, rgba(143, 227, 208, 0.9), transparent);
+}
+
+.rail-flyout {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 0.875rem);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(237, 247, 255, 0.14);
+  border-radius: 0.45rem;
+  background: rgba(7, 10, 13, 0.94);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--color-neutral-100);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(-6px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.rail-flyout-eyebrow {
+  font-family: var(--font-display);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(143, 227, 208, 0.75);
+}
+
+.rail-item:hover .rail-flyout,
+.rail-item:focus-visible .rail-flyout,
+.rail-brand:hover .rail-flyout {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.route-enter-active {
+  transition: opacity 0.26s ease, transform 0.26s ease, filter 0.26s ease;
+}
+
+.route-leave-active {
+  transition: opacity 0.16s ease, filter 0.16s ease;
+}
+
+.route-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+  filter: blur(6px);
+}
+
+.route-leave-to {
+  opacity: 0;
+  filter: blur(4px);
 }
 </style>

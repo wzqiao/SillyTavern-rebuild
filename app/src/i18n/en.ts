@@ -3,7 +3,7 @@ import type { Zh } from './zh';
 export const en: Zh = {
   app: {
     name: 'ST-Reforged',
-    tagline: 'Warm late-night chats with your characters',
+    tagline: 'A frosted scene console for character roleplay',
   },
 
   nav: {
@@ -33,14 +33,14 @@ export const en: Zh = {
       settings: 'Simple defaults first, advanced controls only when you need them.',
     },
     brandEyebrow: 'ST-Reforged',
-    brandTitle: 'Lamplit chat shell',
-    brandDescription: 'A warm, mobile-first frame for chat, connection, characters, and lore.',
+    brandTitle: 'Frosted tavern console',
+    brandDescription: 'An immersive mobile-first frame for chat, connection, characters, and lore.',
     debugEyebrow: 'Debug',
     debugTitle: 'Legacy workbench stays reachable.',
     debugDescription: 'Main flows live in product pages. /dev remains only for adapter and regression debugging.',
     debugOpen: 'Open debug /dev',
     debugShort: 'Debug',
-    desktopEyebrow: 'App shell',
+    desktopEyebrow: 'Scene console',
   },
 
   common: {
@@ -62,11 +62,12 @@ export const en: Zh = {
     runtime: 'Runtime',
     demoReady: 'Demo mode is ready. Send a message to start.',
     runtimeReady: 'Runtime ready',
-    runtimeChecking: 'Checking the same-origin SillyTavern runtime...',
+    runtimeChecking: 'Checking the Reforged runtime adapter...',
     runtimeDiagFailed: 'Runtime diagnostics did not pass.',
     runtimeLoadFailed: (detail: string) => `Runtime adapter failed to load: ${detail}`,
     runtimeKeyGone: 'The in-memory API key is no longer available. Re-enter it on the connection page.',
     runtimeFallback: (reason: string) => `Returned to Demo mode automatically: ${reason}`,
+    transportFallback: (reason: string) => `Runtime transport fell back: ${reason}`,
     configureConnection: 'Configure connection',
 
     untitled: 'New chat',
@@ -106,6 +107,13 @@ export const en: Zh = {
     deleted: 'Message deleted',
     userUpdated: 'User message updated',
 
+    importLegacy: {
+      action: 'Import legacy chat (.jsonl)',
+      success: (title: string, count: number) => `Imported "${title}" (${count} messages).`,
+      failed: (detail: string) => `Import failed: ${detail}`,
+      noCharacter: (name: string) => `"${name}" is not in the character library; imported without a bound character.`,
+    },
+
     roleUser: 'Me',
     roleAssistant: 'Character',
 
@@ -117,7 +125,7 @@ export const en: Zh = {
 
   connection: {
     providerOpenAI: 'OpenAI-compatible',
-    providerOpenAIDescription: 'Use the same-origin SillyTavern backend chat-completions seam.',
+    providerOpenAIDescription: 'Use an OpenAI-compatible provider through Reforged runtime transports.',
     status: {
       empty: {
         label: 'Empty',
@@ -147,7 +155,7 @@ export const en: Zh = {
       'applied-but-unwired': {
         label: 'Applied, waiting',
         title: 'Runtime path is not ready',
-        description: 'The draft is applied, but the direct request path is not available from this page state.',
+        description: 'The draft is applied, but the runtime request path is not available from this page state.',
       },
       'ready-to-attempt': {
         label: 'Ready to attempt',
@@ -160,15 +168,28 @@ export const en: Zh = {
     headerDescription: 'Set up one OpenAI-compatible endpoint, keep the key in the transient vault, and apply it to the memory-only Runtime handoff.',
     currentStatus: 'Current status',
     draftTitle: 'Provider draft',
-    draftDescription: 'First pass supports OpenAI-compatible backends through the direct backend seam.',
+    draftDescription: 'OpenAI-compatible providers can run through the Reforged backend, browser direct, or the legacy proxy bridge.',
+    transport: {
+      title: 'Connection method',
+      description: 'Reforged backend is the normal server runtime. Browser direct and legacy proxy remain compatibility routes.',
+      auto: 'Auto (recommended)',
+      autoDescription: 'Try the Reforged backend first, then browser direct, then the legacy proxy when needed.',
+      reforged: 'Reforged backend',
+      reforgedDescription: 'Send through the new Reforged server at 127.0.0.1:8787 or the deployed same runtime.',
+      direct: 'Browser direct',
+      directDescription: 'Request the base URL directly from the browser. Failures do not fall back.',
+      proxy: 'Legacy proxy',
+      proxyDescription: 'Always forward through the local legacy ST backend on port 8000 as a compatibility bridge.',
+    },
     fields: {
       provider: 'Provider',
       providerPlaceholder: 'Choose a provider',
       baseUrl: 'Base URL',
       baseUrlPlaceholder: 'https://api.example.com/v1',
+      baseUrlHint: 'OpenAI-compatible endpoints usually need the /v1 base, for example https://vip.yyyyai.org/v1.',
       model: 'Model',
       modelPlaceholder: 'gpt-4.1-compatible',
-      modelHint: 'Enter a model id for now. Model listing and connection testing will come later.',
+      modelHint: 'Type a model id, or fetch the list with "Test connection / fetch models" below.',
       apiKey: 'API key',
       apiKeyPlaceholder: 'Paste API key',
       apiKeyStoredHint: 'Current key metadata: {key}',
@@ -213,8 +234,31 @@ export const en: Zh = {
       draftEmpty: 'Add an OpenAI-compatible draft before attempting Runtime mode.',
       draftUnapplied: 'Apply this complete draft before attempting Runtime mode.',
       runtimeUnwired: 'Runtime adapter is not ready; this applied draft has not been handed to a live request path.',
-      runtimeConnectionUnwired: 'Runtime adapter is ready, but the direct backend request path is not available.',
+      runtimeConnectionUnwired: 'Runtime adapter is ready, but the Reforged/backend request path is not available.',
       apiKeyUnavailable: 'Runtime adapter is ready, but the applied API key is no longer available in memory.',
+    },
+    probe: {
+      action: 'Test connection / fetch models',
+      success: (count: number, ms: number) => `Connected · ${count} models · ${ms}ms`,
+      successNoList: (ms: number) => `Connected · ${ms}ms (no model list returned; type one manually)`,
+      pickModel: 'Pick a model from the list',
+      failConfig: 'Fill in the base URL and API key first.',
+      failCors: 'Blocked by CORS or unreachable; you can still type a model and generate through another transport.',
+      failHttp: (detail: string) => `The server returned an error: ${detail}`,
+    },
+    preset: {
+      title: 'Preset (optional)',
+      description: 'Import a legacy SillyTavern OpenAI preset JSON. Sampling parameters and prompt ordering apply to Runtime generation.',
+      importAction: 'Import preset JSON',
+      selectLabel: 'Active preset',
+      selectPlaceholder: 'Select',
+      none: 'No preset',
+      summary: (prompts: number, total: number) => `${prompts}/${total} prompt sections enabled`,
+      samplingLabel: 'Sampling',
+      removeAction: 'Remove current preset',
+      imported: (name: string) => `Imported "${name}".`,
+      importedWithWarnings: (name: string, warnings: number) => `Imported "${name}" with ${warnings} warning(s).`,
+      warningsTitle: 'Import warnings',
     },
   },
 
@@ -364,9 +408,9 @@ export const en: Zh = {
         value: 'Character library',
       },
       identity: {
-        title: 'User identity',
-        description: 'Persona and display name are not connected to the settings contract yet.',
-        value: 'Pending',
+        title: 'Identity',
+        description: 'Set the {{user}} name and persona used by generation and the chat UI.',
+        value: 'Local',
       },
       theme: {
         title: 'Theme',
@@ -432,6 +476,12 @@ export const en: Zh = {
       contextReserve: 'Context reserve',
       placeholder: 'Placeholder',
     },
+    identityFields: {
+      name: 'User name',
+      nameHint: 'Replaces the {{user}} macro and the "Me" label in chat; leave empty for the default.',
+      description: 'Persona description',
+      descriptionHint: 'Injected when a preset enables the personaDescription slot; legacy assembly appends it as a system note.',
+    },
     advancedTitle: 'Advanced',
     advancedDescription: 'Generation and prompt placeholders. These controls are not connected to the runtime.',
     notConnectedTitle: 'Not connected to engine',
@@ -445,6 +495,27 @@ export const en: Zh = {
       open: 'Open',
       closed: 'Closed',
       unchanged: 'Unchanged',
+    },
+    storageKinds: {
+      reforgedBackend: 'Reforged backend (cross-device)',
+      indexedDb: 'IndexedDB on this device',
+      memory: 'In-memory (lost on refresh)',
+      unknown: 'Initializing…',
+    },
+    server: {
+      label: 'Reforged server',
+      description: 'Backend address for storage and multiplayer; a configured token is attached to every request. Changes apply after a page reload.',
+      urlLabel: 'Server address',
+      tokenLabel: 'Server token (optional)',
+      tokenHint: 'Must match REFORGED_TOKEN on the server; stored only on this device.',
+      save: 'Save (reload to apply)',
+      saved: 'Saved — reload to apply',
+    },
+    secrets: {
+      label: 'Local secrets',
+      description: 'API keys are saved in this browser\'s local storage and never leave this device.',
+      clear: 'Clear local secrets',
+      cleared: 'Cleared',
     },
     resetLocalPreview: 'Reset local preview',
   },

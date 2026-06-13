@@ -25,6 +25,7 @@ describe('useConnectionStore', () => {
         expect(store.isDraftComplete).toBe(false);
         expect(store.hasAppliedDraft).toBe(false);
         expect(store.generationApi).toEqual({ api: 'openai' });
+        expect(store.transportMode).toBe('auto');
     });
 
     it('patches and normalizes the draft without applying it', () => {
@@ -117,6 +118,7 @@ describe('useConnectionStore', () => {
 
     it('describes runtime handoff readiness without treating applied drafts as connected', () => {
         const store = useConnectionStore();
+        store.setTransportMode('reforged-backend');
 
         expect(store.runtimeHandoff()).toMatchObject({
             status: 'empty',
@@ -222,12 +224,26 @@ describe('useConnectionStore', () => {
             model: 'gpt-example',
             api: 'openai',
             apiKey: 'sk-test-123456',
+            transport: 'reforged-backend',
         });
         expect(readyHandoff.takeRuntimeConnection?.()).toBeNull();
         expect(JSON.stringify(store.runtimeHandoff({
             runtimeAdapterReady: true,
             runtimeDirectRequestReady: true,
         }).connection)).not.toContain('sk-test-123456');
+    });
+
+    it('updates transport mode and resets it with all connection state', () => {
+        const store = useConnectionStore();
+
+        store.setTransportMode('legacy-proxy');
+        expect(store.transportMode).toBe('legacy-proxy');
+
+        store.setTransportMode('reforged-backend');
+        expect(store.transportMode).toBe('reforged-backend');
+
+        store.clearAll();
+        expect(store.transportMode).toBe('auto');
     });
 
     it('requires re-applying edited drafts before runtime handoff can be attempted again', () => {
@@ -342,5 +358,62 @@ describe('useConnectionStore', () => {
             },
         });
         expect(store.appliedDraft).toBeNull();
+    });
+});
+
+describe('probeConnection', () => {
+    beforeEach(() => {
+        resetConnectionSecretVaultForTest();
+        setActivePinia(createPinia());
+    });
+
+    function prepareDraft() {
+        const store = useConnectionStore();
+        store.patchDraft({ baseUrl: 'https://api.example.com/v1/', model: 'demo' });
+        setConnectionDraftApiKeySecret(store, 'sk-probe-secret');
+        return store;
+    }
+
+    it('fetches and sorts model ids from an openai-style payload', async () => {
+        const store = prepareDraft();
+        const calls: Array<{ url: string; auth: string | undefined }> = [];
+        const fetcher = (async (url: RequestInfo | URL, init?: RequestInit) => {
+            calls.push({ url: String(url), auth: (init?.headers as Record<string, string>)?.Authorization });
+            return new Response(JSON.stringify({ data: [{ id: 'b-model' }, { id: 'a-model' }, { id: 'a-model' }] }), { status: 200 });
+        }) as typeof fetch;
+
+        const result = await store.probeConnection(fetcher);
+
+        expect(result.ok).toBe(true);
+        expect(result.models).toEqual(['a-model', 'b-model']);
+        expect(store.availableModels).toEqual(['a-model', 'b-model']);
+        expect(calls[0].url).toBe('https://api.example.com/v1/models');
+        expect(calls[0].auth).toBe('Bearer sk-probe-secret');
+        expect(store.probing).toBe(false);
+    });
+
+    it('classifies http failures without clearing previous models', async () => {
+        const store = prepareDraft();
+        store.availableModels = ['keep-me'];
+        const fetcher = (async () => new Response('denied', { status: 401 })) as typeof fetch;
+
+        const result = await store.probeConnection(fetcher);
+
+        expect(result).toMatchObject({ ok: false, code: 'http', detail: 'HTTP 401' });
+        expect(store.availableModels).toEqual(['keep-me']);
+    });
+
+    it('classifies network/cors failures and missing config', async () => {
+        const store = prepareDraft();
+        const fetcher = (async () => {
+            throw new TypeError('Failed to fetch');
+        }) as typeof fetch;
+
+        const network = await store.probeConnection(fetcher);
+        expect(network).toMatchObject({ ok: false, code: 'cors-or-network' });
+
+        store.clearAll();
+        const config = await store.probeConnection(fetcher);
+        expect(config).toMatchObject({ ok: false, code: 'config' });
     });
 });

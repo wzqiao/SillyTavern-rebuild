@@ -1,8 +1,5 @@
-// DRAFT: 待主干评审
-
 export type ReforgedUiTone = 'neutral' | 'brand' | 'success' | 'warning' | 'danger';
 
-// DRAFT: 待主干评审
 export interface ReforgedSelectOption {
     value: string;
     label: string;
@@ -10,7 +7,6 @@ export interface ReforgedSelectOption {
     disabled?: boolean;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedTabItem {
     id: string;
     label: string;
@@ -18,7 +14,6 @@ export interface ReforgedTabItem {
     disabled?: boolean;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedToastItem {
     id: string;
     title: string;
@@ -28,7 +23,6 @@ export interface ReforgedToastItem {
     durationMs?: number;
 }
 
-// DRAFT: 待主干评审
 export interface ReforgedListItemMeta {
     label: string;
     value: string;

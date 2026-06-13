@@ -8,4 +8,11 @@
 - 修改契约需经主干评审,避免并行 worktree 各说各话。
 
 ## 现状
-M0 阶段,契约草案随架构验证逐步成形(见 `docs/REFACTOR-PRD.md` §7 M0 产出)。
+M2.5 收口评审(2026-06-13):
+
+- `character.ts`、`chat.ts`、`connection.ts`、`engine.ts`、`preset.ts`、`ui.ts`、`worldbook.ts`
+  作为 M2.5 主线基线契约采纳;后续改动仍需按主干评审处理。
+- 仓储网关、persona、preset、旧聊天导入与 Reforged runtime client 已进入 M2.5 主线路径。
+- `multiplayer.ts` 仍保持 `// DRAFT: 待主干评审`:当前房间协议只完成 M4 spike/M2.5 验收,
+  M4 主体还需要 durable room/event storage、流式 `generation.chunk`、账号/权限、主持人控制、
+  rate limit、TLS 与 provider target allowlist 等公网部署前置设计。

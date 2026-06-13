@@ -7,7 +7,7 @@ describe('resolveButtonClasses', () => {
 
         expect(classes).toContain('bg-cyan-300');
         expect(classes).toContain('min-h-12');
-        expect(classes).toContain('rounded-2xl');
+        expect(classes).toContain('rounded-lg');
     });
 
     it('applies variant, size, and loading modifiers', () => {

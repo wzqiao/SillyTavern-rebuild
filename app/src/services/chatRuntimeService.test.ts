@@ -63,6 +63,7 @@ describe('chatRuntimeService', () => {
             jsonSchema: { returnInvalid: true },
             responseLength: null,
             runtimeConnection: null,
+            sampling: null,
         });
     });
 
@@ -402,6 +403,7 @@ describe('chatRuntimeService', () => {
             jsonSchema: null,
             responseLength: null,
             runtimeConnection: null,
+            sampling: null,
         });
     });
 

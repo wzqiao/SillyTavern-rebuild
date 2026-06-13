@@ -25,7 +25,9 @@
 4. **技术栈固定**:Vue 3 `<script setup lang="ts">` + TypeScript(strict)+ Pinia +
    Vue Router + Tailwind CSS v4。不引入其它 UI 框架。
 5. **体验原则**:全端响应式、移动优先、渐进式披露(默认极简,高级选项可折叠)。
-6. **密钥纪律**(ADR-003):API key 不进 Pinia 可序列化状态/action payload,只在内存瞬态 vault。
+6. **密钥纪律**(ADR-003,例外见 ADR-006):API key 不进 Pinia 可序列化状态/action payload,只在内存瞬态 vault。
+   唯一例外(ADR-006,产品已拍板):持久化层 `app/src/repositories/appPersistence.ts` 经专用导出/恢复接口
+   将金库快照写入本机 IndexedDB,设置页提供一键清除。除此通道外禁止任何持久化/日志/快照携带原文 key。
 
 ## 🤝 多 Agent / Worktree 协作规则
 0. **准备环境**:你在一个独立 git worktree 中。首次需 `cd app && npm install`(worktree 不共享 node_modules)。
@@ -36,6 +38,8 @@
    - 契约已存在 → 只读依赖;不存在 → 新增接口定义并标 `// DRAFT: 待主干评审`,在汇报中说明。
      **不要**绕过契约直接耦合别的模块的内部实现。
 4. **不新增 npm 依赖**:除非任务明确需要;需要则先在汇报中申请,不擅自改 `package.json`。
+   已获产品批准的依赖(2026-06-12/13):`three` + `@types/three`(WebGL 氛围层,经 defineAsyncComponent 懒加载分包)、
+   `fake-indexeddb`(devDependency,仓储契约测试)。
 5. **license**:可参考/复用本项目与 SillyTavern(均 AGPL)的代码;
    **严禁**复制其它协议(如 Aladdin)的第三方插件代码——功能用自己实现。
 

@@ -14,11 +14,12 @@ npm run type-check   # 仅类型检查
 npm run test         # vitest
 ```
 
-## 与 SillyTavern 引擎的关系
-- 后端:复用 ST 后端(Express,AGPL),不在此工程内。
+## 与 SillyTavern / Reforged 运行时的关系
+- 后端:M4.1 起普通生成主路径逐步切到 `reforged-server/` 的 Reforged 后端。旧 ST 后端保留为可选兼容桥。
 - 引擎:通过 `@sillytavern/*` 别名以 **external** 方式复用 ST 前端引擎模块
   (见 `vite.config.ts` 的 `sillytavernResolver`)。运行时由浏览器从 ST 同源页面加载。
   ⚠️ 该机制的可行性是 M0-A 验证点,DOM 耦合风险见 PRD §4.2 / §8。
+- 资产兼容:兼容角色卡、世界书、OpenAI preset/prompt_order 等资产格式和语义;不兼容旧 ST DOM/jQuery UI 结构。
 
 ## 目录约定
 ```

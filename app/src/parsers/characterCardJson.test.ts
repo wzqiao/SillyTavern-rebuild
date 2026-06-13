@@ -27,6 +27,7 @@ describe('parseCharacterCardJson', () => {
             personality: 'Calm and observant.',
             scenario: 'A quiet bridge before hyperspace.',
             firstMessage: 'Coordinates locked.',
+            exampleMessages: '',
             alternateGreetings: ['Ready for departure.', 'Charting a new route.'],
             tags: ['space', 'captain'],
             extensions: {
@@ -47,6 +48,7 @@ describe('parseCharacterCardJson', () => {
                 personality: 'Measured, curious, and kind.',
                 scenario: 'A sealed library after dusk.',
                 firstMessage: 'You made it past the wards.',
+                exampleMessages: '',
                 alternateGreetings: ['Speak softly.', 'The stacks remember everything.'],
                 tags: ['archive', 'mystery'],
                 extensions: {
@@ -61,6 +63,7 @@ describe('parseCharacterCardJson', () => {
             personality: 'Measured, curious, and kind.',
             scenario: 'A sealed library after dusk.',
             firstMessage: 'You made it past the wards.',
+            exampleMessages: '',
             alternateGreetings: ['Speak softly.', 'The stacks remember everything.'],
             tags: ['archive', 'mystery'],
             extensions: {
@@ -93,6 +96,7 @@ describe('parseCharacterCardJson', () => {
             personality: 'Root-level personality.',
             scenario: 'Root-level scenario.',
             firstMessage: 'Root-level greeting.',
+            exampleMessages: '',
             alternateGreetings: [],
             tags: ['root', 'fallback'],
             extensions: {
@@ -136,6 +140,7 @@ describe('parseCharacterCardJson', () => {
             personality: 'Old but dependable.',
             scenario: 'A bridge full of hand-labeled switches.',
             firstMessage: 'Still flying.',
+            exampleMessages: '',
             alternateGreetings: ['Back on deck.'],
             tags: ['legacy'],
             rawVersion: '1.0',
@@ -159,6 +164,7 @@ describe('parseCharacterCardJson', () => {
             personality: 'Careful and curious.',
             scenario: 'A sealed library after dusk.',
             firstMessage: 'You made it past the old locks.',
+            exampleMessages: '',
             alternateGreetings: ['The catalogue remembers you.'],
             rawVersion: '1.0',
             source: 'json-v1-like',
@@ -184,11 +190,32 @@ describe('parseCharacterCardJson', () => {
             personality: '',
             scenario: '',
             firstMessage: '',
+            exampleMessages: '',
             alternateGreetings: [],
             tags: [],
             extensions: {},
             rawVersion: 'unknown',
             source: 'json-unknown',
         });
+    });
+});
+
+describe('exampleMessages (mes_example)', () => {
+    it('maps mes_example from V2 data payloads and V1 roots', () => {
+        const v2 = parseCharacterCardJson({
+            spec: 'chara_card_v2',
+            data: {
+                name: 'Astra',
+                mes_example: '<START>\n{{user}}: hi\n{{char}}: hello',
+            },
+        });
+        expect(v2.exampleMessages).toBe('<START>\n{{user}}: hi\n{{char}}: hello');
+
+        const v1 = parseCharacterCardJson({
+            name: 'Old',
+            description: 'desc',
+            mes_example: '<START>\nexample',
+        });
+        expect(v1.exampleMessages).toBe('<START>\nexample');
     });
 });
