@@ -34,9 +34,7 @@ describe('loadLegacyRuntimeModules', () => {
     } as Window & typeof globalThis;
     runtimeGlobal.document = {
       createElement: () => ({
-        addEventListener: (_eventName: string, handler: () => void) => {
-          handler();
-        },
+        addEventListener: () => undefined,
         dataset: {},
         remove: () => undefined,
         removeEventListener: () => undefined,

@@ -8,6 +8,7 @@ export const DEFAULT_REFORGED_SERVER_URL = 'http://127.0.0.1:8787';
 interface ReforgedLocationLike {
     protocol?: string;
     hostname?: string;
+    port?: string;
     origin?: string;
 }
 
@@ -15,9 +16,10 @@ export function getDefaultReforgedServerUrl(locationLike: ReforgedLocationLike |
     const protocol = locationLike?.protocol ?? '';
     const hostname = locationLike?.hostname ?? '';
     const origin = locationLike?.origin ?? '';
+    const port = locationLike?.port ?? readPortFromOrigin(origin);
     const isLocalHost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]' || hostname === '::1';
 
-    if ((protocol === 'https:' || protocol === 'http:') && origin && !isLocalHost) {
+    if ((protocol === 'https:' || protocol === 'http:') && origin && (!isLocalHost || port !== '5173')) {
         return origin;
     }
 
@@ -81,6 +83,14 @@ function writeLocalValue(key: string, value: string): void {
         }
     } catch {
         // 隐私模式:忽略
+    }
+}
+
+function readPortFromOrigin(origin: string): string {
+    try {
+        return origin ? new URL(origin).port : '';
+    } catch {
+        return '';
     }
 }
 

@@ -19,16 +19,12 @@ import type {
     ReforgedConnectionRuntimeHandoffIssueCode,
     ReforgedConnectionRuntimeHandoffStatus,
 } from '@/contracts/connection';
-import type { EngineAdapterDiagnostics, HeadlessEngineAdapter, HeadlessGenerationRequest } from '@/contracts/engine';
+import type { EngineAdapterDiagnostics } from '@/contracts/engine';
 
-type AdapterMode = 'demo' | 'runtime';
 type ChatGenerationTrigger = 'normal' | 'continue';
 type ChatActionKind = 'regenerate' | 'continue' | 'retry';
 type RuntimeChatCompletionType = NonNullable<ReforgedChatSendInput['runtime']>['chatCompletionType'];
 type ChatActionInput = Omit<ReforgedChatSendInput, 'content' | 'sessionId'>;
-interface RuntimeActivationOptions {
-    inspectRuntime?: boolean;
-}
 
 const characterStore = useCharacterStore();
 const chatStore = useChatStore();
@@ -39,7 +35,6 @@ const presetStore = usePresetStore();
 const worldbookStore = useWorldbookStore();
 const { t, locale } = useI18n();
 
-const adapterMode = ref<AdapterMode>('demo');
 const composer = ref('');
 const runtimeBusy = ref(false);
 const runtimeNotice = ref<string | null>(null);
@@ -85,33 +80,6 @@ const editingContent = ref('');
 const confirmingDeleteMessageId = ref<string | null>(null);
 const pendingActionMessageId = ref<string | null>(null);
 const pendingActionKind = ref<ChatActionKind | null>(null);
-let demoReplyLocalId = 1;
-
-const demoAdapter: HeadlessEngineAdapter = {
-    inspect: async () => ({
-        ok: true,
-        checkedAt: new Date().toISOString(),
-        environment: {
-            hasDocument: true,
-            hasJQuery: false,
-            hasToastr: false,
-            hasAbortController: true,
-            hasReadableStream: true,
-            locationHref: globalThis.location?.href,
-            userAgent: globalThis.navigator?.userAgent,
-        },
-        capabilities: [],
-        probes: [],
-        warnings: ['Demo adapter returns local replies and does not contact SillyTavern runtime.'],
-        blockers: [],
-    }),
-    generateText: async (request) => {
-        await delay(850);
-        return createDemoReply(request, demoReplyLocalId++);
-    },
-    generateRawData: async () => ({ mode: 'demo' }),
-    sendChatCompletion: async () => ({ mode: 'demo' }),
-};
 
 const selectedCharacter = computed(() => characterStore.selectedCharacter);
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
@@ -122,11 +90,7 @@ const sortedSessions = computed(() => [...chatStore.sessions].sort((left, right)
     new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
 )));
 const readiness = computed(() => chatStore.readiness);
-const runtimeAdapterReady = computed(() => (
-    adapterMode.value === 'runtime' &&
-    readiness.value.hasAdapter &&
-    runtimeDiagnostics.value?.ok !== false
-));
+const runtimeAdapterReady = computed(() => readiness.value.hasAdapter && runtimeDiagnostics.value?.ok !== false);
 const runtimeDirectRequestReady = computed(() => (
     runtimeAdapterReady.value &&
     chatStore.engineAdapter?.supportsDirectBackendChatCompletion === true &&
@@ -136,7 +100,7 @@ const runtimeHandoff = computed(() => connectionStore.runtimeHandoff({
     runtimeAdapterReady: runtimeAdapterReady.value,
     runtimeDirectRequestReady: runtimeDirectRequestReady.value,
 }));
-const canAttemptRuntime = computed(() => adapterMode.value !== 'runtime' || runtimeHandoff.value.canAttempt);
+const canAttemptRuntime = computed(() => runtimeHandoff.value.canAttempt);
 const isGenerationBusy = computed(() => (
     isRoomMode.value
         ? multiplayerStore.activeGenerations.length > 0
@@ -176,14 +140,12 @@ const statusMessage = computed(() => {
         return sendNotice.value;
     }
 
-    if (adapterMode.value === 'runtime') {
-        return runtimeNotice.value ?? translateRuntimeStatus(runtimeHandoff.value.status);
-    }
-
-    return readiness.value.canSend ? t.value.chat.demoReady : readiness.value.reason?.message ?? t.value.chat.demoReady;
+    return runtimeNotice.value ?? translateRuntimeStatus(runtimeHandoff.value.status);
 });
 const runtimeIssueLines = computed(() => [
-    ...runtimeHandoff.value.issues.map((issue) => translateRuntimeIssue(issue)),
+    ...[...runtimeHandoff.value.issues]
+        .sort((left, right) => (left.field === 'apiKey' ? -1 : 0) - (right.field === 'apiKey' ? -1 : 0))
+        .map((issue) => translateRuntimeIssue(issue)),
     ...(runtimeDiagnostics.value?.blockers ?? []),
     ...(runtimeDiagnostics.value?.warnings ?? []),
 ].slice(0, 4));
@@ -199,16 +161,7 @@ const lorebookEntryCount = computed(() => lorebookContext.value?.entries.length 
 
 onMounted(async () => {
     window.addEventListener('reforged-transport-fallback', handleTransportFallback);
-    selectDemoAdapter();
-    if (connectionStore.hasAppliedDraft) {
-        await activateRuntimeAdapter();
-
-        if (runtimeDiagnostics.value?.ok === false || !runtimeHandoff.value.canAttempt) {
-            const reason = runtimeIssueLines.value[0] ?? runtimeNotice.value ?? t.value.chat.runtimeDiagFailed;
-            selectDemoAdapter({ preserveFallbackNotice: true });
-            runtimeFallbackNotice.value = t.value.chat.runtimeFallback(reason);
-        }
-    }
+    await activateRuntimeAdapter();
     autoStartSession();
     await nextTick();
     resizeComposerTextarea();
@@ -249,9 +202,7 @@ watch(
         connectionStore.draft.apiKey.hasValue,
     ],
     () => {
-        if (adapterMode.value === 'runtime') {
-            runtimeNotice.value = translateRuntimeStatus(runtimeHandoff.value.status);
-        }
+        runtimeNotice.value = translateRuntimeStatus(runtimeHandoff.value.status);
     },
     { flush: 'sync' },
 );
@@ -291,20 +242,7 @@ function handleTransportFallback(event: Event): void {
     runtimeFallbackNotice.value = t.value.chat.transportFallback(reason);
 }
 
-function selectDemoAdapter(options: { preserveFallbackNotice?: boolean } = {}): void {
-    adapterMode.value = 'demo';
-    runtimeBusy.value = false;
-    runtimeNotice.value = null;
-    runtimeDiagnostics.value = null;
-    sendNotice.value = null;
-    if (!options.preserveFallbackNotice) {
-        runtimeFallbackNotice.value = null;
-    }
-    chatStore.setEngineAdapter(demoAdapter);
-}
-
-async function activateRuntimeAdapter(options: RuntimeActivationOptions = {}): Promise<void> {
-    adapterMode.value = 'runtime';
+async function activateRuntimeAdapter(): Promise<void> {
     runtimeBusy.value = true;
     runtimeNotice.value = t.value.chat.runtimeChecking;
     runtimeFallbackNotice.value = null;
@@ -315,16 +253,6 @@ async function activateRuntimeAdapter(options: RuntimeActivationOptions = {}): P
     try {
         const { loadHeadlessEngineAdapter } = await import('@/engine-adapter/runtimeAdapterLoader');
         const runtimeAdapter = await loadHeadlessEngineAdapter();
-
-        if (options.inspectRuntime) {
-            const diagnostics = await runtimeAdapter.inspect({ probeContext: true });
-            runtimeDiagnostics.value = diagnostics;
-
-            if (!diagnostics.ok) {
-                runtimeNotice.value = diagnostics.blockers[0] ?? t.value.chat.runtimeDiagFailed;
-                return;
-            }
-        }
 
         chatStore.setEngineAdapter(runtimeAdapter);
         const handoff = connectionStore.runtimeHandoff({
@@ -438,24 +366,20 @@ function createGenerationInput(options: {
 }): ChatActionInput | null {
     sendNotice.value = null;
     let runtimeConnectionProvider: ReforgedChatRuntimeConnectionProvider | null = null;
-    const handoff = adapterMode.value === 'runtime'
-        ? connectionStore.runtimeHandoff({
-            runtimeAdapterReady: runtimeAdapterReady.value,
-            runtimeDirectRequestReady: runtimeDirectRequestReady.value,
-        })
-        : runtimeHandoff.value;
+    const handoff = connectionStore.runtimeHandoff({
+        runtimeAdapterReady: runtimeAdapterReady.value,
+        runtimeDirectRequestReady: runtimeDirectRequestReady.value,
+    });
 
-    if (adapterMode.value === 'runtime') {
-        if (!handoff.canAttempt) {
-            runtimeNotice.value = handoff.message;
-            return null;
-        }
+    if (!handoff.canAttempt) {
+        runtimeNotice.value = runtimeIssueLines.value[0] ?? handoff.message;
+        return null;
+    }
 
-        runtimeConnectionProvider = handoff.takeRuntimeConnection;
-        if (!runtimeConnectionProvider) {
-            runtimeNotice.value = t.value.chat.runtimeKeyGone;
-            return null;
-        }
+    runtimeConnectionProvider = handoff.takeRuntimeConnection;
+    if (!runtimeConnectionProvider) {
+        runtimeNotice.value = t.value.chat.runtimeKeyGone;
+        return null;
     }
 
     const lorebooks = selectedWorldbook.value
@@ -473,8 +397,8 @@ function createGenerationInput(options: {
         character,
         lorebooks,
         runtime: {
-            mode: adapterMode.value === 'runtime' ? 'chat-completion' : 'generate-text',
-            chatCompletionType: adapterMode.value === 'runtime' ? options.runtimeType : undefined,
+            mode: 'chat-completion',
+            chatCompletionType: options.runtimeType,
         },
         runtimeConnectionProvider,
         generation: {
@@ -696,6 +620,15 @@ function formatSessionMessageCount(session: ReforgedChatSession): string {
 }
 
 function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): string {
+    if (issue.code === 'draft-incomplete') {
+        if (issue.field === 'apiKey') {
+            return t.value.chat.apiKeyRequiredNotice;
+        }
+        if (issue.field === 'model') {
+            return t.value.connection.issues.modelRequired;
+        }
+    }
+
     const issueMap: Record<ReforgedConnectionRuntimeHandoffIssueCode, string> = {
         'draft-empty': t.value.connection.issues.draftEmpty,
         'draft-incomplete': t.value.connection.messages.applyIncomplete,
@@ -723,26 +656,6 @@ function toChatCharacter(rosterItem: ReforgedCharacterRosterItem): ReforgedChatC
         firstMessage: rosterItem.card.firstMessage,
         exampleMessages: rosterItem.card.exampleMessages,
     };
-}
-
-function createDemoReply(request: HeadlessGenerationRequest, replyNumber: number): string {
-    const prompt = Array.isArray(request.prompt) ? request.prompt : [];
-    const lastUser = [...prompt].reverse().find((message) => message.role === 'user');
-    const userText = typeof lastUser?.content === 'string' ? lastUser.content : t.value.chat.demoUserFallback;
-    const systemMessage = prompt.find((message) => message.role === 'system');
-    const systemText = typeof systemMessage?.content === 'string' ? systemMessage.content : '';
-    const name = systemText.match(/roleplaying as ([^.]+)\./)?.[1]
-        ?? characterName.value
-        ?? t.value.chat.demoCharacterFallback;
-    const hasLore = systemText.includes('World lore context:');
-
-    return t.value.chat.demoReply(name, userText, replyNumber, hasLore);
-}
-
-function delay(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-        window.setTimeout(resolve, ms);
-    });
 }
 
 function describeError(error: unknown): string {
@@ -791,31 +704,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                     </div>
                 </div>
 
-                <div class="flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-neutral-950/60 p-1">
-                    <button
-                        type="button"
-                        class="rounded-md px-3 py-1.5 text-xs font-medium transition"
-                        :class="adapterMode === 'demo' ? 'bg-amber-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
-                        :disabled="chatStore.isGenerating"
-                        @click="selectDemoAdapter()"
-                    >
-                        {{ t.chat.demo }}
-                    </button>
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-medium transition"
-                        :class="adapterMode === 'runtime' ? 'bg-amber-300 text-neutral-950' : 'text-neutral-300 hover:text-neutral-100'"
-                        :disabled="chatStore.isGenerating"
-                        @click="() => activateRuntimeAdapter()"
-                    >
-                        <Spinner v-if="runtimeBusy" size="sm" tone="neutral" :label="t.chat.runtimeChecking" />
-                        {{ t.chat.runtime }}
-                    </button>
+                <div class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-1.5 text-xs font-medium text-emerald-100">
+                    <Spinner v-if="runtimeBusy" size="sm" tone="neutral" :label="t.chat.runtimeChecking" />
+                    <span>{{ t.chat.liveMode }}</span>
                 </div>
             </header>
 
             <div
-                v-if="runtimeFallbackNotice || (adapterMode === 'runtime' && !runtimeHandoff.canAttempt)"
+                v-if="runtimeFallbackNotice || !runtimeHandoff.canAttempt"
                 class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-2.5 text-xs leading-5 text-amber-100"
             >
                 <span class="min-w-0">{{ runtimeFallbackNotice ?? runtimeIssueLines[0] ?? statusMessage }}</span>
@@ -1025,8 +921,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                         class="composer-textarea min-h-8 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 text-sm leading-5 text-neutral-100 outline-none placeholder:text-neutral-500 disabled:cursor-not-allowed disabled:opacity-55"
                         rows="1"
                         :aria-label="t.chat.messageLabel"
-                        :placeholder="t.chat.composerPlaceholder"
-                        :disabled="isGenerationBusy"
+                        :placeholder="canAttemptRuntime ? t.chat.composerPlaceholder : t.chat.composerNeedsApiKey"
+                        :disabled="isGenerationBusy || !canAttemptRuntime"
                         @input="resizeComposerTextarea"
                     />
                     <button

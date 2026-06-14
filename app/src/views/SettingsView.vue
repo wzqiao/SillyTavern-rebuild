@@ -2,14 +2,6 @@
 import { computed, ref } from 'vue';
 import type { ReforgedSelectOption } from '@/contracts/ui';
 import { type Locale, useI18n } from '@/i18n';
-import { getAppPersistenceKind } from '@/repositories';
-import {
-    readConfiguredReforgedServerToken,
-    readConfiguredReforgedServerUrl,
-    getDefaultReforgedServerUrl,
-    writeConfiguredReforgedServerToken,
-    writeConfiguredReforgedServerUrl,
-} from '@/services/reforgedRuntimeClient';
 import { useConnectionStore, usePersonaStore } from '@/stores';
 import { Button, Collapse, Input, ListItem, Select, Switch, Textarea } from '@/ui-kit';
 
@@ -35,34 +27,6 @@ const { t, locale, setLocale } = useI18n();
 const connectionStore = useConnectionStore();
 const personaStore = usePersonaStore();
 const secretsCleared = ref(false);
-const storageKindLabel = computed(() => {
-    const kind = getAppPersistenceKind();
-
-    if (kind === 'reforged-backend') {
-        return t.value.settings.storageKinds.reforgedBackend;
-    }
-
-    if (kind === 'indexed-db') {
-        return t.value.settings.storageKinds.indexedDb;
-    }
-
-    if (kind === 'memory') {
-        return t.value.settings.storageKinds.memory;
-    }
-
-    return t.value.settings.storageKinds.unknown;
-});
-
-const serverUrlInput = ref(readConfiguredReforgedServerUrl() ?? '');
-const serverTokenInput = ref(readConfiguredReforgedServerToken() ?? '');
-const serverConfigSaved = ref(false);
-const serverUrlPlaceholder = computed(() => getDefaultReforgedServerUrl());
-
-function saveServerConfig(): void {
-    writeConfiguredReforgedServerUrl(serverUrlInput.value);
-    writeConfiguredReforgedServerToken(serverTokenInput.value);
-    serverConfigSaved.value = true;
-}
 
 function clearLocalSecrets(): void {
     connectionStore.clearApiKey();
@@ -75,7 +39,6 @@ const compactMode = ref(false);
 const showDiagnostics = ref(false);
 const reduceMotion = ref(false);
 const advancedOpen = ref(false);
-const serverAdvancedOpen = ref(false);
 const samplingPreset = ref('balanced');
 const temperature = ref('0.80');
 const topP = ref('0.95');
@@ -188,7 +151,6 @@ function resetLocalPreview(): void {
     showDiagnostics.value = false;
     reduceMotion.value = false;
     advancedOpen.value = false;
-    serverAdvancedOpen.value = false;
     samplingPreset.value = 'balanced';
     temperature.value = '0.80';
     topP.value = '0.95';
@@ -408,57 +370,6 @@ function resetLocalPreview(): void {
                         {{ t.settings.statusTitle }}
                     </h3>
                     <dl class="grid gap-3 text-sm">
-                        <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
-                            <dt class="text-neutral-400">
-                                {{ t.settings.statusRows.store }}
-                            </dt>
-                            <dd class="font-semibold text-neutral-100">
-                                {{ storageKindLabel }}
-                            </dd>
-                        </div>
-                        <div class="grid gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
-                            <dt class="text-neutral-400">
-                                {{ t.settings.server.label }}
-                                <span class="mt-1 block text-xs leading-5 text-neutral-500">
-                                    {{ t.settings.server.description }}
-                                </span>
-                            </dt>
-                            <dd class="grid gap-3">
-                                <div class="rounded-xl border border-emerald-300/15 bg-emerald-300/10 px-3 py-2 text-xs leading-5 text-emerald-50/85">
-                                    {{ t.settings.server.managedHint(serverUrlPlaceholder) }}
-                                </div>
-                                <Collapse
-                                    v-model="serverAdvancedOpen"
-                                    :title="t.settings.server.advancedTitle"
-                                    :description="t.settings.server.advancedDescription"
-                                >
-                                    <div class="grid gap-2">
-                                        <Input
-                                            v-model="serverUrlInput"
-                                            :label="t.settings.server.urlLabel"
-                                            :placeholder="serverUrlPlaceholder"
-                                            inputmode="url"
-                                            autocomplete="off"
-                                        />
-                                        <Input
-                                            v-model="serverTokenInput"
-                                            :label="t.settings.server.tokenLabel"
-                                            :hint="t.settings.server.tokenHint"
-                                            type="password"
-                                            autocomplete="off"
-                                        />
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            @click="saveServerConfig"
-                                        >
-                                            {{ serverConfigSaved ? t.settings.server.saved : t.settings.server.save }}
-                                        </Button>
-                                    </div>
-                                </Collapse>
-                            </dd>
-                        </div>
                         <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/8 bg-white/5 px-3 py-3">
                             <dt class="min-w-0 text-neutral-400">
                                 {{ t.settings.secrets.label }}

@@ -10,13 +10,24 @@ describe('reforgedRuntimeClient', () => {
         expect(getDefaultReforgedServerUrl({
             protocol: 'http:',
             hostname: 'localhost',
+            port: '5173',
             origin: 'http://localhost:5173',
         })).toBe(DEFAULT_REFORGED_SERVER_URL);
         expect(getDefaultReforgedServerUrl({
             protocol: 'http:',
             hostname: '127.0.0.1',
+            port: '5173',
             origin: 'http://127.0.0.1:5173',
         })).toBe(DEFAULT_REFORGED_SERVER_URL);
+    });
+
+    it('uses the current origin for local non-dev deployments and SSH tunnels', () => {
+        expect(getDefaultReforgedServerUrl({
+            protocol: 'http:',
+            hostname: '127.0.0.1',
+            port: '38180',
+            origin: 'http://127.0.0.1:38180',
+        })).toBe('http://127.0.0.1:38180');
     });
 
     it('uses the current origin for public same-domain deployments', () => {

@@ -11,7 +11,7 @@ import {
     usePresetStore,
     useWorldbookStore,
 } from '@/stores';
-import { resetConnectionSecretVaultForTest } from '@/stores/connectionStore';
+import { MANAGED_PROVIDER_BASE_URL, resetConnectionSecretVaultForTest } from '@/stores/connectionStore';
 
 // node 环境无 localStorage:装一个 Map shim,同时让密钥分离断言可观测。
 const localStorageShim = (() => {
@@ -114,7 +114,7 @@ describe('app persistence round trip', () => {
         expect(worldbookB.worldbooks).toHaveLength(1);
         expect(worldbookB.selectedWorldbookId).toBe('wb-1');
 
-        expect(connectionB.draft.baseUrl).toBe('https://api.example.com/v1');
+        expect(connectionB.draft.baseUrl).toBe(MANAGED_PROVIDER_BASE_URL);
         expect(connectionB.appliedDraft).not.toBeNull();
         expect(connectionB.appliedDraft?.apiKey.hasValue).toBe(true);
         expect(connectionB.transportMode).toBe('reforged-backend');

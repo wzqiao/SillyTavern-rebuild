@@ -1,0 +1,78 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+upstream st_reforged_backend {
+    server reforged-backend:8787;
+}
+
+upstream st_legacy_runtime {
+    server legacy-runtime:8000;
+}
+
+server {
+    listen 8080;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    client_max_body_size 10m;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    location /api/reforged/ {
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header X-Reforged-Token "${REFORGED_TOKEN}";
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+        proxy_buffering off;
+        proxy_pass http://st_reforged_backend;
+    }
+
+    location = /__st_runtime {
+        return 308 /__st_runtime/;
+    }
+
+    location /__st_runtime/ {
+        rewrite ^/__st_runtime/?(.*)$ /$1 break;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 1h;
+        proxy_pass http://st_legacy_runtime;
+    }
+
+    location = /script.js { proxy_pass http://st_legacy_runtime; }
+    location = /lib.js { proxy_pass http://st_legacy_runtime; }
+    location = /style.css { proxy_pass http://st_legacy_runtime; }
+    location = /manifest.json { proxy_pass http://st_legacy_runtime; }
+    location = /favicon.ico { try_files $uri @legacy_runtime; }
+
+    location /lib/ { proxy_pass http://st_legacy_runtime; }
+    location /scripts/ { proxy_pass http://st_legacy_runtime; }
+    location /css/ { proxy_pass http://st_legacy_runtime; }
+    location /webfonts/ { proxy_pass http://st_legacy_runtime; }
+    location /img/ { proxy_pass http://st_legacy_runtime; }
+    location /backgrounds/ { proxy_pass http://st_legacy_runtime; }
+    location /characters/ { proxy_pass http://st_legacy_runtime; }
+    location /User%20Avatars/ { proxy_pass http://st_legacy_runtime; }
+    location /extensions/ { proxy_pass http://st_legacy_runtime; }
+    location /csrf-token { proxy_pass http://st_legacy_runtime; }
+
+    location /assets/ {
+        try_files $uri @legacy_runtime;
+    }
+
+    location @legacy_runtime {
+        proxy_pass http://st_legacy_runtime;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

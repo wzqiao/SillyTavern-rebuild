@@ -1,0 +1,25 @@
+dataRoot: ./data
+listen: true
+listenAddress:
+  ipv4: 0.0.0.0
+  ipv6: '[::]'
+protocol:
+  ipv4: true
+  ipv6: false
+browserLaunch:
+  enabled: false
+  browser: 'default'
+  hostname: 'auto'
+  port: -1
+  avoidLocalhost: false
+port: 8000
+heartbeatInterval: 30
+whitelistMode: false
+basicAuthMode: false
+enableUserAccounts: false
+disableCsrfProtection: false
+securityOverride: true
+hostWhitelist:
+  enabled: false
+  scan: true
+  hosts: []

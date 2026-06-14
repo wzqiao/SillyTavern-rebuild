@@ -195,9 +195,10 @@ export async function createAppPersistenceController(
         connectionStore.$patch({
             draft: connectionState.draft as never,
             appliedDraft: connectionState.appliedDraft as never,
-            transportMode: (connectionState.transportMode as never) ?? 'auto',
+            transportMode: (connectionState.transportMode as never) ?? 'reforged-backend',
             nextLocalId: connectionState.nextLocalId,
         });
+        connectionStore.enforceManagedDefaults();
     }
 
     // 密钥只走本机通道;主网关里的 secrets 字段是 B2 之前的旧数据,迁移一次后不再写回。

@@ -1,0 +1,78 @@
+services:
+  legacy-runtime:
+    build:
+      context: ./source
+      dockerfile: Dockerfile
+    image: st-reforged-full-app:local
+    container_name: st-reforged-full-legacy-runtime
+    hostname: st-reforged-full-legacy-runtime
+    environment:
+      - NODE_ENV=production
+      - FORCE_COLOR=1
+      - SILLYTAVERN_HEARTBEATINTERVAL=30
+    ports:
+      - "127.0.0.1:${ST_REFORGED_LEGACY_PORT:-38100}:8000"
+    volumes:
+      - "./legacy-config:/home/node/app/config"
+      - "./legacy-data:/home/node/app/data"
+      - "./legacy-plugins:/home/node/app/plugins"
+      - "./legacy-extensions:/home/node/app/public/scripts/extensions/third-party"
+    healthcheck:
+      test: ["CMD", "node", "src/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+
+  reforged-backend:
+    build:
+      context: ./source
+      dockerfile: Dockerfile
+    image: st-reforged-full-app:local
+    container_name: st-reforged-full-backend
+    hostname: st-reforged-full-backend
+    entrypoint: ["tini", "--"]
+    command: ["node", "reforged-server/server.js"]
+    environment:
+      - NODE_ENV=production
+      - FORCE_COLOR=1
+      - REFORGED_PORT=8787
+      - REFORGED_HOST=0.0.0.0
+      - REFORGED_TOKEN=${REFORGED_TOKEN:?set REFORGED_TOKEN}
+      - REFORGED_ALLOWED_ORIGIN=${REFORGED_ALLOWED_ORIGIN:-http://127.0.0.1:38180,http://localhost:38180}
+    ports:
+      - "127.0.0.1:${ST_REFORGED_BACKEND_PORT:-38187}:8787"
+    volumes:
+      - "./reforged-data:/home/node/app/reforged-server/data"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/api/reforged/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 5
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: st-reforged-full-web:local
+    container_name: st-reforged-full-web
+    hostname: st-reforged-full-web
+    environment:
+      - REFORGED_TOKEN=${REFORGED_TOKEN:?set REFORGED_TOKEN}
+    ports:
+      - "127.0.0.1:${ST_REFORGED_WEB_PORT:-38180}:8080"
+    depends_on:
+      legacy-runtime:
+        condition: service_healthy
+      reforged-backend:
+        condition: service_healthy
+    restart: unless-stopped

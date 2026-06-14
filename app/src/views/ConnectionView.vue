@@ -8,11 +8,10 @@ import type {
     ReforgedConnectionRuntimeHandoffIssue,
     ReforgedConnectionRuntimeHandoffIssueCode,
     ReforgedConnectionRuntimeHandoffStatus,
-    ReforgedConnectionTransportMode,
     ReforgedConnectionValidationIssue,
 } from '@/contracts/connection';
 import { useI18n } from '@/i18n';
-import { setConnectionDraftApiKeySecret, useConnectionStore } from '@/stores/connectionStore';
+import { MANAGED_PROVIDER_DISPLAY_URL, setConnectionDraftApiKeySecret, useConnectionStore } from '@/stores/connectionStore';
 import { usePresetStore } from '@/stores/presetStore';
 import { Button, Input, Select } from '@/ui-kit';
 
@@ -147,29 +146,6 @@ const providerOptions = computed<ReforgedSelectOption[]>(() => [
     },
 ]);
 
-const transportOptions = computed<ReforgedSelectOption[]>(() => [
-    {
-        value: 'auto',
-        label: t.value.connection.transport.auto,
-        description: t.value.connection.transport.autoDescription,
-    },
-    {
-        value: 'reforged-backend',
-        label: t.value.connection.transport.reforged,
-        description: t.value.connection.transport.reforgedDescription,
-    },
-    {
-        value: 'browser-direct',
-        label: t.value.connection.transport.direct,
-        description: t.value.connection.transport.directDescription,
-    },
-    {
-        value: 'legacy-proxy',
-        label: t.value.connection.transport.proxy,
-        description: t.value.connection.transport.proxyDescription,
-    },
-]);
-
 const statusTone: Record<ConnectionStatus, ReforgedUiTone> = {
     empty: 'neutral',
     incomplete: 'danger',
@@ -274,16 +250,6 @@ watch(
 
 function updateDraft(input: Partial<Pick<ReforgedConnectionDraft, 'baseUrl' | 'model'>>): void {
     connectionStore.patchDraft(input);
-}
-
-function normalizeDraftFields(): void {
-    connectionStore.normalizeDraftFields();
-}
-
-function updateProvider(value: string): void {
-    if (value === 'openai-compatible') {
-        connectionStore.patchDraft({ provider: value });
-    }
 }
 
 function updateApiKey(value: string): void {
@@ -450,31 +416,17 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
             </div>
 
             <div class="grid gap-4">
-                <Select
-                    :model-value="connectionStore.draft.provider"
-                    :options="providerOptions"
-                    :label="t.connection.fields.provider"
-                    :placeholder="t.connection.fields.providerPlaceholder"
-                    required
-                    @update:model-value="updateProvider"
-                />
-
-                <Input
-                    :model-value="connectionStore.draft.baseUrl"
-                    :error="fieldErrors.baseUrl"
-                    :label="t.connection.fields.baseUrl"
-                    :placeholder="t.connection.fields.baseUrlPlaceholder"
-                    inputmode="url"
-                    autocomplete="off"
-                    required
-                    data-testid="connection-base-url-input"
-                    @update:model-value="updateDraft({ baseUrl: $event })"
-                    @blur="normalizeDraftFields"
-                />
-
-                <p class="-mt-2 text-xs leading-5 text-neutral-500">
-                    {{ t.connection.fields.baseUrlHint }}
-                </p>
+                <div class="rounded-2xl border border-cyan-300/20 bg-cyan-300/10 px-4 py-3 text-sm leading-6 text-cyan-50">
+                    <p class="text-xs font-semibold uppercase text-cyan-200">
+                        {{ t.connection.managedEndpoint.label }}
+                    </p>
+                    <p class="mt-1 font-mono text-sm text-white">
+                        {{ MANAGED_PROVIDER_DISPLAY_URL }}
+                    </p>
+                    <p class="mt-1 text-xs leading-5 text-cyan-100/80">
+                        {{ t.connection.managedEndpoint.description }}
+                    </p>
+                </div>
 
                 <Input
                     :model-value="apiKeyInput"
@@ -603,24 +555,6 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                 </ul>
             </div>
         </form>
-
-        <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/82 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.32)] sm:p-5">
-            <div class="mb-4">
-                <p class="text-sm font-semibold text-white">
-                    {{ t.connection.transport.title }}
-                </p>
-                <p class="mt-1 text-sm leading-6 text-neutral-400">
-                    {{ t.connection.transport.description }}
-                </p>
-            </div>
-
-            <Select
-                :model-value="connectionStore.transportMode"
-                :options="transportOptions"
-                :label="t.connection.transport.title"
-                @update:model-value="connectionStore.setTransportMode($event as ReforgedConnectionTransportMode)"
-            />
-        </section>
 
         <section class="rounded-[1.75rem] border border-white/10 bg-neutral-900/82 p-4 shadow-[0_24px_120px_rgba(0,0,0,0.32)] sm:p-5">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

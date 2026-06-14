@@ -64,11 +64,10 @@ export const appRoutes: RouteRecordRaw[] = [
   },
   {
     path: '/dev',
-    name: 'dev-home',
-    component: () => import('@/views/HomeView.vue'),
+    redirect: { name: 'chat' },
     meta: {
-      title: 'Dev Workbench',
-      description: 'Legacy M0 workbench preserved for debugging while B3 splits pages into dedicated views.',
+      title: 'Chat',
+      description: 'Legacy M0 workbench is no longer exposed in production routing.',
     },
   },
   {

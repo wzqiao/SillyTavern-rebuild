@@ -1,6 +1,12 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { resetConnectionSecretVaultForTest, setConnectionDraftApiKeySecret, useConnectionStore } from './connectionStore';
+import {
+    DEFAULT_PROVIDER_MODEL,
+    MANAGED_PROVIDER_BASE_URL,
+    resetConnectionSecretVaultForTest,
+    setConnectionDraftApiKeySecret,
+    useConnectionStore,
+} from './connectionStore';
 
 describe('useConnectionStore', () => {
     beforeEach(() => {
@@ -8,24 +14,24 @@ describe('useConnectionStore', () => {
         setActivePinia(createPinia());
     });
 
-    it('starts with an empty memory-only draft', () => {
+    it('starts with the managed gateway draft and no API key', () => {
         const store = useConnectionStore();
 
         expect(store.draft).toEqual({
             provider: 'openai-compatible',
-            baseUrl: '',
-            model: '',
+            baseUrl: MANAGED_PROVIDER_BASE_URL,
+            model: DEFAULT_PROVIDER_MODEL,
             apiKey: {
                 hasValue: false,
                 maskedValue: '',
             },
         });
         expect(store.appliedDraft).toBeNull();
-        expect(store.draftStatus).toBe('empty');
+        expect(store.draftStatus).toBe('incomplete');
         expect(store.isDraftComplete).toBe(false);
         expect(store.hasAppliedDraft).toBe(false);
         expect(store.generationApi).toEqual({ api: 'openai' });
-        expect(store.transportMode).toBe('auto');
+        expect(store.transportMode).toBe('reforged-backend');
     });
 
     it('patches and trims the draft without applying it', () => {
@@ -39,7 +45,7 @@ describe('useConnectionStore', () => {
 
         expect(store.draft).toEqual({
             provider: 'openai-compatible',
-            baseUrl: 'https://api.example.test/v1/',
+            baseUrl: MANAGED_PROVIDER_BASE_URL,
             model: 'gpt-example',
             apiKey: {
                 hasValue: true,
@@ -57,20 +63,15 @@ describe('useConnectionStore', () => {
         })).not.toContain('sk-test-123456');
     });
 
-    it('normalizes pasted base URLs on commit actions', () => {
+    it('keeps the managed API gateway regardless of pasted base URLs', () => {
         const cases = [
-            ['www.rua.chat', 'https://www.rua.chat/v1'],
-            ['https://www.rua.chat/', 'https://www.rua.chat/v1'],
-            ['https://www.rua.chat/v1/', 'https://www.rua.chat/v1'],
-            ['https://www.rua.chat/v1/models', 'https://www.rua.chat/v1'],
-            ['https://www.rua.chat/v1/chat/completions', 'https://www.rua.chat/v1'],
-            ['https://www.rua.chat/chat/completions', 'https://www.rua.chat/v1'],
-            ['https://gateway.example/openai/v1/chat/completions?debug=1#top', 'https://gateway.example/openai/v1'],
-            ['https://gateway.example/api', 'https://gateway.example/api'],
-            ['localhost:1234/v1/models', 'http://localhost:1234/v1'],
-        ] satisfies Array<[string, string]>;
+            'www.rua.chat',
+            'https://www.rua.chat/',
+            'https://gateway.example/openai/v1/chat/completions?debug=1#top',
+            'localhost:1234/v1/models',
+        ];
 
-        for (const [input, expected] of cases) {
+        for (const input of cases) {
             const store = useConnectionStore();
 
             store.patchDraft({
@@ -79,24 +80,17 @@ describe('useConnectionStore', () => {
             });
             store.normalizeDraftFields();
 
-            expect(store.draft.baseUrl).toBe(expected);
+            expect(store.draft.baseUrl).toBe(MANAGED_PROVIDER_BASE_URL);
         }
     });
 
     it('reports validation errors for incomplete drafts', () => {
         const store = useConnectionStore();
 
-        store.patchDraft({
-            baseUrl: 'localhost:1234/v1',
-            model: '',
-        });
+        store.patchDraft({ model: '' });
 
         expect(store.draftStatus).toBe('incomplete');
         expect(store.draftErrors).toEqual([
-            {
-                field: 'model',
-                message: 'Model id is required.',
-            },
             {
                 field: 'apiKey',
                 message: 'API key is required before this draft can be applied.',
@@ -105,7 +99,7 @@ describe('useConnectionStore', () => {
         expect(store.applyDraft()).toEqual({
             ok: false,
             issues: store.draftErrors,
-            message: 'Model id is required.',
+            message: 'API key is required before this draft can be applied.',
         });
         expect(store.appliedDraft).toBeNull();
     });
@@ -123,7 +117,7 @@ describe('useConnectionStore', () => {
             appliedDraft: {
                 id: 'connection-draft-1',
                 provider: 'openai-compatible',
-                baseUrl: 'https://api.example.test/v1',
+                baseUrl: MANAGED_PROVIDER_BASE_URL,
                 model: 'gpt-example',
                 apiKey: {
                     hasValue: true,
@@ -143,27 +137,24 @@ describe('useConnectionStore', () => {
         store.setTransportMode('reforged-backend');
 
         expect(store.runtimeHandoff()).toMatchObject({
-            status: 'empty',
+            status: 'incomplete',
             canAttempt: false,
             connection: null,
             takeRuntimeConnection: null,
             generation: { api: 'openai' },
             issues: [{
-                code: 'draft-empty',
+                code: 'draft-incomplete',
+                field: 'apiKey',
             }],
         });
 
-        store.patchDraft({
-            baseUrl: 'localhost:5000/v1',
-            model: '',
-        });
+        store.patchDraft({ model: '' });
         expect(store.runtimeHandoff()).toMatchObject({
             status: 'incomplete',
             canAttempt: false,
             connection: null,
             takeRuntimeConnection: null,
             issues: [
-                { code: 'draft-incomplete', field: 'model' },
                 { code: 'draft-incomplete', field: 'apiKey' },
             ],
         });
@@ -191,7 +182,7 @@ describe('useConnectionStore', () => {
             connection: {
                 id: 'connection-draft-1',
                 provider: 'openai-compatible',
-                baseUrl: 'https://api.example.test/v1',
+                baseUrl: MANAGED_PROVIDER_BASE_URL,
                 model: 'gpt-example',
                 apiKey: {
                     hasValue: true,
@@ -211,7 +202,7 @@ describe('useConnectionStore', () => {
             generation: { api: 'openai' },
             connection: {
                 id: 'connection-draft-1',
-                baseUrl: 'https://api.example.test/v1',
+                baseUrl: MANAGED_PROVIDER_BASE_URL,
                 model: 'gpt-example',
                 api: 'openai',
             },
@@ -231,7 +222,7 @@ describe('useConnectionStore', () => {
             generation: { api: 'openai' },
             connection: {
                 id: 'connection-draft-1',
-                baseUrl: 'https://api.example.test/v1',
+                baseUrl: MANAGED_PROVIDER_BASE_URL,
                 model: 'gpt-example',
                 api: 'openai',
             },
@@ -241,7 +232,7 @@ describe('useConnectionStore', () => {
         expect(JSON.stringify(readyHandoff)).not.toContain('sk-test-123456');
         expect(readyHandoff.takeRuntimeConnection?.()).toMatchObject({
             id: 'connection-draft-1',
-            baseUrl: 'https://api.example.test/v1',
+            baseUrl: MANAGED_PROVIDER_BASE_URL,
             model: 'gpt-example',
             api: 'openai',
             apiKey: 'sk-test-123456',
@@ -264,7 +255,7 @@ describe('useConnectionStore', () => {
         expect(store.transportMode).toBe('reforged-backend');
 
         store.clearAll();
-        expect(store.transportMode).toBe('auto');
+        expect(store.transportMode).toBe('reforged-backend');
     });
 
     it('requires re-applying edited drafts before runtime handoff can be attempted again', () => {
@@ -339,7 +330,7 @@ describe('useConnectionStore', () => {
         store.resetDraft();
         expect(store.draft).toEqual({
             provider: 'openai-compatible',
-            baseUrl: 'https://api.example.test/v1',
+            baseUrl: MANAGED_PROVIDER_BASE_URL,
             model: 'model-a',
             apiKey: {
                 hasValue: true,
@@ -371,8 +362,8 @@ describe('useConnectionStore', () => {
         store.clearAll();
         expect(store.draft).toEqual({
             provider: 'openai-compatible',
-            baseUrl: '',
-            model: '',
+            baseUrl: MANAGED_PROVIDER_BASE_URL,
+            model: DEFAULT_PROVIDER_MODEL,
             apiKey: {
                 hasValue: false,
                 maskedValue: '',
@@ -422,7 +413,7 @@ describe('probeConnection', () => {
         expect(calls[0].method).toBe('POST');
         expect(calls[0].auth).toBe('Bearer sk-probe-secret');
         expect(JSON.parse(calls[0].body ?? '{}')).toEqual({
-            baseUrl: 'https://api.example.com/v1',
+            baseUrl: MANAGED_PROVIDER_BASE_URL,
         });
         expect(store.probing).toBe(false);
     });
@@ -441,13 +432,14 @@ describe('probeConnection', () => {
         expect(result.ok).toBe(true);
         expect(result.models).toEqual(['direct-model']);
         expect(calls).toEqual([{
-            url: 'https://api.example.com/v1/models',
+            url: `${MANAGED_PROVIDER_BASE_URL}/models`,
             auth: 'Bearer sk-probe-secret',
         }]);
     });
 
     it('falls back to browser discovery in auto mode only when the Reforged backend is unreachable', async () => {
         const store = prepareDraft();
+        store.setTransportMode('auto');
         const calls: string[] = [];
         const fetcher = (async (url: RequestInfo | URL) => {
             calls.push(String(url));
@@ -463,7 +455,7 @@ describe('probeConnection', () => {
         expect(result.models).toEqual(['direct-fallback']);
         expect(calls).toEqual([
             'http://127.0.0.1:8787/api/reforged/models',
-            'https://api.example.com/v1/models',
+            `${MANAGED_PROVIDER_BASE_URL}/models`,
         ]);
     });
 

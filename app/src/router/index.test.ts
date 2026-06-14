@@ -36,10 +36,10 @@ describe('app router', () => {
       'Settings',
     ]);
 
-    expect(appRoutes.find((route) => route.path === '/dev')?.name).toBe('dev-home');
+    expect(appRoutes.find((route) => route.path === '/dev')?.redirect).toEqual({ name: 'chat' });
   });
 
-  it('redirects root to chat and keeps the debug route reachable', async () => {
+  it('redirects root and retired debug routes to chat', async () => {
     const router = createAppRouter();
 
     await router.push('/');
@@ -50,6 +50,6 @@ describe('app router', () => {
     expect(router.currentRoute.value.name).toBe('settings');
 
     await router.push('/dev');
-    expect(router.currentRoute.value.name).toBe('dev-home');
+    expect(router.currentRoute.value.name).toBe('chat');
   });
 });

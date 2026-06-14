@@ -30,6 +30,10 @@ interface ConnectionStoreState {
 
 const connectionSecretVault = new Map<string, string>();
 const DRAFT_SECRET_SLOT = 'draft';
+export const MANAGED_PROVIDER_DISPLAY_URL = 'https://api.rua.chat/';
+export const MANAGED_PROVIDER_BASE_URL = 'https://api.rua.chat/v1';
+export const DEFAULT_PROVIDER_MODEL = 'gpt-4.1-compatible';
+const DEFAULT_TRANSPORT_MODE: ReforgedConnectionTransportMode = 'reforged-backend';
 
 type DraftNormalizeInput = Omit<ReforgedConnectionDraft, 'apiKey'> & {
     apiKey: ReforgedConnectionDraft['apiKey'];
@@ -37,8 +41,8 @@ type DraftNormalizeInput = Omit<ReforgedConnectionDraft, 'apiKey'> & {
 
 const emptyDraft = (): ReforgedConnectionDraft => ({
     provider: 'openai-compatible',
-    baseUrl: '',
-    model: '',
+    baseUrl: MANAGED_PROVIDER_BASE_URL,
+    model: DEFAULT_PROVIDER_MODEL,
     apiKey: emptySecretMetadata(),
 });
 
@@ -46,7 +50,7 @@ export const useConnectionStore = defineStore('connection', {
     state: (): ConnectionStoreState => ({
         draft: emptyDraft(),
         appliedDraft: null,
-        transportMode: 'auto',
+        transportMode: DEFAULT_TRANSPORT_MODE,
         nextLocalId: 1,
         availableModels: [],
         lastProbe: null,
@@ -99,7 +103,7 @@ export const useConnectionStore = defineStore('connection', {
 
     actions: {
         patchDraft(input: ReforgedConnectionDraftPatch): void {
-            this.draft = normalizeDraftForEditing({
+            this.draft = withManagedDraftDefaults({
                 ...this.draft,
                 ...input,
                 provider: 'openai-compatible',
@@ -108,6 +112,16 @@ export const useConnectionStore = defineStore('connection', {
 
         normalizeDraftFields(): void {
             this.draft = normalizeDraft(this.draft);
+        },
+
+        enforceManagedDefaults(): void {
+            this.draft = withManagedDraftDefaults(this.draft);
+            if (this.appliedDraft) {
+                this.appliedDraft = withManagedAppliedDraftDefaults(this.appliedDraft);
+            }
+            if (this.transportMode === 'auto' || this.transportMode === 'browser-direct' || this.transportMode === 'legacy-proxy') {
+                this.transportMode = DEFAULT_TRANSPORT_MODE;
+            }
         },
 
         setTransportMode(mode: ReforgedConnectionTransportMode): void {
@@ -247,7 +261,7 @@ export const useConnectionStore = defineStore('connection', {
             clearAllVaultSecrets();
             this.draft = emptyDraft();
             this.appliedDraft = null;
-            this.transportMode = 'auto';
+            this.transportMode = DEFAULT_TRANSPORT_MODE;
         },
     },
 });
@@ -281,99 +295,25 @@ export function restoreConnectionSecretsFromPersistence(secrets: Record<string, 
 }
 
 function normalizeDraft(draft: DraftNormalizeInput): ReforgedConnectionDraft {
+    return withManagedDraftDefaults(draft);
+}
+
+function withManagedDraftDefaults(draft: DraftNormalizeInput): ReforgedConnectionDraft {
     return {
         provider: 'openai-compatible',
-        baseUrl: normalizeBaseUrlInput(draft.baseUrl),
-        model: draft.model.trim(),
+        baseUrl: MANAGED_PROVIDER_BASE_URL,
+        model: draft.model.trim() || DEFAULT_PROVIDER_MODEL,
         apiKey: draft.apiKey,
     };
 }
 
-function normalizeDraftForEditing(draft: DraftNormalizeInput): ReforgedConnectionDraft {
+function withManagedAppliedDraftDefaults(draft: ReforgedAppliedConnectionDraft): ReforgedAppliedConnectionDraft {
     return {
+        ...draft,
         provider: 'openai-compatible',
-        baseUrl: draft.baseUrl.trim(),
-        model: draft.model.trim(),
-        apiKey: draft.apiKey,
+        baseUrl: MANAGED_PROVIDER_BASE_URL,
+        model: draft.model.trim() || DEFAULT_PROVIDER_MODEL,
     };
-}
-
-function normalizeBaseUrlInput(value: string): string {
-    const trimmed = value.trim();
-    if (!trimmed) {
-        return '';
-    }
-
-    const hasExplicitScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed);
-    if (hasExplicitScheme && !/^https?:\/\//i.test(trimmed)) {
-        return trimmed.replace(/\/+$/g, '');
-    }
-
-    const withProtocol = withDefaultWebProtocol(trimmed);
-    let url: URL;
-    try {
-        url = new URL(withProtocol);
-    } catch {
-        return trimmed.replace(/\/+$/g, '');
-    }
-
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        return trimmed.replace(/\/+$/g, '');
-    }
-
-    url.hash = '';
-    url.search = '';
-
-    const segments = url.pathname.split('/').filter(Boolean);
-    removeKnownEndpointSuffix(segments);
-    if (segments.length === 0) {
-        segments.push('v1');
-    }
-
-    url.pathname = `/${segments.join('/')}`;
-    return url.toString().replace(/\/+$/g, '');
-}
-
-function withDefaultWebProtocol(value: string): string {
-    if (/^\/\//.test(value)) {
-        return `https:${value}`;
-    }
-
-    if (/^https?:\/\//i.test(value)) {
-        return value;
-    }
-
-    return `${shouldDefaultToHttp(value) ? 'http' : 'https'}://${value}`;
-}
-
-function shouldDefaultToHttp(value: string): boolean {
-    return /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::|\/|$)/i.test(value);
-}
-
-function removeKnownEndpointSuffix(segments: string[]): void {
-    const lower = segments.map((segment) => segment.toLowerCase());
-    const endpointSuffixes = [
-        ['chat', 'completions'],
-        ['images', 'generations'],
-        ['images', 'edits'],
-        ['audio', 'speech'],
-        ['audio', 'transcriptions'],
-        ['audio', 'translations'],
-        ['completions'],
-        ['responses'],
-        ['embeddings'],
-        ['models'],
-    ];
-
-    for (const suffix of endpointSuffixes) {
-        if (
-            lower.length >= suffix.length &&
-            suffix.every((segment, index) => lower[lower.length - suffix.length + index] === segment)
-        ) {
-            segments.splice(segments.length - suffix.length, suffix.length);
-            return;
-        }
-    }
 }
 
 function createRuntimeHandoff(input: {

@@ -169,6 +169,9 @@ export function createReforgedServer(options = {}) {
                 return;
             }
             const status = error instanceof PublicHttpError ? error.status : 500;
+            if (status === 413) {
+                response.setHeader('Connection', 'close');
+            }
             writeJson(response, status, {
                 error: error instanceof Error ? error.message : String(error),
             });
@@ -1176,14 +1179,17 @@ const MAX_JSON_BODY_BYTES = 2 * 1024 * 1024;
 async function readJsonBody(request) {
     const chunks = [];
     let totalBytes = 0;
+    let exceededLimit = false;
     for await (const chunk of request) {
         totalBytes += chunk.length;
         if (totalBytes > MAX_JSON_BODY_BYTES) {
-            // 不立刻 destroy:先让 413 响应写回客户端,socket 随响应关闭。
-            request.pause();
-            throw new PublicHttpError(413, 'Request body too large.');
+            exceededLimit = true;
+            continue;
         }
         chunks.push(chunk);
+    }
+    if (exceededLimit) {
+        throw new PublicHttpError(413, 'Request body too large.');
     }
     const text = Buffer.concat(chunks).toString('utf8');
     return text ? JSON.parse(text) : {};
@@ -1509,12 +1515,13 @@ class PublicHttpError extends Error {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
     const port = Number(process.env.REFORGED_PORT ?? DEFAULT_PORT);
+    const host = process.env.REFORGED_HOST ?? '127.0.0.1';
     const server = createReforgedServer({
         generationMode: process.env.REFORGED_GENERATION_MODE ?? 'proxy',
         token: process.env.REFORGED_TOKEN,
         allowedOrigins: process.env.REFORGED_ALLOWED_ORIGIN,
     });
-    server.listen(port, '127.0.0.1').then((address) => {
+    server.listen(port, host).then((address) => {
         console.log(`[st-reforged] backend listening on ${JSON.stringify(address)}`);
     });
 }

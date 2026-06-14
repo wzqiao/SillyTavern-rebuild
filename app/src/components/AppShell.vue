@@ -42,11 +42,6 @@ const ICON_PATHS: Record<string, string[]> = {
     'M7 10m-1.6 0a1.6 1.6 0 103.2 0a1.6 1.6 0 10-3.2 0',
     'M10.8 14m-1.6 0a1.6 1.6 0 103.2 0a1.6 1.6 0 10-3.2 0',
   ],
-  dev: [
-    'M3.5 4.5h13v11h-13z',
-    'M6.5 8l2.4 2.4L6.5 12.8',
-    'M10.8 13h2.7',
-  ],
   multiplayer: [
     'M10 4a3 3 0 100 6 3 3 0 000-6z',
     'M4.5 16.5c.8-2.6 2.8-4 5.5-4s4.7 1.4 5.5 4',
@@ -103,12 +98,10 @@ const primaryNavigation = computed<PrimaryNavigationItem[]>(() => [
 const currentNavigationItem = computed(() => primaryNavigation.value.find((item) => isCurrentPath(item.to)) ?? null);
 const currentTitle = computed(() => (
   currentNavigationItem.value?.label ??
-  (route.name === 'dev-home' ? t.value.nav.dev : null) ??
   (typeof route.meta.title === 'string' ? route.meta.title : t.value.app.name)
 ));
 const currentDescription = computed(() => (
   currentNavigationItem.value?.description ??
-  (route.name === 'dev-home' ? t.value.shell.debugDescription : null) ??
   (typeof route.meta.description === 'string' ? route.meta.description : t.value.app.tagline)
 ));
 const isChatRoute = computed(() => isCurrentPath('/chat'));
@@ -231,35 +224,6 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
           />
           <span class="rail-flyout">多人房间</span>
         </button>
-
-        <RouterLink
-          to="/dev"
-          class="rail-item relative mt-2 flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
-          :class="route.path.startsWith('/dev')
-            ? 'rail-item--active border-amber-200/45 bg-amber-200/14 text-amber-50'
-            : 'border-white/8 bg-white/[0.04] text-neutral-400 hover:border-white/18 hover:bg-white/[0.08] hover:text-neutral-100'"
-          :aria-label="t.nav.dev"
-          @mouseenter="emitBeacon($event, true)"
-          @mouseleave="emitBeacon($event, false)"
-        >
-          <svg
-            viewBox="0 0 20 20"
-            class="h-5 w-5"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.6"
-            aria-hidden="true"
-          >
-            <path
-              v-for="(pathData, pathIndex) in ICON_PATHS.dev"
-              :key="pathIndex"
-              :d="pathData"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <span class="rail-flyout">{{ t.nav.dev }}</span>
-        </RouterLink>
       </aside>
 
       <div class="flex min-w-0 flex-1 flex-col" :class="isChatRoute ? 'h-dvh min-h-0' : 'min-h-dvh'">
@@ -276,12 +240,6 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
                 <ScrambleText :text="currentTitle" />
               </h1>
             </div>
-            <RouterLink
-              to="/dev"
-              class="inline-flex min-h-10 shrink-0 items-center rounded-md border border-white/12 bg-white/[0.06] px-4 py-2 text-sm font-semibold text-white"
-            >
-              {{ t.shell.debugShort }}
-            </RouterLink>
           </div>
         </header>
 

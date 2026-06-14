@@ -20,7 +20,7 @@ export interface LegacyRuntimeHostOptions {
 }
 
 const DEFAULT_RUNTIME_PATH = '/__st_runtime/';
-const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 let runtimeFrame: HTMLIFrameElement | null = null;
 let runtimeModulesPromise: Promise<LegacyRuntimeModules> | null = null;
@@ -55,7 +55,7 @@ export function resetLegacyRuntimeHost(): void {
 
 async function createLegacyRuntimeHost(options: LegacyRuntimeHostOptions): Promise<LegacyRuntimeModules> {
   const frame = ensureRuntimeFrame(options.runtimePath ?? DEFAULT_RUNTIME_PATH);
-  await waitForIframeLoad(frame, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  await waitForRuntimeReady(frame, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   return injectRuntimeModuleBridge(frame, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 }
 
@@ -83,14 +83,33 @@ function ensureRuntimeFrame(runtimePath: string): HTMLIFrameElement {
   return frame;
 }
 
-function waitForIframeLoad(frame: HTMLIFrameElement, timeoutMs: number): Promise<void> {
+function waitForRuntimeReady(frame: HTMLIFrameElement, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
+    let sawRuntimeDocument = false;
+    const isReady = () => {
+      try {
+        const runtimeWindow = frame.contentWindow as LegacyRuntimeWindow | null;
+        const runtimeDocument = frame.contentDocument;
+        const hasRuntimeDocument = Boolean(runtimeDocument?.body && runtimeDocument.location.href !== 'about:blank');
+        sawRuntimeDocument ||= hasRuntimeDocument;
+        return Boolean(
+          hasRuntimeDocument &&
+          (runtimeDocument?.readyState === 'complete' || typeof runtimeWindow?.SillyTavern?.getContext === 'function')
+        );
+      } catch {
+        return false;
+      }
+    };
     const cleanup = () => {
       window.clearTimeout(timeout);
-      frame.removeEventListener('load', handleLoad);
+      window.clearInterval(poll);
       frame.removeEventListener('error', handleError);
     };
-    const handleLoad = () => {
+    const handleReady = () => {
+      if (!isReady()) {
+        return;
+      }
+
       cleanup();
       resolve();
     };
@@ -100,11 +119,14 @@ function waitForIframeLoad(frame: HTMLIFrameElement, timeoutMs: number): Promise
     };
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error(`SillyTavern runtime host did not load within ${timeoutMs}ms.`));
+      reject(new Error(sawRuntimeDocument
+        ? `SillyTavern runtime host did not become ready within ${timeoutMs}ms.`
+        : 'SillyTavern runtime host is not same-origin or has no document body.'));
     }, timeoutMs);
+    const poll = window.setInterval(handleReady, 100);
 
-    frame.addEventListener('load', handleLoad, { once: true });
     frame.addEventListener('error', handleError, { once: true });
+    handleReady();
   });
 }
 
