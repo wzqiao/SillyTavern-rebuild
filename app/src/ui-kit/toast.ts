@@ -29,14 +29,14 @@ export function resolveToastStackClasses(
 
 export function resolveToastClasses(tone: ReforgedUiTone = 'neutral'): string {
     return cx(
-        'pointer-events-auto w-full max-w-sm rounded-[1.35rem] border p-4 shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl',
+        'pointer-events-auto w-full max-w-sm rounded-[1.5rem] border p-4 shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl',
         toastToneClasses[tone],
     );
 }
 
 export function resolveToastActionClasses(): string {
     return cx(
-        'inline-flex min-h-9 items-center justify-center rounded-xl px-3 text-sm font-medium transition duration-200 ease-out',
+        'inline-flex min-h-9 items-center justify-center rounded-[1.25rem] px-3 text-sm font-medium transition duration-200 ease-out',
         'bg-white/10 text-inherit hover:bg-white/14',
         focusRingClass,
     );

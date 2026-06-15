@@ -14,9 +14,9 @@ const buttonVariantClasses: Record<ButtonVariant, string> = {
 };
 
 const buttonSizeClasses: Record<ButtonSize, string> = {
-    sm: 'min-h-10 rounded-md px-3.5 text-sm',
-    md: 'min-h-12 rounded-lg px-4 text-sm',
-    lg: 'min-h-14 rounded-lg px-5 text-base',
+    sm: 'min-h-10 rounded-[1.25rem] px-3.5 text-sm',
+    md: 'min-h-12 rounded-[1.25rem] px-4 text-sm',
+    lg: 'min-h-14 rounded-[1.5rem] px-5 text-base',
 };
 
 export interface ResolveButtonClassOptions {

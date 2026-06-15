@@ -287,7 +287,7 @@ function resetLocalPreview(): void {
                         tone="warning"
                     >
                         <div class="grid gap-4">
-                            <div class="rounded-[1.25rem] border border-amber-300/20 bg-amber-300/10 p-4">
+                            <div class="rounded-[1.5rem] border border-amber-300/20 bg-amber-300/10 p-4">
                                 <p class="text-sm font-semibold text-amber-100">
                                     {{ t.settings.notConnectedTitle }}
                                 </p>
@@ -328,7 +328,7 @@ function resetLocalPreview(): void {
 
                 <div
                     v-else-if="selectedGroupId === 'identity'"
-                    class="grid gap-4 rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4"
+                    class="grid gap-4 rounded-[1.5rem] border border-white/10 bg-neutral-950/58 p-4"
                 >
                     <Input
                         :model-value="personaStore.name"
@@ -348,14 +348,14 @@ function resetLocalPreview(): void {
 
                 <div
                     v-else-if="selectedGroupId === 'about'"
-                    class="rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4 text-sm leading-6 text-neutral-300"
+                    class="rounded-[1.5rem] border border-white/10 bg-neutral-950/58 p-4 text-sm leading-6 text-neutral-300"
                 >
                     {{ t.settings.aboutDescription }}
                 </div>
 
                 <div
                     v-else
-                    class="rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4"
+                    class="rounded-[1.5rem] border border-white/10 bg-neutral-950/58 p-4"
                 >
                     <p class="text-sm font-semibold text-neutral-100">
                         {{ t.settings.notConnectedTitle }}
@@ -365,7 +365,7 @@ function resetLocalPreview(): void {
                     </p>
                 </div>
 
-                <div class="grid gap-4 rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4">
+                <div class="grid gap-4 rounded-[1.5rem] border border-white/10 bg-neutral-950/58 p-4">
                     <h3 class="text-base font-semibold text-white">
                         {{ t.settings.statusTitle }}
                     </h3>

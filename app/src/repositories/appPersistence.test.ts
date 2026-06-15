@@ -67,6 +67,7 @@ describe('app persistence round trip', () => {
                 warnings: [],
             }] as never[],
             selectedWorldbookId: 'wb-1',
+            activeWorldbookIds: ['wb-1'],
             nextLocalId: 2,
         });
 
@@ -113,6 +114,7 @@ describe('app persistence round trip', () => {
 
         expect(worldbookB.worldbooks).toHaveLength(1);
         expect(worldbookB.selectedWorldbookId).toBe('wb-1');
+        expect(worldbookB.activeWorldbookIds).toEqual(['wb-1']);
 
         expect(connectionB.draft.baseUrl).toBe(MANAGED_PROVIDER_BASE_URL);
         expect(connectionB.appliedDraft).not.toBeNull();

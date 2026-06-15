@@ -6,11 +6,17 @@ export const focusRingClass =
 
 export const disabledClass = 'disabled:cursor-not-allowed disabled:opacity-55';
 
+export const controlRadiusClass = 'rounded-[1.25rem]';
+
+export const cardRadiusClass = 'rounded-[1.5rem]';
+
+export const panelRadiusClass = 'rounded-[1.75rem]';
+
 export const panelSurfaceClass =
-    'rounded-lg border border-white/10 bg-neutral-900/82 shadow-[0_24px_100px_rgba(0,0,0,0.38)] backdrop-blur-xl';
+    'rounded-[1.75rem] border border-white/10 bg-neutral-900/82 shadow-[0_24px_100px_rgba(0,0,0,0.38)] backdrop-blur-xl';
 
 export const insetSurfaceClass =
-    'rounded-md border border-white/8 bg-neutral-950/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]';
+    'rounded-[1.5rem] border border-white/8 bg-neutral-950/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]';
 
 export const panelPaddingClass = 'px-4 py-4 sm:px-5 sm:py-5';
 

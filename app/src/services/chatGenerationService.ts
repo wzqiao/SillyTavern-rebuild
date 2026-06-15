@@ -10,6 +10,7 @@ import type {
     ReforgedChatPersonaContext,
     ReforgedChatSession,
 } from '@/contracts/chat';
+import { applyRegexScriptsToEngineMessages } from './regexScriptService';
 
 export interface ReforgedChatGenerationRequestInput {
     session: ReforgedChatSession;
@@ -42,7 +43,10 @@ export function createChatEngineMessages(
     const presetPrompts = options.presetPrompts?.filter((prompt) => prompt.enabled) ?? [];
 
     if (presetPrompts.length > 0) {
-        return createPresetEngineMessages(session, allMessages, lorebooks, presetPrompts, options.persona);
+        return applyRegexScriptsToEngineMessages(
+            createPresetEngineMessages(session, allMessages, lorebooks, presetPrompts, options.persona),
+            options.regexScripts,
+        );
     }
 
     const engineMessages: ReforgedChatEngineMessage[] = [];
@@ -57,7 +61,7 @@ export function createChatEngineMessages(
 
     appendSessionHistory(engineMessages, session, allMessages);
 
-    return engineMessages;
+    return applyRegexScriptsToEngineMessages(engineMessages, options.regexScripts);
 }
 
 /**

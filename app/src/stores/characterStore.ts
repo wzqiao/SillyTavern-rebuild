@@ -46,6 +46,7 @@ export const useCharacterStore = defineStore('characters', {
                 source: result.source,
                 importedAt,
                 warnings: result.warnings,
+                thumbnailDataUrl: input.thumbnailDataUrl,
             };
 
             this.characters.push(rosterItem);

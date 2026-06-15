@@ -4,6 +4,8 @@
  * 不复刻完整 prompt manager(utility prompts、bias、按角色覆盖等不在范围)。
  */
 
+import type { ReforgedRegexScript } from './regex';
+
 export type ReforgedPresetPromptRole = 'system' | 'user' | 'assistant';
 
 export interface ReforgedPresetPrompt {
@@ -39,6 +41,8 @@ export interface ReforgedPreset {
     sampling: ReforgedPresetSampling;
     /** 已按 prompt_order 排序,enabled 反映 order 中的开关。 */
     prompts: ReforgedPresetPrompt[];
+    regexScripts: ReforgedRegexScript[];
+    extensions: Record<string, unknown>;
 }
 
 export interface ReforgedPresetImportSource {

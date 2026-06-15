@@ -8,6 +8,7 @@ import type {
     ReforgedGenerationApi,
 } from './engine';
 import type { ReforgedPresetPrompt, ReforgedPresetSampling } from './preset';
+import type { ReforgedRegexScript } from './regex';
 
 export type ReforgedChatMessageRole = Extract<ReforgedChatRole, 'system' | 'user' | 'assistant'>;
 
@@ -129,6 +130,8 @@ export interface ReforgedChatGenerationOptions {
     presetPrompts?: ReforgedPresetPrompt[] | null;
     /** 用户身份(M2.5-A3):{{user}} 宏与 personaDescription 槽位的数据源。 */
     persona?: ReforgedChatPersonaContext | null;
+    /** ST regex extension compatibility: safe prompt-side replacement scripts. */
+    regexScripts?: ReforgedRegexScript[];
 }
 
 export interface ReforgedChatStartSessionInput {

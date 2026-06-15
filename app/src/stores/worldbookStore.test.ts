@@ -50,6 +50,8 @@ describe('useWorldbookStore', () => {
         });
         expect(store.selectedWorldbookId).toBe('astra-routes-astra-routes-json-1');
         expect(store.selectedWorldbook?.worldbook.name).toBe('astra-routes');
+        expect(store.activeWorldbookIds).toEqual(['astra-routes-astra-routes-json-1']);
+        expect(store.activeWorldbooks.map((worldbook) => worldbook.worldbook.name)).toEqual(['astra-routes']);
         expect(store.hasWorldbooks).toBe(true);
         expect(store.lastImportResult).toEqual(result);
     });
@@ -92,8 +94,16 @@ describe('useWorldbookStore', () => {
         }, '2026-06-09T00:01:00.000Z');
 
         expect(store.selectedWorldbookId).toBe('mira-archive-mira-archive-json-2');
+        expect(store.activeWorldbookIds).toEqual([
+            'astra-routes-astra-routes-json-1',
+            'mira-archive-mira-archive-json-2',
+        ]);
         expect(store.selectWorldbook('astra-routes-astra-routes-json-1')).toBe(true);
         expect(store.selectedWorldbook?.worldbook.name).toBe('astra-routes');
+        expect(store.activeWorldbooks.map((worldbook) => worldbook.worldbook.name)).toEqual(['astra-routes', 'Mira Archive']);
+        expect(store.toggleWorldbookActive('mira-archive-mira-archive-json-2')).toBe(true);
+        expect(store.activeWorldbooks.map((worldbook) => worldbook.worldbook.name)).toEqual(['astra-routes']);
+        expect(store.toggleWorldbookActive('mira-archive-mira-archive-json-2')).toBe(true);
         expect(store.selectWorldbook('missing')).toBe(false);
         expect(store.removeWorldbook('astra-routes-astra-routes-json-1')).toBe(true);
         expect(store.worldbooks.map((worldbook) => worldbook.worldbook.name)).toEqual(['Mira Archive']);

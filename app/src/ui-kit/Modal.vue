@@ -141,7 +141,7 @@ onBeforeUnmount(() => {
                     <button
                         v-if="showClose"
                         type="button"
-                        class="inline-flex min-h-10 min-w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/6 text-neutral-200 transition duration-200 ease-out hover:bg-white/10"
+                        class="inline-flex min-h-10 min-w-10 items-center justify-center rounded-[1.25rem] border border-white/10 bg-white/6 text-neutral-200 transition duration-200 ease-out hover:bg-white/10"
                         @click="requestClose('button')"
                     >
                         <span class="sr-only">Close dialog</span>

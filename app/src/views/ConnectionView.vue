@@ -609,7 +609,7 @@ function translateRuntimeIssue(issue: ReforgedConnectionRuntimeHandoffIssue): st
                     </p>
                     <div
                         v-if="selectedPresetSummary.warnings.length"
-                        class="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100"
+                        class="mt-2 rounded-[1.25rem] border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs leading-5 text-amber-100"
                     >
                         <p class="font-medium">
                             {{ t.connection.preset.warningsTitle }}

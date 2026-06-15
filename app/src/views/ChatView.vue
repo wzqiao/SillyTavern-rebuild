@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router';
 import { createChatLorebookContext } from '@/services';
 import { parseChatJsonl } from '@/parsers/chatJsonl';
+import { parseWorldbookJson } from '@/parsers/worldbookJson';
 import { useCharacterStore, useChatStore, useConnectionStore, useMultiplayerStore, usePersonaStore, usePresetStore, useWorldbookStore } from '@/stores';
 import { Button, Drawer, ListItem, Spinner, Textarea } from '@/ui-kit';
 import { useI18n } from '@/i18n';
@@ -14,6 +15,7 @@ import type {
     ReforgedChatRuntimeConnectionProvider,
     ReforgedChatSendInput,
 } from '@/contracts/chat';
+import type { ReforgedWorldbookLibraryItem } from '@/contracts/worldbook';
 import type {
     ReforgedConnectionRuntimeHandoffIssue,
     ReforgedConnectionRuntimeHandoffIssueCode,
@@ -42,6 +44,7 @@ const runtimeFallbackNotice = ref<string | null>(null);
 const runtimeDiagnostics = ref<EngineAdapterDiagnostics | null>(null);
 const sendNotice = ref<string | null>(null);
 const timeline = ref<HTMLElement | null>(null);
+const emptyBeacon = ref<HTMLElement | null>(null);
 const composerTextarea = ref<HTMLTextAreaElement | null>(null);
 const sessionDrawerOpen = ref(false);
 const legacyChatInput = ref<HTMLInputElement | null>(null);
@@ -83,6 +86,7 @@ const pendingActionKind = ref<ChatActionKind | null>(null);
 
 const selectedCharacter = computed(() => characterStore.selectedCharacter);
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
+const activeWorldbooks = computed(() => worldbookStore.activeWorldbooks);
 const activeSession = computed(() => chatStore.selectedSession);
 const isRoomMode = computed(() => multiplayerStore.isConnected);
 const messages = computed(() => isRoomMode.value ? multiplayerStore.chatMessages : chatStore.selectedMessages);
@@ -149,15 +153,13 @@ const runtimeIssueLines = computed(() => [
     ...(runtimeDiagnostics.value?.blockers ?? []),
     ...(runtimeDiagnostics.value?.warnings ?? []),
 ].slice(0, 4));
-const lorebookContext = computed(() => selectedWorldbook.value
-    ? createChatLorebookContext(selectedWorldbook.value, {
-        generationTrigger: 'normal',
-        includeInactivePreviewEntries: true,
-        messages: messages.value,
-        nextMessage: composer.value,
-    })
-    : null);
-const lorebookEntryCount = computed(() => lorebookContext.value?.entries.length ?? 0);
+const lorebookContexts = computed(() => activeWorldbooks.value.map((worldbook) => createChatLorebookContext(worldbook, {
+    generationTrigger: 'normal',
+    includeInactivePreviewEntries: true,
+    messages: messages.value,
+    nextMessage: composer.value,
+})));
+const lorebookEntryCount = computed(() => lorebookContexts.value.reduce((total, lorebook) => total + lorebook.entries.length, 0));
 
 onMounted(async () => {
     window.addEventListener('reforged-transport-fallback', handleTransportFallback);
@@ -165,10 +167,12 @@ onMounted(async () => {
     autoStartSession();
     await nextTick();
     resizeComposerTextarea();
+    updateEmptyStateBeacon();
 });
 
 onBeforeUnmount(() => {
     window.removeEventListener('reforged-transport-fallback', handleTransportFallback);
+    emitEmptyStateBeacon(false);
 });
 
 watch(
@@ -191,6 +195,14 @@ watch(
             top: timeline.value.scrollHeight,
             behavior: 'smooth',
         });
+    },
+);
+
+watch(
+    () => messages.value.length,
+    async () => {
+        await nextTick();
+        updateEmptyStateBeacon();
     },
 );
 
@@ -226,6 +238,22 @@ function resizeComposerTextarea(): void {
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${Math.max(nextHeight, 32)}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+}
+
+function updateEmptyStateBeacon(): void {
+    if (messages.value.length > 0 || !emptyBeacon.value) {
+        emitEmptyStateBeacon(false);
+        return;
+    }
+
+    const rect = emptyBeacon.value.getBoundingClientRect();
+    emitEmptyStateBeacon(true, rect.left + rect.width / 2, rect.top + rect.height / 2);
+}
+
+function emitEmptyStateBeacon(active: boolean, x = 0, y = 0): void {
+    window.dispatchEvent(new CustomEvent('reforged-beacon', {
+        detail: { x, y, active },
+    }));
 }
 
 function autoStartSession(): void {
@@ -382,16 +410,20 @@ function createGenerationInput(options: {
         return null;
     }
 
-    const lorebooks = selectedWorldbook.value
-        ? [createChatLorebookContext(selectedWorldbook.value, {
-            generationTrigger: options.trigger,
-            messages: options.contextMessages,
-            nextMessage: options.nextMessage,
-        })]
-        : [];
     const character = selectedCharacter.value
         ? toChatCharacter(selectedCharacter.value)
         : activeSession.value?.character ?? null;
+    const embeddedLorebook = selectedCharacter.value
+        ? createEmbeddedCharacterLorebookItem(selectedCharacter.value)
+        : null;
+    const lorebookItems = embeddedLorebook
+        ? [...activeWorldbooks.value, embeddedLorebook]
+        : activeWorldbooks.value;
+    const lorebooks = lorebookItems.map((worldbook) => createChatLorebookContext(worldbook, {
+        generationTrigger: options.trigger,
+        messages: options.contextMessages,
+        nextMessage: options.nextMessage,
+    }));
 
     return {
         character,
@@ -409,6 +441,10 @@ function createGenerationInput(options: {
                 ? presetStore.selectedEnabledPrompts
                 : null,
             persona: personaStore.persona,
+            regexScripts: [
+                ...(selectedCharacter.value?.card.regexScripts ?? []),
+                ...(presetStore.selectedPreset?.preset.regexScripts ?? []),
+            ],
         },
     };
 }
@@ -567,7 +603,7 @@ function messageRoleLabel(message: ReforgedChatMessage): string {
 }
 
 function messageBubbleClass(message: ReforgedChatMessage): string {
-    const base = 'message-bubble group max-w-[min(40rem,90%)] rounded-[1.35rem] px-4 py-3.5 text-sm leading-7 shadow-[0_14px_40px_rgba(0,0,0,0.28)]';
+    const base = 'message-bubble group max-w-[min(40rem,90%)] rounded-[1.5rem] px-4 py-3.5 text-sm leading-7 shadow-[0_14px_40px_rgba(0,0,0,0.28)]';
     const role = message.role === 'user'
         ? 'ml-auto border border-amber-400/20 bg-amber-500/10 text-amber-50'
         : 'mr-auto border border-white/[0.07] bg-white/[0.04] text-neutral-100';
@@ -662,6 +698,32 @@ function describeError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+function createEmbeddedCharacterLorebookItem(rosterItem: ReforgedCharacterRosterItem): ReforgedWorldbookLibraryItem | null {
+    const characterBook = rosterItem.card.characterBook;
+    if (!characterBook) {
+        return null;
+    }
+
+    try {
+        const worldbook = parseWorldbookJson(JSON.stringify(characterBook), {
+            fallbackName: `${rosterItem.card.name} Character Book`,
+        });
+
+        return {
+            id: `${rosterItem.id}:character-book`,
+            worldbook,
+            source: {
+                fileName: `${rosterItem.card.name || rosterItem.id}-character-book.json`,
+                format: 'json',
+            },
+            importedAt: rosterItem.importedAt,
+            warnings: [],
+        };
+    } catch {
+        return null;
+    }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -704,7 +766,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                     </div>
                 </div>
 
-                <div class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-1.5 text-xs font-medium text-emerald-100">
+                <div class="inline-flex shrink-0 items-center gap-1 rounded-[1.25rem] border border-emerald-300/20 bg-emerald-300/10 px-2.5 py-1.5 text-xs font-medium text-emerald-100">
                     <Spinner v-if="runtimeBusy" size="sm" tone="neutral" :label="t.chat.runtimeChecking" />
                     <span>{{ t.chat.liveMode }}</span>
                 </div>
@@ -712,12 +774,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
             <div
                 v-if="runtimeFallbackNotice || !runtimeHandoff.canAttempt"
-                class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-4 py-2.5 text-xs leading-5 text-amber-100"
+                class="flex flex-wrap items-center justify-between gap-2 rounded-[1.5rem] border border-amber-400/25 bg-amber-400/10 px-4 py-2.5 text-xs leading-5 text-amber-100"
             >
                 <span class="min-w-0">{{ runtimeFallbackNotice ?? runtimeIssueLines[0] ?? statusMessage }}</span>
                 <RouterLink
                     to="/connection"
-                    class="inline-flex min-h-9 items-center rounded-md border border-amber-300/30 bg-amber-300/15 px-3 font-medium text-amber-100 transition hover:bg-amber-300/25"
+                    class="inline-flex min-h-9 items-center rounded-[1.25rem] border border-amber-300/30 bg-amber-300/15 px-3 font-medium text-amber-100 transition hover:bg-amber-300/25"
                 >
                     {{ t.chat.configureConnection }}
                 </RouterLink>
@@ -727,14 +789,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
             <div
                 ref="timeline"
-                class="chat-timeline warm-stage scanline min-h-0 flex-1 space-y-5 overflow-y-auto rounded-lg px-3 py-5 sm:px-5 border border-white/[0.06]"
+                class="chat-timeline warm-stage scanline min-h-0 flex-1 space-y-5 overflow-y-auto rounded-[1.5rem] border border-white/[0.06] px-3 py-5 sm:px-5"
             >
                 <div
                     v-if="messages.length === 0"
                     class="flex min-h-72 flex-col items-center justify-center px-4 py-10 text-center"
                 >
-                    <div class="signal-glow flex h-14 w-14 items-center justify-center rounded-lg border border-amber-300/25 bg-amber-300/12 text-lg font-semibold text-amber-100">
-                        {{ characterName ? characterName.slice(0, 1) : t.chat.emptyAvatarFallback }}
+                    <div
+                        ref="emptyBeacon"
+                        class="tavern-lamp-core signal-glow"
+                        :aria-label="characterName ? characterName : t.chat.emptyTitle"
+                    >
+                        <span class="tavern-lamp-flame" aria-hidden="true" />
+                        <span class="tavern-lamp-ring" aria-hidden="true" />
                     </div>
                     <h3 class="mt-4 font-display text-lg font-semibold text-neutral-50">
                         {{ t.chat.emptyTitle }}
@@ -745,7 +812,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                     <RouterLink
                         v-if="!selectedCharacter"
                         to="/characters"
-                        class="mt-5 inline-flex min-h-11 items-center rounded-md border border-amber-300/30 bg-amber-300/15 px-4 text-sm font-medium text-amber-100 transition hover:bg-amber-300/25"
+                        class="mt-5 inline-flex min-h-11 items-center rounded-[1.25rem] border border-amber-300/30 bg-amber-300/15 px-4 text-sm font-medium text-amber-100 transition hover:bg-amber-300/25"
                     >
                         {{ t.chat.pickCharacter }}
                     </RouterLink>
@@ -811,7 +878,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
                         <p
                             v-if="message.error"
-                            class="mt-3 rounded-md border border-rose-400/20 bg-rose-400/12 px-3 py-2 text-xs leading-5 text-rose-100"
+                            class="mt-3 rounded-[1.25rem] border border-rose-400/20 bg-rose-400/12 px-3 py-2 text-xs leading-5 text-rose-100"
                         >
                             {{ message.error.message }}
                             <span
@@ -913,7 +980,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
                 class="safe-bottom px-2 pb-2 pt-1 sm:px-4"
                 @submit.prevent="sendMessage"
             >
-                <div class="flex min-h-11 items-end gap-1.5 rounded-[1.45rem] border border-white/[0.08] bg-white/[0.05] px-2 py-1.5 backdrop-blur-sm transition-colors focus-within:border-amber-400/30 focus-within:bg-white/[0.07]">
+                <div class="flex min-h-11 items-end gap-1.5 rounded-[1.5rem] border border-white/[0.08] bg-white/[0.05] px-2 py-1.5 backdrop-blur-sm transition-colors focus-within:border-amber-400/30 focus-within:bg-white/[0.07]">
                     <textarea
                         ref="composerTextarea"
                         v-model="composer"
@@ -987,7 +1054,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
                 <div
                     v-if="sortedSessions.length === 0"
-                    class="rounded-lg border border-white/8 bg-neutral-950/54 px-3 py-4 text-sm leading-6 text-neutral-400"
+                    class="rounded-[1.5rem] border border-white/8 bg-neutral-950/54 px-3 py-4 text-sm leading-6 text-neutral-400"
                 >
                     <p class="font-medium text-neutral-200">
                         {{ t.chat.noSessionsTitle }}

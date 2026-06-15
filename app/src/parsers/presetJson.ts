@@ -6,6 +6,7 @@ import type {
     ReforgedPresetPromptRole,
     ReforgedPresetSampling,
 } from '@/contracts/preset';
+import { normalizeRegexScripts } from '@/services/regexScriptService';
 
 export type ReforgedPresetParseErrorCode = 'invalid-json' | 'invalid-preset';
 
@@ -51,6 +52,7 @@ export function parsePresetJson(text: string, options: ParsePresetJsonOptions = 
     const warnings: string[] = [];
     const sampling = readSampling(raw);
     const prompts = readOrderedPrompts(raw, warnings);
+    const extensions = readExtensions(raw);
 
     if (prompts.length === 0) {
         warnings.push('Preset contains no usable prompts; only sampling parameters were imported.');
@@ -61,6 +63,8 @@ export function parsePresetJson(text: string, options: ParsePresetJsonOptions = 
             name: readString(raw.name) ?? options.fallbackName ?? 'Imported preset',
             sampling,
             prompts,
+            regexScripts: normalizeRegexScripts(extensions.regex_scripts),
+            extensions,
         },
         warnings,
     };
@@ -198,6 +202,14 @@ function readNumber(value: unknown): number | null {
 
 function readString(value: unknown): string | null {
     return typeof value === 'string' ? value : null;
+}
+
+function readExtensions(raw: Record<string, unknown>): Record<string, unknown> {
+    if (isRecord(raw.extensions)) {
+        return raw.extensions;
+    }
+
+    return {};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

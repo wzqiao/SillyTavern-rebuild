@@ -23,6 +23,7 @@ describe('useCharacterStore', () => {
         const result = store.importCharacter({
             fileName: 'astra.json',
             text: validJsonCard,
+            thumbnailDataUrl: 'data:image/webp;base64,thumb',
         }, '2026-06-09T00:00:00.000Z');
 
         expect(result.ok).toBe(true);
@@ -39,6 +40,7 @@ describe('useCharacterStore', () => {
                 format: 'json',
             },
             warnings: [],
+            thumbnailDataUrl: 'data:image/webp;base64,thumb',
         });
         expect(store.selectedCharacterId).toBe('astra-astra-json-1');
         expect(store.selectedCharacter?.card.name).toBe('Astra');

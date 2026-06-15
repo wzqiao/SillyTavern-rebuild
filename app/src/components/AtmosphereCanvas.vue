@@ -37,7 +37,9 @@ varying vec2 vUv;
 
 uniform float uTime;
 uniform float uAspect;
+uniform float uBeaconStrength;
 uniform vec2 uPointer;
+uniform vec2 uBeacon;
 
 float hash(vec2 p) {
     p = fract(p * vec2(234.34, 435.345));
@@ -94,6 +96,10 @@ void main() {
 
     float hearth = exp(-length(centered - vec2(uAspect * -0.38, -0.44)) * 2.1);
     color += vec3(0.847, 0.643, 0.373) * hearth * 0.075;
+
+    vec2 beaconPoint = (uBeacon - vec2(0.0)) * vec2(uAspect, 1.0);
+    float beaconGlow = exp(-length(centered - beaconPoint) * 2.8) * uBeaconStrength;
+    color += mix(amber, honey, 0.44) * beaconGlow * 0.12;
 
     float vignette = smoothstep(1.35, 0.3, length(centered - uPointer * 0.05));
     color *= mix(0.78, 1.0, vignette);

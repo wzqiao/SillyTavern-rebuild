@@ -132,13 +132,13 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
   <div class="shell-frame text-neutral-50" :class="isChatRoute ? 'h-dvh overflow-hidden' : 'min-h-dvh'">
     <AtmosphereCanvas />
 
-    <div class="mx-auto flex w-full max-w-[112rem]" :class="isChatRoute ? 'h-dvh' : 'min-h-dvh'">
+    <div class="flex w-full" :class="isChatRoute ? 'h-dvh' : 'min-h-dvh'">
       <aside
-        class="shell-rail glass-panel hidden w-[4.25rem] shrink-0 flex-col items-center border-r border-white/10 px-2 md:flex"
+        class="shell-rail glass-panel sticky top-0 hidden h-dvh min-h-dvh w-[4.25rem] shrink-0 flex-col items-center overflow-visible border-r border-white/10 px-2 md:flex"
       >
         <RouterLink
           to="/chat"
-          class="rail-brand flex h-11 w-11 items-center justify-center rounded-lg border border-amber-200/24 bg-amber-200/10 text-amber-100 transition duration-200 hover:border-amber-200/45 hover:bg-amber-200/16"
+          class="rail-brand flex h-11 w-11 items-center justify-center rounded-[1.25rem] border border-amber-200/24 bg-amber-200/10 text-amber-100 transition duration-200 hover:border-amber-200/45 hover:bg-amber-200/16"
           :title="t.app.name"
           :aria-label="t.app.name"
         >
@@ -160,7 +160,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
             v-for="item in primaryNavigation"
             :key="item.to"
             :to="item.to"
-            class="rail-item relative flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
+            class="rail-item relative flex h-11 w-11 items-center justify-center rounded-[1.25rem] border transition duration-200"
             :class="isCurrentPath(item.to)
               ? 'rail-item--active border-amber-200/45 bg-amber-200/14 text-amber-50 shadow-[0_0_22px_rgba(216,164,95,0.18)]'
               : 'border-white/8 bg-white/[0.04] text-neutral-300 hover:border-white/18 hover:bg-white/[0.08] hover:text-neutral-100'"
@@ -193,7 +193,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
 
         <button
           type="button"
-          class="rail-item relative mt-auto flex h-11 w-11 items-center justify-center rounded-lg border transition duration-200"
+          class="rail-item relative mt-auto flex h-11 w-11 items-center justify-center rounded-[1.25rem] border transition duration-200"
           :class="multiplayerStore.isConnected
             ? 'border-emerald-300/40 bg-emerald-300/12 text-emerald-100'
             : 'border-white/8 bg-white/[0.04] text-neutral-400 hover:border-white/18 hover:bg-white/[0.08] hover:text-neutral-100'"
@@ -281,7 +281,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
               v-for="item in primaryNavigation"
               :key="`${item.to}-mobile`"
               :to="item.to"
-              class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-center transition"
+              class="flex min-h-14 flex-col items-center justify-center gap-1 rounded-[1.25rem] border px-2 py-1.5 text-center transition"
               :class="isCurrentPath(item.to)
                 ? 'border-amber-200/35 bg-amber-200/14 text-white'
                 : 'border-white/8 bg-white/[0.03] text-neutral-300'"
@@ -383,7 +383,7 @@ function emitBeacon(event: MouseEvent, active: boolean): void {
   gap: 0.2rem;
   padding: 0.45rem 0.7rem;
   border: 1px solid rgba(255, 232, 184, 0.14);
-  border-radius: 0.45rem;
+  border-radius: 1.25rem;
   background: rgba(15, 9, 6, 0.94);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   font-size: 0.78rem;

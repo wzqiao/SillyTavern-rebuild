@@ -1,3 +1,5 @@
+import type { ReforgedRegexScript } from './regex';
+
 export type ReforgedCharacterCardSource =
     | 'json-v1-like'
     | 'json-v2'
@@ -32,6 +34,9 @@ export interface ReforgedCharacterCard {
     exampleMessages: string;
     alternateGreetings: string[];
     tags: string[];
+    /** Character Book / embedded lorebook carried by ST V2/V3 character cards. */
+    characterBook: Record<string, unknown> | null;
+    regexScripts: ReforgedRegexScript[];
     extensions: Record<string, unknown>;
     rawVersion: string;
     source: ReforgedCharacterCardSource;
@@ -65,6 +70,7 @@ export interface ReforgedCharacterImportInput {
     mimeType?: string;
     text?: string;
     bytes?: ArrayBuffer | Uint8Array | readonly number[];
+    thumbnailDataUrl?: string;
 }
 
 export interface ReforgedCharacterImportSource {
@@ -98,4 +104,5 @@ export interface ReforgedCharacterRosterItem {
     source: ReforgedCharacterImportSource;
     importedAt: string;
     warnings: ReforgedCharacterCardPngParseReason[];
+    thumbnailDataUrl?: string;
 }

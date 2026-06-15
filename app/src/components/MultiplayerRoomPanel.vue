@@ -102,7 +102,7 @@ function isRoomLink(value: string): boolean {
 </script>
 
 <template>
-    <section class="console-surface grid gap-3 rounded-lg border border-cyan-200/14 bg-neutral-950/52 p-3 text-xs leading-5 text-neutral-300">
+    <section class="console-surface grid gap-3 rounded-[1.5rem] border border-cyan-200/14 bg-neutral-950/52 p-3 text-xs leading-5 text-neutral-300">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="min-w-0">
                 <p class="font-display text-sm font-semibold text-neutral-50">
@@ -216,7 +216,7 @@ function isRoomLink(value: string): boolean {
 
         <div
             v-if="multiplayerStore.lastError || notice"
-            class="rounded-md border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-amber-100"
+            class="rounded-[1.25rem] border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-amber-100"
         >
             {{ multiplayerStore.lastError?.message ?? notice }}
         </div>

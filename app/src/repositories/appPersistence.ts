@@ -37,6 +37,7 @@ interface CharactersMeta {
 
 interface WorldbooksMeta {
     selectedWorldbookId: string | null;
+    activeWorldbookIds?: string[];
     nextLocalId: number;
 }
 
@@ -175,8 +176,12 @@ export async function createAppPersistenceController(
         worldbookStore.$patch({
             worldbooks: worldbookEnvelopes.map((envelope) => envelope.data) as never[],
             selectedWorldbookId: worldbooksMeta?.selectedWorldbookId ?? null,
+            activeWorldbookIds: worldbooksMeta?.activeWorldbookIds ?? (
+                worldbooksMeta?.selectedWorldbookId ? [worldbooksMeta.selectedWorldbookId] : []
+            ),
             nextLocalId: worldbooksMeta?.nextLocalId ?? worldbookEnvelopes.length + 1,
         });
+        worldbookStore.reconcileActiveWorldbooks();
     }
 
     if (sessionEnvelopes.length > 0 || chatMeta) {
@@ -280,6 +285,7 @@ export async function createAppPersistenceController(
         await worldbookSync.sync(worldbookStore.worldbooks as Array<{ id: string }>);
         await gateway.keyValue.set<WorldbooksMeta>(KV_WORLDBOOKS_META, {
             selectedWorldbookId: worldbookStore.selectedWorldbookId,
+            activeWorldbookIds: [...worldbookStore.activeWorldbookIds],
             nextLocalId: worldbookStore.nextLocalId,
         });
     };

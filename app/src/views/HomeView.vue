@@ -77,15 +77,16 @@ const demoAdapter: HeadlessEngineAdapter = {
 
 const selectedRoster = computed(() => characterStore.selectedCharacter);
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
+const activeWorldbooks = computed(() => worldbookStore.activeWorldbooks);
 const selectedMessages = computed(() => chatStore.selectedMessages);
-const selectedLorebooks = computed(() => selectedWorldbook.value
-  ? [createChatLorebookContext(selectedWorldbook.value, {
+const selectedLorebooks = computed(() => activeWorldbooks.value.map((worldbook) => (
+  createChatLorebookContext(worldbook, {
       generationTrigger: 'normal',
       includeInactivePreviewEntries: true,
       messages: selectedMessages.value,
       nextMessage: draftMessage.value,
-    })]
-  : []);
+    })
+)));
 const selectedLorebook = computed(() => selectedLorebooks.value[0] ?? null);
 const selectedWorldbookPreview = computed(() => selectedLorebook.value?.entries.slice(0, 3) ?? []);
 const activeSession = computed(() => chatStore.selectedSession);
@@ -429,8 +430,11 @@ function handleWorldbookImportResult(result: ReforgedWorldbookImportResult): voi
 }
 
 function selectWorldbook(libraryItem: ReforgedWorldbookLibraryItem): void {
-  if (worldbookStore.selectWorldbook(libraryItem.id)) {
-    worldbookNotice.value = `${libraryItem.worldbook.name} selected.`;
+  if (worldbookStore.toggleWorldbookActive(libraryItem.id)) {
+    const active = worldbookStore.activeWorldbookIds.includes(libraryItem.id);
+    worldbookNotice.value = active
+      ? `${libraryItem.worldbook.name} enabled.`
+      : `${libraryItem.worldbook.name} disabled.`;
   }
 }
 
@@ -479,13 +483,13 @@ async function sendMessage(): Promise<void> {
     return;
   }
 
-  const lorebooksForSend = selectedWorldbook.value
-    ? [createChatLorebookContext(selectedWorldbook.value, {
+  const lorebooksForSend = activeWorldbooks.value.map((worldbook) => (
+    createChatLorebookContext(worldbook, {
         generationTrigger: 'normal',
         messages: selectedMessages.value,
         nextMessage: content,
-      })]
-    : [];
+      })
+  ));
 
   draftMessage.value = '';
   const result = await chatStore.sendUserMessage({
@@ -500,6 +504,7 @@ async function sendMessage(): Promise<void> {
     generation: {
       api: handoff.generation.api,
       responseLength: 220,
+      regexScripts: selectedRoster.value?.card.regexScripts ?? [],
     },
   });
 
@@ -851,7 +856,7 @@ function describeError(error: unknown): string {
                 :key="worldbook.id"
                 type="button"
                 class="roster-card"
-                :class="worldbook.id === selectedWorldbook?.id ? 'border-emerald-300/60 bg-emerald-300/10' : 'border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/[0.07]'"
+                :class="worldbookStore.activeWorldbookIds.includes(worldbook.id) ? 'border-emerald-300/60 bg-emerald-300/10' : 'border-white/10 bg-white/[0.04] hover:border-white/20 hover:bg-white/[0.07]'"
                 @click="selectWorldbook(worldbook)"
               >
                 <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-200 to-sky-200 text-base font-black text-stone-950">
@@ -957,7 +962,7 @@ function describeError(error: unknown): string {
 
           <div ref="chatScroll" class="chat-scroll flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">
             <div v-if="!selectedMessages.length" class="empty-chat">
-              <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[1.4rem] bg-amber-300 text-3xl text-stone-950 shadow-xl shadow-amber-500/20">
+              <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[1.75rem] bg-amber-300 text-3xl text-stone-950 shadow-xl shadow-amber-500/20">
                 ST
               </div>
               <h3 class="text-xl font-black tracking-[-0.05em] text-stone-100">等待第一条消息</h3>
@@ -987,7 +992,7 @@ function describeError(error: unknown): string {
                 </div>
                 <p v-else class="whitespace-pre-wrap">{{ message.content || 'Generating...' }}</p>
 
-                <p v-if="message.error" class="mt-3 rounded-xl bg-red-500/15 px-3 py-2 text-xs text-red-100">
+                <p v-if="message.error" class="mt-3 rounded-[1.25rem] bg-red-500/15 px-3 py-2 text-xs text-red-100">
                   {{ message.error.message }}
                 </p>
 
@@ -1025,7 +1030,7 @@ function describeError(error: unknown): string {
               <textarea
                 v-model="draftMessage"
                 data-testid="chat-composer"
-                class="min-h-24 w-full resize-none rounded-[1.3rem] bg-transparent px-4 py-3 text-sm leading-6 text-stone-100 outline-none placeholder:text-stone-500"
+                class="min-h-24 w-full resize-none rounded-[1.5rem] bg-transparent px-4 py-3 text-sm leading-6 text-stone-100 outline-none placeholder:text-stone-500"
                 placeholder="Send a message to the selected character..."
               />
               <div class="flex flex-col gap-3 px-2 pb-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1115,7 +1120,7 @@ function describeError(error: unknown): string {
   justify-content: center;
   gap: 0.45rem;
   border: 1px dashed rgb(251 191 36 / 0.38);
-  border-radius: 1.6rem;
+  border-radius: 1.75rem;
   background: rgb(251 191 36 / 0.08);
   color: rgb(254 243 199);
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), background-color 200ms ease, border-color 200ms ease;
@@ -1130,7 +1135,7 @@ function describeError(error: unknown): string {
 .field-input {
   width: 100%;
   border: 1px solid rgb(255 255 255 / 0.1);
-  border-radius: 1.2rem;
+  border-radius: 1.5rem;
   background: rgb(0 0 0 / 0.24);
   padding: 0.8rem 1rem;
   font-size: 0.875rem;
@@ -1188,7 +1193,7 @@ function describeError(error: unknown): string {
   display: flex;
   width: 100%;
   gap: 0.85rem;
-  border-radius: 1.45rem;
+  border-radius: 1.5rem;
   border-width: 1px;
   padding: 0.8rem;
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease, border-color 180ms ease;

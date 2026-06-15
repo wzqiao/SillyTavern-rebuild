@@ -7,6 +7,11 @@ export type { ReforgedWorldbookImportFileLike } from './worldbookFileImportServi
 export { importPreset } from './presetImportService';
 export { createChatLorebookContext } from './worldbookLoreContextService';
 export {
+    applyRegexScripts,
+    applyRegexScriptsToEngineMessages,
+    normalizeRegexScripts,
+} from './regexScriptService';
+export {
     createChatEngineMessages,
     createChatGenerationRequest,
     readReforgedSessionMessages,

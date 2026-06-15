@@ -2,6 +2,7 @@ import type {
     ReforgedCharacterCard,
     ReforgedCharacterCardSource,
 } from '@/contracts/character';
+import { normalizeRegexScripts } from '@/services/regexScriptService';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -18,6 +19,8 @@ function createEmptyCard(): ReforgedCharacterCard {
         exampleMessages: '',
         alternateGreetings: [],
         tags: [],
+        characterBook: null,
+        regexScripts: [],
         extensions: {},
         rawVersion: UNKNOWN_VERSION,
         source: UNKNOWN_SOURCE,
@@ -171,6 +174,16 @@ function readExtensions(data: JsonRecord | null, root: JsonRecord): Record<strin
     return readObject(root, 'extensions');
 }
 
+function readCharacterBook(data: JsonRecord | null, root: JsonRecord): Record<string, unknown> | null {
+    const fromData = readObject(data, 'character_book', 'characterBook');
+    if (Object.keys(fromData).length > 0) {
+        return fromData;
+    }
+
+    const fromRoot = readObject(root, 'character_book', 'characterBook');
+    return Object.keys(fromRoot).length > 0 ? fromRoot : null;
+}
+
 function detectRawVersion(root: JsonRecord, source: ReforgedCharacterCardSource): string {
     const rawVersion = readSpecVersion(root);
     if (rawVersion !== UNKNOWN_VERSION) {
@@ -202,6 +215,7 @@ export function parseCharacterCardJson(input: unknown): ReforgedCharacterCard {
 
     const data = readDataRecord(root);
     const source = detectSource(root, data);
+    const extensions = readExtensions(data, root);
 
     return {
         name: readField(data, root, 'name', 'char_name'),
@@ -212,7 +226,9 @@ export function parseCharacterCardJson(input: unknown): ReforgedCharacterCard {
         exampleMessages: readField(data, root, 'mes_example', 'exampleMessages', 'example_dialogue'),
         alternateGreetings: readListField(data, root, 'alternate_greetings', 'alternateGreetings', 'alternate_greeting'),
         tags: readListField(data, root, 'tags'),
-        extensions: readExtensions(data, root),
+        characterBook: readCharacterBook(data, root),
+        regexScripts: normalizeRegexScripts(extensions.regex_scripts),
+        extensions,
         rawVersion: detectRawVersion(root, source),
         source,
     };

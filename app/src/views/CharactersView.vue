@@ -5,10 +5,22 @@ import { useI18n } from '@/i18n';
 import { useCharacterStore } from '@/stores';
 import { createCharacterImportInputFromFile } from '@/services/characterFileImportService';
 import type {
+  ReforgedCharacterCard,
   ReforgedCharacterCardPngParseReason,
   ReforgedCharacterImportResult,
   ReforgedCharacterRosterItem,
 } from '@/contracts/character';
+
+interface CharacterDisplayText {
+  text: string;
+  sourceLike: boolean;
+}
+
+interface CharacterAdvancedField {
+  label: string;
+  value: string;
+  sourceLike: boolean;
+}
 
 const { t, locale } = useI18n();
 const characterStore = useCharacterStore();
@@ -39,7 +51,23 @@ const selectedSummary = computed(() => {
     return t.value.characters.selectedSummaryFallback;
   }
 
-  return character.card.description || character.card.scenario || character.card.firstMessage || t.value.characters.noSummary;
+  return createCharacterSummary(character.card).text;
+});
+
+const selectedSummaryIsSourceLike = computed(() => {
+  const character = selectedCharacter.value;
+
+  return character ? createCharacterSummary(character.card).sourceLike : false;
+});
+
+const selectedFirstMessage = computed(() => {
+  const character = selectedCharacter.value;
+
+  if (!character) {
+    return createDisplayText('', t.value.characters.noGreeting);
+  }
+
+  return createDisplayText(character.card.firstMessage, t.value.characters.noGreeting);
 });
 
 function openFilePicker(): void {
@@ -59,8 +87,13 @@ async function importCardFromFile(event: Event): Promise<void> {
   importNoticeTone.value = 'neutral';
 
   try {
+    const importInput = await createCharacterImportInputFromFile(file);
+    const thumbnailDataUrl = await createCharacterThumbnailDataUrl(file);
     const result = characterStore.importCharacter(
-      await createCharacterImportInputFromFile(file),
+      {
+        ...importInput,
+        thumbnailDataUrl,
+      },
       new Date().toISOString(),
     );
 
@@ -117,8 +150,52 @@ function characterInitial(character: ReforgedCharacterRosterItem): string {
   return character.card.name.trim().slice(0, 1).toUpperCase() || t.value.characters.unknownInitial;
 }
 
-function characterDescription(character: ReforgedCharacterRosterItem): string {
-  return character.card.description || character.card.scenario || character.card.firstMessage || t.value.characters.noDescription;
+async function createCharacterThumbnailDataUrl(file: File): Promise<string | undefined> {
+  const fileName = file.name.toLowerCase();
+  const isPng = file.type === 'image/png' || fileName.endsWith('.png');
+
+  if (!isPng || typeof window === 'undefined' || typeof document === 'undefined') {
+    return undefined;
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await loadImage(objectUrl);
+    const side = 128;
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      return undefined;
+    }
+
+    canvas.width = side;
+    canvas.height = side;
+    const sourceSize = Math.min(image.naturalWidth || image.width, image.naturalHeight || image.height);
+    const sourceX = ((image.naturalWidth || image.width) - sourceSize) / 2;
+    const sourceY = ((image.naturalHeight || image.height) - sourceSize) / 2;
+    context.drawImage(image, sourceX, sourceY, sourceSize, sourceSize, 0, 0, side, side);
+
+    return canvas.toDataURL('image/webp', 0.78);
+  } catch {
+    return undefined;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not load character thumbnail.'));
+    image.src = src;
+  });
+}
+
+function characterDescription(character: ReforgedCharacterRosterItem): CharacterDisplayText {
+  return createCharacterSummary(character.card, t.value.characters.noDescription);
 }
 
 function formatImportedAt(value: string): string {
@@ -148,16 +225,22 @@ function formatWarningCount(character: ReforgedCharacterRosterItem): string {
   return t.value.characters.warningCount(character.warnings.length);
 }
 
-function advancedFields(character: ReforgedCharacterRosterItem): Array<{ label: string; value: string }> {
+function advancedFields(character: ReforgedCharacterRosterItem): CharacterAdvancedField[] {
   return [
+    { label: t.value.characters.advancedFields.description, value: character.card.description },
+    { label: t.value.characters.advancedFields.firstMessage, value: character.card.firstMessage },
     { label: t.value.characters.advancedFields.personality, value: character.card.personality },
     { label: t.value.characters.advancedFields.scenario, value: character.card.scenario },
+    { label: t.value.characters.advancedFields.exampleMessages, value: character.card.exampleMessages },
     { label: t.value.characters.advancedFields.tags, value: character.card.tags.join(', ') },
     { label: t.value.characters.advancedFields.alternateGreetings, value: character.card.alternateGreetings.join('\n\n') },
     { label: t.value.characters.advancedFields.rawVersion, value: character.card.rawVersion },
     { label: t.value.characters.advancedFields.parserSource, value: character.card.source },
     { label: t.value.characters.advancedFields.extensions, value: formatExtensions(character.card.extensions) },
-  ].filter((field) => field.value.trim().length > 0);
+  ].map((field) => ({
+    ...field,
+    sourceLike: looksLikeSourceText(field.value),
+  })).filter((field) => field.value.trim().length > 0);
 }
 
 function formatExtensions(extensions: Record<string, unknown>): string {
@@ -168,6 +251,93 @@ function formatExtensions(extensions: Record<string, unknown>): string {
   }
 
   return entries.join(', ');
+}
+
+function createCharacterSummary(
+  card: ReforgedCharacterCard,
+  fallback = t.value.characters.noSummary,
+): CharacterDisplayText {
+  const fields = [
+    card.description,
+    card.scenario,
+    card.personality,
+    card.firstMessage,
+  ];
+  const displayFields = fields
+    .filter((field) => field.trim().length > 0)
+    .map((field) => createDisplayText(field, fallback));
+  const readable = displayFields.find((field) => !field.sourceLike);
+
+  if (readable) {
+    return readable;
+  }
+
+  if (displayFields.length > 0) {
+    return {
+      text: t.value.characters.sourceLikePreview,
+      sourceLike: true,
+    };
+  }
+
+  return {
+    text: fallback,
+    sourceLike: false,
+  };
+}
+
+function createDisplayText(value: string, fallback: string): CharacterDisplayText {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return {
+      text: fallback,
+      sourceLike: false,
+    };
+  }
+
+  if (looksLikeSourceText(trimmed)) {
+    return {
+      text: t.value.characters.sourceLikePreview,
+      sourceLike: true,
+    };
+  }
+
+  return {
+    text: compactPlainText(trimmed, 180),
+    sourceLike: false,
+  };
+}
+
+function compactPlainText(value: string, limit: number): string {
+  const compact = value
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (compact.length <= limit) {
+    return compact;
+  }
+
+  return `${compact.slice(0, limit).trimEnd()}…`;
+}
+
+function looksLikeSourceText(value: string): boolean {
+  const trimmed = value.trim();
+
+  if (trimmed.length > 700 && /[<>{};]/.test(trimmed)) {
+    return true;
+  }
+
+  return [
+    /<!doctype\s+html/i,
+    /<html[\s>]/i,
+    /<head[\s>]/i,
+    /<style[\s>]/i,
+    /<script[\s>]/i,
+    /<\/?[a-z][\w:-]*(\s+[^>]*)?>/i,
+    /--[\w-]+\s*:\s*[^;]+;/,
+    /https:\/\/fonts\.googleapis\.com/i,
+  ].some((pattern) => pattern.test(trimmed));
 }
 
 function describeReasons(reasons: ReforgedCharacterCardPngParseReason[]): string[] {
@@ -203,11 +373,11 @@ function describeError(error: unknown): string {
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <span class="rounded-2xl border border-white/10 bg-white/6 px-3 py-2 text-center text-xs font-medium text-neutral-300">
+          <span class="rounded-[1.25rem] border border-white/10 bg-white/6 px-3 py-2 text-center text-xs font-medium text-neutral-300">
             {{ t.characters.importedCount(characterStore.characters.length) }}
           </span>
           <span
-            class="rounded-2xl border px-3 py-2 text-center text-xs font-medium"
+            class="rounded-[1.25rem] border px-3 py-2 text-center text-xs font-medium"
             :class="selectedCharacter ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100' : 'border-amber-400/20 bg-amber-400/10 text-amber-100'"
           >
             {{ selectedCharacter ? t.characters.readyForChat : t.characters.noSelection }}
@@ -236,7 +406,7 @@ function describeError(error: unknown): string {
 
       <div
         v-if="importNotice || lastImportResult"
-        class="mt-4 rounded-[1.15rem] border px-4 py-3 text-sm leading-6"
+        class="mt-4 rounded-[1.5rem] border px-4 py-3 text-sm leading-6"
         :class="{
           'border-white/10 bg-white/6 text-neutral-300': importResultTone === 'neutral',
           'border-emerald-400/20 bg-emerald-400/10 text-emerald-100': importResultTone === 'success',
@@ -304,20 +474,32 @@ function describeError(error: unknown): string {
         <article
           v-for="character in characterStore.characters"
           :key="character.id"
-          class="min-w-0 rounded-[1.25rem] border bg-neutral-950/58 p-4 transition"
+          class="min-w-0 overflow-hidden rounded-[1.5rem] border bg-neutral-950/58 p-4 transition"
           :class="character.id === selectedCharacter?.id ? 'border-cyan-300/45 shadow-[0_0_0_1px_rgba(103,232,249,0.14)]' : 'border-white/10'"
         >
           <button
             type="button"
-            class="flex min-w-0 gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+            class="flex w-full min-w-0 gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
             @click="selectCharacter(character.id)"
           >
-            <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/8 text-base font-semibold text-cyan-100">
-              {{ characterInitial(character) }}
+            <span class="flex h-12 w-12 shrink-0 overflow-hidden rounded-[1.25rem] border border-white/10 bg-white/8 text-base font-semibold text-cyan-100">
+              <img
+                v-if="character.thumbnailDataUrl"
+                :src="character.thumbnailDataUrl"
+                :alt="character.card.name"
+                class="h-full w-full object-cover"
+                loading="lazy"
+              >
+              <span
+                v-else
+                class="grid h-full w-full place-items-center"
+              >
+                {{ characterInitial(character) }}
+              </span>
             </span>
-            <span class="min-w-0 flex-1">
+            <span class="min-w-0 flex-1 overflow-hidden">
               <span class="flex min-w-0 flex-wrap items-center gap-2">
-                <span class="truncate text-sm font-semibold text-neutral-100">
+                <span class="max-w-full truncate text-sm font-semibold text-neutral-100">
                   {{ character.card.name }}
                 </span>
                 <span
@@ -327,14 +509,17 @@ function describeError(error: unknown): string {
                   {{ t.characters.selected }}
                 </span>
               </span>
-              <span class="mt-1 line-clamp-3 text-xs leading-5 text-neutral-400">
-                {{ characterDescription(character) }}
+              <span
+                class="mt-1 line-clamp-2 break-words text-xs leading-5"
+                :class="characterDescription(character).sourceLike ? 'text-amber-100/82' : 'text-neutral-400'"
+              >
+                {{ characterDescription(character).text }}
               </span>
             </span>
           </button>
 
-          <div class="mt-4 flex flex-wrap gap-2 text-[0.68rem] font-medium text-neutral-400">
-            <span class="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
+          <div class="mt-4 flex min-w-0 flex-wrap gap-2 text-[0.68rem] font-medium text-neutral-400">
+            <span class="max-w-full truncate rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
               {{ formatSource(character) }}
             </span>
             <span class="rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
@@ -362,7 +547,7 @@ function describeError(error: unknown): string {
 
       <div
         v-else
-        class="mt-4 rounded-[1.25rem] border border-dashed border-white/14 bg-neutral-950/52 px-4 py-8 text-center"
+        class="mt-4 rounded-[1.5rem] border border-dashed border-white/14 bg-neutral-950/52 px-4 py-8 text-center"
       >
         <p class="text-sm font-medium text-neutral-100">
           {{ t.characters.noActiveTitle }}
@@ -387,26 +572,40 @@ function describeError(error: unknown): string {
       default-open
     >
       <div class="grid gap-4">
-        <section class="rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4">
-          <h3 class="text-sm font-semibold text-neutral-100">
+        <section class="rounded-[1.5rem] border border-white/10 bg-neutral-950/58 p-4">
+          <div class="flex flex-wrap items-center gap-2">
+            <h3 class="text-sm font-semibold text-neutral-100">
             {{ t.characters.summaryTitle }}
-          </h3>
-          <p class="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-neutral-300">
+            </h3>
+            <span
+              v-if="selectedSummaryIsSourceLike"
+              class="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[0.68rem] font-medium text-amber-100"
+            >
+              {{ t.characters.sourceLikeBadge }}
+            </span>
+          </div>
+          <p
+            class="mt-3 whitespace-pre-wrap break-words text-sm leading-7"
+            :class="selectedSummaryIsSourceLike ? 'text-amber-100/82' : 'text-neutral-300'"
+          >
             {{ selectedSummary }}
           </p>
         </section>
 
         <section class="grid gap-4 md:grid-cols-2">
-          <div class="rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4">
+          <div class="rounded-[1.5rem] border border-white/10 bg-neutral-950/58 p-4">
             <h3 class="text-sm font-semibold text-neutral-100">
               {{ t.characters.firstMessage }}
             </h3>
-            <p class="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-neutral-300">
-              {{ selectedCharacter.card.firstMessage || t.characters.noGreeting }}
+            <p
+              class="mt-3 whitespace-pre-wrap break-words text-sm leading-7"
+              :class="selectedFirstMessage.sourceLike ? 'text-amber-100/82' : 'text-neutral-300'"
+            >
+              {{ selectedFirstMessage.text }}
             </p>
           </div>
 
-          <div class="rounded-[1.25rem] border border-white/10 bg-neutral-950/58 p-4">
+          <div class="rounded-[1.5rem] border border-white/10 bg-neutral-950/58 p-4">
             <h3 class="text-sm font-semibold text-neutral-100">
               {{ t.characters.sourceTitle }}
             </h3>
@@ -452,14 +651,29 @@ function describeError(error: unknown): string {
             <div
               v-for="field in advancedFields(selectedCharacter)"
               :key="field.label"
-              class="rounded-2xl border border-white/8 bg-neutral-950/70 p-3"
+              class="rounded-[1.5rem] border border-white/8 bg-neutral-950/70 p-3"
             >
-              <p class="text-xs font-medium uppercase tracking-[0.14em] text-neutral-500">
-                {{ field.label }}
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="text-xs font-medium uppercase tracking-[0.14em] text-neutral-500">
+                  {{ field.label }}
+                </p>
+                <span
+                  v-if="field.sourceLike"
+                  class="rounded-full border border-amber-400/20 bg-amber-400/10 px-2 py-0.5 text-[0.65rem] font-medium text-amber-100"
+                >
+                  {{ t.characters.sourceLikeBadge }}
+                </span>
+              </div>
+              <p
+                v-if="field.sourceLike"
+                class="mt-2 text-xs leading-5 text-amber-100/72"
+              >
+                {{ t.characters.rawContentHint }}
               </p>
-              <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-neutral-300">
-                {{ field.value }}
-              </p>
+              <pre
+                class="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-[1.25rem] border border-white/8 bg-black/18 p-3 text-sm leading-6 text-neutral-300"
+                :class="field.sourceLike ? 'break-all font-mono text-xs leading-5' : ''"
+              >{{ field.value }}</pre>
             </div>
           </div>
           <p
@@ -480,7 +694,7 @@ function describeError(error: unknown): string {
             <li
               v-for="warning in describeReasons(selectedCharacter.warnings)"
               :key="warning"
-              class="rounded-2xl border border-amber-400/15 bg-amber-400/10 px-3 py-2"
+              class="rounded-[1.25rem] border border-amber-400/15 bg-amber-400/10 px-3 py-2"
             >
               {{ warning }}
             </li>

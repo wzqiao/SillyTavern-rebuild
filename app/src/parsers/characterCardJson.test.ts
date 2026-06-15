@@ -30,6 +30,8 @@ describe('parseCharacterCardJson', () => {
             exampleMessages: '',
             alternateGreetings: ['Ready for departure.', 'Charting a new route.'],
             tags: ['space', 'captain'],
+            characterBook: null,
+            regexScripts: [],
             extensions: {
                 world: 'frontier',
             },
@@ -66,6 +68,8 @@ describe('parseCharacterCardJson', () => {
             exampleMessages: '',
             alternateGreetings: ['Speak softly.', 'The stacks remember everything.'],
             tags: ['archive', 'mystery'],
+            characterBook: null,
+            regexScripts: [],
             extensions: {
                 tone: 'whispered',
             },
@@ -99,6 +103,8 @@ describe('parseCharacterCardJson', () => {
             exampleMessages: '',
             alternateGreetings: [],
             tags: ['root', 'fallback'],
+            characterBook: null,
+            regexScripts: [],
             extensions: {
                 imported: true,
             },
@@ -193,10 +199,58 @@ describe('parseCharacterCardJson', () => {
             exampleMessages: '',
             alternateGreetings: [],
             tags: [],
+            characterBook: null,
+            regexScripts: [],
             extensions: {},
             rawVersion: 'unknown',
             source: 'json-unknown',
         });
+    });
+
+    it('preserves embedded character books and scoped regex scripts', () => {
+        const card = parseCharacterCardJson({
+            spec: 'chara_card_v2',
+            data: {
+                name: 'Lore Keeper',
+                character_book: {
+                    name: 'Keeper Book',
+                    entries: [
+                        {
+                            keys: ['sigil'],
+                            content: 'The sigil opens the sealed door.',
+                        },
+                    ],
+                },
+                extensions: {
+                    regex_scripts: [
+                        {
+                            scriptName: 'mask',
+                            findRegex: '/secret/gi',
+                            replaceString: 'hidden',
+                            placement: [1],
+                        },
+                    ],
+                },
+            },
+        });
+
+        expect(card.characterBook).toMatchObject({
+            name: 'Keeper Book',
+            entries: [
+                {
+                    keys: ['sigil'],
+                    content: 'The sigil opens the sealed door.',
+                },
+            ],
+        });
+        expect(card.regexScripts).toMatchObject([
+            {
+                scriptName: 'mask',
+                findRegex: '/secret/gi',
+                replaceString: 'hidden',
+                placement: [1],
+            },
+        ]);
     });
 });
 

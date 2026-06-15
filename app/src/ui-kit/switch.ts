@@ -20,7 +20,7 @@ const switchShellToneClasses: Record<ReforgedUiTone, string> = {
 
 export function resolveSwitchShellClasses(tone: ReforgedUiTone = 'neutral', disabled = false): string {
     return cx(
-        'flex items-start justify-between gap-3 rounded-[1.35rem] border px-4 py-3',
+        'flex items-start justify-between gap-3 rounded-[1.5rem] border px-4 py-3',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]',
         switchShellToneClasses[tone],
         disabled && 'cursor-not-allowed opacity-55',

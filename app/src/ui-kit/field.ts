@@ -29,7 +29,7 @@ export function resolveFieldClasses(options: ResolveFieldClassOptions = {}): str
 
     return cx(
         'w-full border text-sm transition duration-200 ease-out',
-        'min-h-12 rounded-lg px-4 py-3',
+        'min-h-12 rounded-[1.25rem] px-4 py-3',
         'shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]',
         focusRingClass,
         disabledClass,

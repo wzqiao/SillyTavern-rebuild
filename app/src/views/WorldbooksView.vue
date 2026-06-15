@@ -38,6 +38,7 @@ const notice = ref<ViewNotice | null>(null);
 const previewScanText = ref('');
 
 const selectedWorldbook = computed(() => worldbookStore.selectedWorldbook);
+const activeWorldbooks = computed(() => worldbookStore.activeWorldbooks);
 const selectedEntries = computed(() => selectedWorldbook.value?.worldbook.entries ?? []);
 const selectedWarnings = computed(() => selectedWorldbook.value?.warnings ?? []);
 const enabledEntrySamples = computed(() => selectedEntries.value
@@ -129,6 +130,18 @@ function selectWorldbook(item: ReforgedWorldbookLibraryItem): void {
     notice.value = {
         tone: 'neutral',
         message: t.value.worldbooks.selectedNow(item.worldbook.name),
+    };
+}
+
+function toggleWorldbookActive(item: ReforgedWorldbookLibraryItem): void {
+    if (!worldbookStore.toggleWorldbookActive(item.id)) {
+        return;
+    }
+
+    const active = worldbookStore.activeWorldbookIds.includes(item.id);
+    notice.value = {
+        tone: 'neutral',
+        message: active ? t.value.worldbooks.enabledNow(item.worldbook.name) : t.value.worldbooks.disabledNow(item.worldbook.name),
     };
 }
 
@@ -255,14 +268,21 @@ function noticeClasses(tone: NoticeTone): string {
     ].join(' ');
 }
 
+function isWorldbookActive(item: ReforgedWorldbookLibraryItem): boolean {
+    return worldbookStore.activeWorldbookIds.includes(item.id);
+}
+
 function libraryItemClasses(item: ReforgedWorldbookLibraryItem): string {
     const selected = item.id === selectedWorldbook.value?.id;
+    const active = isWorldbookActive(item);
 
     return [
-        'rounded-2xl border p-4 text-left transition duration-200',
-        selected
-            ? 'border-emerald-300/50 bg-emerald-300/10 shadow-[0_16px_50px_rgba(16,185,129,0.12)]'
-            : 'border-white/10 bg-white/[0.04] hover:border-white/18 hover:bg-white/[0.07]',
+        'rounded-[1.35rem] border p-2.5 text-left transition duration-200',
+        active
+            ? 'border-emerald-300/60 bg-emerald-300/[0.09] ring-1 ring-emerald-300/25 shadow-[0_12px_34px_rgba(16,185,129,0.12)]'
+            : selected
+                ? 'border-cyan-300/38 bg-cyan-300/[0.07]'
+                : 'border-white/10 bg-white/[0.04] hover:border-white/18 hover:bg-white/[0.07]',
     ].join(' ');
 }
 </script>
@@ -338,16 +358,16 @@ function libraryItemClasses(item: ReforgedWorldbookLibraryItem): string {
                     </h2>
                 </div>
                 <span
-                    v-if="selectedWorldbook"
+                    v-if="activeWorldbooks.length"
                     class="w-fit rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1 text-xs font-bold text-emerald-100"
                 >
-                    {{ t.worldbooks.selected }}
+                    {{ t.worldbooks.activeCount(activeWorldbooks.length) }}
                 </span>
             </div>
 
             <div
                 v-if="worldbookStore.worldbooks.length"
-                class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3"
+                class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
             >
                 <article
                     v-for="worldbook in worldbookStore.worldbooks"
@@ -356,58 +376,66 @@ function libraryItemClasses(item: ReforgedWorldbookLibraryItem): string {
                 >
                     <button
                         type="button"
-                        class="flex min-w-0 items-start gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
-                        @click="selectWorldbook(worldbook)"
+                        class="w-full rounded-[1rem] px-2 py-2 text-left transition hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/80 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+                        @click="toggleWorldbookActive(worldbook)"
                     >
-                        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-cyan-200/25 bg-cyan-200/12 text-sm font-black text-cyan-100">
-                            {{ t.worldbooks.iconLabel }}
-                        </span>
-                        <span class="min-w-0 flex-1">
-                            <span class="block truncate text-sm font-black text-white">
-                                {{ worldbook.worldbook.name }}
+                        <span class="flex min-w-0 items-center gap-2.5">
+                            <span
+                                :class="[
+                                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs font-black',
+                                    isWorldbookActive(worldbook)
+                                        ? 'border-emerald-200/50 bg-emerald-300/18 text-emerald-50'
+                                        : 'border-cyan-200/22 bg-cyan-200/10 text-cyan-100',
+                                ]"
+                            >
+                                {{ t.worldbooks.iconLabel }}
                             </span>
-                            <span class="mt-1 line-clamp-2 text-xs leading-5 text-neutral-400">
-                                {{ describeSource(worldbook) }}
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate text-sm font-black text-white">
+                                    {{ worldbook.worldbook.name }}
+                                </span>
+                                <span class="mt-0.5 block truncate text-[0.7rem] leading-4 text-neutral-400">
+                                    {{ describeSource(worldbook) }}
+                                </span>
+                            </span>
+                            <span
+                                v-if="isWorldbookActive(worldbook)"
+                                class="shrink-0 rounded-full border border-emerald-200/25 bg-emerald-300/12 px-2 py-0.5 text-[0.68rem] font-black text-emerald-100"
+                            >
+                                {{ t.worldbooks.selected }}
+                            </span>
+                        </span>
+
+                        <span class="mt-2 flex flex-wrap gap-1.5 text-[0.72rem] font-bold text-neutral-400">
+                            <span class="rounded-full border border-white/8 bg-black/18 px-2 py-1">
+                                {{ t.worldbooks.stats.entries }} <strong class="text-white">{{ worldbook.worldbook.entries.length }}</strong>
+                            </span>
+                            <span class="rounded-full border border-emerald-300/14 bg-emerald-300/8 px-2 py-1">
+                                {{ t.worldbooks.stats.enabled }} <strong class="text-emerald-100">{{ worldbook.worldbook.entries.filter((entry) => entry.enabled).length }}</strong>
+                            </span>
+                            <span class="rounded-full border border-cyan-300/14 bg-cyan-300/8 px-2 py-1">
+                                {{ t.worldbooks.stats.ready }} <strong class="text-cyan-100">{{ summarizeWorldbookEntries(worldbook.worldbook.entries).injectionReadyEntries }}</strong>
                             </span>
                         </span>
                     </button>
 
-                    <div class="mt-4 grid grid-cols-3 gap-2 text-xs">
-                        <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
-                            <p class="font-bold text-neutral-500">
-                                {{ t.worldbooks.stats.entries }}
-                            </p>
-                            <p class="mt-1 text-base font-black text-white">
-                                {{ worldbook.worldbook.entries.length }}
-                            </p>
-                        </div>
-                        <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
-                            <p class="font-bold text-neutral-500">
-                                {{ t.worldbooks.stats.enabled }}
-                            </p>
-                            <p class="mt-1 text-base font-black text-emerald-100">
-                                {{ worldbook.worldbook.entries.filter((entry) => entry.enabled).length }}
-                            </p>
-                        </div>
-                        <div class="rounded-xl border border-white/8 bg-black/18 px-3 py-2">
-                            <p class="font-bold text-neutral-500">
-                                {{ t.worldbooks.stats.ready }}
-                            </p>
-                            <p class="mt-1 text-base font-black text-cyan-100">
-                                {{ summarizeWorldbookEntries(worldbook.worldbook.entries).injectionReadyEntries }}
-                            </p>
-                        </div>
+                    <div class="mt-1.5 flex items-center justify-between gap-2 px-1">
+                        <button
+                            type="button"
+                            class="rounded-full px-2.5 py-1 text-xs font-bold text-cyan-100 transition hover:bg-cyan-300/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70"
+                            @click="selectWorldbook(worldbook)"
+                        >
+                            {{ t.worldbooks.preview }}
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-full px-2.5 py-1 text-xs font-bold text-neutral-400 transition hover:bg-rose-300/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300/70"
+                            :aria-label="t.worldbooks.removeAria"
+                            @click="removeWorldbook(worldbook)"
+                        >
+                            {{ t.worldbooks.remove }}
+                        </button>
                     </div>
-
-                    <Button
-                        class="mt-4"
-                        variant="ghost"
-                        size="sm"
-                        :aria-label="t.worldbooks.removeAria"
-                        @click="removeWorldbook(worldbook)"
-                    >
-                        {{ t.worldbooks.remove }}
-                    </Button>
                 </article>
             </div>
 

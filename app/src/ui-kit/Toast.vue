@@ -136,7 +136,7 @@ onBeforeUnmount(() => {
                 <button
                     v-if="dismissible"
                     type="button"
-                    class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-xl text-current/72 transition duration-200 ease-out hover:bg-white/8 hover:text-current"
+                    class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-[1.25rem] text-current/72 transition duration-200 ease-out hover:bg-white/8 hover:text-current"
                     @click="dismiss(item.id)"
                 >
                     <span class="sr-only">Dismiss toast</span>
